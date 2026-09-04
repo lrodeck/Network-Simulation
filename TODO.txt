@@ -31,11 +31,14 @@ STEP 2 - POPULATION  (done)
   [x] Verify: marginals + rank correlations match spec; scenario curves
       reproduce in the drawn sample
 
-STEP 3 - STANCE EDITOR AS ANYWIDGET
-  [ ] Port stance-editor.jsx to an anywidget (commit built JS to
+STEP 3 - STANCE EDITOR AS ANYWIDGET  (done)
+  [x] Port stance-editor.jsx to an anywidget (commit built JS to
       widgets/_static/, Colab cannot run esbuild at install time)
-  [ ] Widget state backed by files: autosave to scenarios/<name>.json
-  [ ] Verify: draw -> autosave -> load in Python -> sample -> histogram
+      -- ported as plain DOM/canvas JS instead of React, so no bundler is
+      needed at all: the hand-written file in _static/ is the shipped
+      artifact.
+  [x] Widget state backed by files: autosave to scenarios/<name>.json
+  [x] Verify: draw -> autosave -> load in Python -> sample -> histogram
       matches the curve
 
 STEP 4 - GRAPH  (no LLM)
