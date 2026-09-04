@@ -41,13 +41,13 @@ STEP 3 - STANCE EDITOR AS ANYWIDGET  (done)
   [x] Verify: draw -> autosave -> load in Python -> sample -> histogram
       matches the curve
 
-STEP 4 - GRAPH  (no LLM)
-  [ ] latent_space generator: logit P(u->v) = a - b*d(u,v)
+STEP 4 - GRAPH  (done)
+  [x] latent_space generator: logit P(u->v) = a - b*d(u,v)
       + g*log(1+prom_v), alpha by bisection to target mean degree,
       kNN + uniform long-tie component above ~20k users
-  [ ] SBM (blocks from archetypes), configuration model, Barabasi-Albert
-  [ ] Reciprocity pass (r ~ 0.2-0.4)
-  [ ] Verify: degree distribution, clustering, homophily; neighbourhoods
+  [x] SBM (blocks from archetypes), configuration model, Barabasi-Albert
+  [x] Reciprocity pass (r ~ 0.2-0.4)
+  [x] Verify: degree distribution, clustering, homophily; neighbourhoods
       measurably differ (SBM / strong-homophily latent default, dev 1)
 
 STEP 5 - TIMING AND GENERATION  (no LLM)
