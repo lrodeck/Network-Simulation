@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "discourse-lab"
+version = "0.1.0"
+description = "Vectorized, non-agentic simulation toolbox for theories of large-scale online discourse."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.25",
+    "scipy>=1.11",
+    "polars>=1.0",
+    "pyarrow>=14",
+    "anywidget>=0.9",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+include = ["discourse_lab*"]
+
+[tool.setuptools.package-data]
+discourse_lab = ["data/scenarios/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,118 @@
+DISCOURSE LAB - STILL TO DO
+============================
+
+Build order follows discourse-lab-dev.md section 6 (mechanics wins) with
+modelling detail from discourse-lab-spec.md. Nothing below step 11 needs an LLM.
+
+STEP 1 - SKELETON  (in progress)
+  [x] pyproject.toml, package layout
+  [x] Nested frozen configs + structural hashing        config.py
+  [x] Registry (sorted, deterministic)                  registry.py
+  [x] Workspace resolver (DLAB_HOME / Colab / cwd)      io/workspace.py
+  [x] Scenario config compatible with stance-editor JSON
+  [x] Default scenario data (generated, committed)      data/scenarios/default.json
+  [ ] runner.py: phase_rngs (RNG discipline, spec 3.4),
+      run_iter with an EMPTY tick loop, run(), cached_run()
+  [ ] io/store.py: streaming parquet RunWriter (row group per tick,
+      flat memory in run length, dev 7.3) + lazy RunHandle
+  [ ] io/artifacts.py: content-addressed pop/graph artifact cache
+      keyed by structural sub-hash (dev 8.2)
+  [ ] tests: a run caches and reloads; changing a population field
+      invalidates the population artifact and nothing else;
+      phase RNG streams are stable and independent
+  [ ] minimal README, pip install -e . sanity check
+
+STEP 2 - POPULATION  (no LLM)
+  [ ] Marginal registry (lognormal, pareto, beta, vonmises phase, normal)
+  [ ] Empirical inverse CDF from the editor's density arrays
+  [ ] Gaussian copula + Higham nearest-PSD projection
+  [ ] Archetype mixture (offsets only; labels never read by dynamics)
+  [ ] Stored-space links: logits for [0,1] traits, logs for positive
+  [ ] Verify: marginals + rank correlations match spec; scenario curves
+      reproduce in the drawn sample
+
+STEP 3 - STANCE EDITOR AS ANYWIDGET
+  [ ] Port stance-editor.jsx to an anywidget (commit built JS to
+      widgets/_static/, Colab cannot run esbuild at install time)
+  [ ] Widget state backed by files: autosave to scenarios/<name>.json
+  [ ] Verify: draw -> autosave -> load in Python -> sample -> histogram
+      matches the curve
+
+STEP 4 - GRAPH  (no LLM)
+  [ ] latent_space generator: logit P(u->v) = a - b*d(u,v)
+      + g*log(1+prom_v), alpha by bisection to target mean degree,
+      kNN + uniform long-tie component above ~20k users
+  [ ] SBM (blocks from archetypes), configuration model, Barabasi-Albert
+  [ ] Reciprocity pass (r ~ 0.2-0.4)
+  [ ] Verify: degree distribution, clustering, homophily; neighbourhoods
+      measurably differ (SBM / strong-homophily latent default, dev 1)
+
+STEP 5 - TIMING AND GENERATION  (no LLM)
+  [ ] Circadian two-peak shape, Poisson posting with fatigue
+  [ ] Hawkes replies (alpha/beta < 1; ratio is the pile-on dial)
+  [ ] Post dimension generation: trait->expression map A as a sparse,
+      commented, named-entry table; B/C maps; conformity stance line
+  [ ] Stub renderer emitting "[u17 - topic3 - strong]"
+
+STEP 6 - EXPOSURE AND REACTION  (no LLM)
+  [ ] Vectorised follower scatter (no per-user loops), fan-out cap
+  [ ] Injection (k_inj), attention budget B_u ~ Poisson(b*activity),
+      position decay exp(-r/tau)
+  [ ] Rankers: chronological, random, popularity, affinity,
+      engagement_optimized
+  [ ] Engagement kernel: multinomial logit with skip as reference;
+      feature map phi + thetas for homophily / outrage / bandwagon /
+      epistemic / null
+  [ ] First runnable dynamics end to end
+
+STEP 7 - PERCEPTION AND MEASURES
+  [ ] F_local / F_global blending, measure registry
+  [ ] Salience/stance agreement pair, bubble index
+
+STEP 8 - FRONTIER CASCADES
+  [ ] Derived posts, depth decay rho^depth, hard caps with warnings
+  [ ] R_eff diagnostic per tick (warn when it sits above 1)
+  [ ] Verify: cascade size distribution heavy-tailed, >90% singletons
+      at scale; boundary-crossing diagnostic works
+
+STEP 9 - RUN MONITOR WIDGET + POST-RUN ANALYSIS
+  [ ] run_monitor.py anywidget consuming run_iter: live measures while
+      the run executes (agreement pair, bubble index, attention Gini)
+  [ ] metrics/ module over a completed Run: stylized facts (spec 5.1),
+      polarization, inequality, style convergence, null comparison
+  [ ] Calibrate here - do not proceed until spec 5.1 distributions hold
+
+STEP 10 - EXPERIMENT 1
+  [ ] Sweep over kernels/rankers with multiple seeds (min 10), flat
+      seed-major queue, runtime executor detection, workers return paths
+  [ ] Null-comparison protocol: every effect vs kernel="null"
+
+STEP 11 - DRIFT  (no LLM)
+  [ ] Channel 1: reinforcement bandit on expression dims (surprise-based)
+  [ ] Channel 2: social influence on stance, action-weighted
+  [ ] Ornstein-Uhlenbeck composition + slow baseline drift Bs
+  [ ] Gains ramped from zero, one loop at a time
+  [ ] Verify: no runaway over 1000 ticks with all channels live
+
+STEP 12 - LLM REALIZATION PASS  (first LLM dependency)
+  [ ] Voice cards (cached, keyed by hash of archetype + quantized traits)
+  [ ] Batched rendering over a COMPLETED run, 20-50 posts per call
+  [ ] Trait band quantization to 5-point verbal labels (never raw floats)
+  [ ] Lazy realization: render only the subgraph a human will read
+  [ ] LLM adjudication (gated, event-triggered, bounded deltas) - last
+
+OPEN MODELLING DECISIONS (spec 7 - decide when the relevant step lands)
+  - Topic representation: one-hot first (recommended), simplex later
+  - Graph static for v1; dynamic follow/unfollow as explicit condition later
+  - No churn in v1 (survivorship effects confound everything before it)
+  - Quality observability to users: noisy vs perfect
+  - Stance dims orthogonal vs correlated (collapse-to-one-axis as condition)
+  - Bot / coordinated-inauthentic archetype (cheap, useful)
+
+NOTES / RULES THAT APPLY THROUGHOUT
+  - float64 throughout, including snapshots (dev 7.2)
+  - Snapshots stream to parquet, never accumulate in memory (dev 7.3)
+  - Exposures are not persisted; per-tick counts + 1% sample only
+  - Registry stays a sorted list; never branch on exact float equality
+  - Statistical reproducibility across seeds is the promise, not bitwise
+  - Always sweep multiple seeds; report distributions, not points
