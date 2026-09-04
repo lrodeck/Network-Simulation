@@ -31,6 +31,8 @@ def _candidate_edges(pop: Population, k: int) -> tuple[np.ndarray, np.ndarray, n
     L = _latent_coords(pop)
     n = L.shape[0]
     k = min(k, n - 1)
+    if k <= 0:
+        return np.empty(0, dtype=np.int64), np.empty(0, dtype=np.int64), np.empty(0)
     tree = cKDTree(L)
     dists, idxs = tree.query(L, k=k + 1)
     dists, idxs = dists[:, 1:], idxs[:, 1:]  # drop self (distance 0 at column 0)

@@ -50,23 +50,23 @@ STEP 4 - GRAPH  (done)
   [x] Verify: degree distribution, clustering, homophily; neighbourhoods
       measurably differ (SBM / strong-homophily latent default, dev 1)
 
-STEP 5 - TIMING AND GENERATION  (no LLM)
-  [ ] Circadian two-peak shape, Poisson posting with fatigue
-  [ ] Hawkes replies (alpha/beta < 1; ratio is the pile-on dial)
-  [ ] Post dimension generation: trait->expression map A as a sparse,
+STEP 5 - TIMING AND GENERATION  (done)
+  [x] Circadian two-peak shape, Poisson posting with fatigue
+  [x] Hawkes replies (alpha/beta < 1; ratio is the pile-on dial)
+  [x] Post dimension generation: trait->expression map A as a sparse,
       commented, named-entry table; B/C maps; conformity stance line
-  [ ] Stub renderer emitting "[u17 - topic3 - strong]"
+  [x] Stub renderer emitting "[u17 - topic3 - strong]"
 
-STEP 6 - EXPOSURE AND REACTION  (no LLM)
-  [ ] Vectorised follower scatter (no per-user loops), fan-out cap
-  [ ] Injection (k_inj), attention budget B_u ~ Poisson(b*activity),
+STEP 6 - EXPOSURE AND REACTION  (done)
+  [x] Vectorised follower scatter (no per-user loops), fan-out cap
+  [x] Injection (k_inj), attention budget B_u ~ Poisson(b*activity),
       position decay exp(-r/tau)
-  [ ] Rankers: chronological, random, popularity, affinity,
+  [x] Rankers: chronological, random, popularity, affinity,
       engagement_optimized
-  [ ] Engagement kernel: multinomial logit with skip as reference;
+  [x] Engagement kernel: multinomial logit with skip as reference;
       feature map phi + thetas for homophily / outrage / bandwagon /
       epistemic / null
-  [ ] First runnable dynamics end to end
+  [x] First runnable dynamics end to end
 
 STEP 7 - PERCEPTION AND MEASURES
   [ ] F_local / F_global blending, measure registry
