@@ -4,23 +4,23 @@ DISCOURSE LAB - STILL TO DO
 Build order follows discourse-lab-dev.md section 6 (mechanics wins) with
 modelling detail from discourse-lab-spec.md. Nothing below step 11 needs an LLM.
 
-STEP 1 - SKELETON  (in progress)
+STEP 1 - SKELETON  (done)
   [x] pyproject.toml, package layout
   [x] Nested frozen configs + structural hashing        config.py
   [x] Registry (sorted, deterministic)                  registry.py
   [x] Workspace resolver (DLAB_HOME / Colab / cwd)      io/workspace.py
   [x] Scenario config compatible with stance-editor JSON
   [x] Default scenario data (generated, committed)      data/scenarios/default.json
-  [ ] runner.py: phase_rngs (RNG discipline, spec 3.4),
+  [x] runner.py: phase_rngs (RNG discipline, spec 3.4),
       run_iter with an EMPTY tick loop, run(), cached_run()
-  [ ] io/store.py: streaming parquet RunWriter (row group per tick,
+  [x] io/store.py: streaming parquet RunWriter (row group per tick,
       flat memory in run length, dev 7.3) + lazy RunHandle
-  [ ] io/artifacts.py: content-addressed pop/graph artifact cache
+  [x] io/artifacts.py: content-addressed pop/graph artifact cache
       keyed by structural sub-hash (dev 8.2)
-  [ ] tests: a run caches and reloads; changing a population field
+  [x] tests: a run caches and reloads; changing a population field
       invalidates the population artifact and nothing else;
       phase RNG streams are stable and independent
-  [ ] minimal README, pip install -e . sanity check
+  [x] minimal README, pip install -e . sanity check
 
 STEP 2 - POPULATION  (no LLM)
   [ ] Marginal registry (lognormal, pareto, beta, vonmises phase, normal)

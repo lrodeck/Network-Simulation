@@ -11,7 +11,7 @@ from discourse_lab.config import (
     PopulationConfig,
     ScenarioConfig,
 )
-from discourse_lab.runner import cached_run, phase_rngs, run, run_iter
+from discourse_lab.runner import cached_run, load_run, phase_rngs, run, run_iter
 from discourse_lab.sweep import sweep
 
 __version__ = "0.1.0"
@@ -25,6 +25,7 @@ __all__ = [
     "run",
     "run_iter",
     "cached_run",
+    "load_run",
     "sweep",
     "phase_rngs",
     "__version__",
