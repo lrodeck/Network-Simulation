@@ -22,13 +22,13 @@ STEP 1 - SKELETON  (done)
       phase RNG streams are stable and independent
   [x] minimal README, pip install -e . sanity check
 
-STEP 2 - POPULATION  (no LLM)
-  [ ] Marginal registry (lognormal, pareto, beta, vonmises phase, normal)
-  [ ] Empirical inverse CDF from the editor's density arrays
-  [ ] Gaussian copula + Higham nearest-PSD projection
-  [ ] Archetype mixture (offsets only; labels never read by dynamics)
-  [ ] Stored-space links: logits for [0,1] traits, logs for positive
-  [ ] Verify: marginals + rank correlations match spec; scenario curves
+STEP 2 - POPULATION  (done)
+  [x] Marginal registry (lognormal, pareto, beta, vonmises phase, normal)
+  [x] Empirical inverse CDF from the editor's density arrays
+  [x] Gaussian copula + Higham nearest-PSD projection
+  [x] Archetype mixture (offsets only; labels never read by dynamics)
+  [x] Stored-space links: logits for [0,1] traits, logs for positive
+  [x] Verify: marginals + rank correlations match spec; scenario curves
       reproduce in the drawn sample
 
 STEP 3 - STANCE EDITOR AS ANYWIDGET
