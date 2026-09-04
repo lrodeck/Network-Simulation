@@ -50,12 +50,12 @@ STEP 4 - GRAPH  (done)
   [x] Verify: degree distribution, clustering, homophily; neighbourhoods
       measurably differ (SBM / strong-homophily latent default, dev 1)
 
-STEP 5 - TIMING AND GENERATION  (no LLM)
-  [ ] Circadian two-peak shape, Poisson posting with fatigue
-  [ ] Hawkes replies (alpha/beta < 1; ratio is the pile-on dial)
-  [ ] Post dimension generation: trait->expression map A as a sparse,
+STEP 5 - TIMING AND GENERATION  (done)
+  [x] Circadian two-peak shape, Poisson posting with fatigue
+  [x] Hawkes replies (alpha/beta < 1; ratio is the pile-on dial)
+  [x] Post dimension generation: trait->expression map A as a sparse,
       commented, named-entry table; B/C maps; conformity stance line
-  [ ] Stub renderer emitting "[u17 - topic3 - strong]"
+  [x] Stub renderer emitting "[u17 - topic3 - strong]"
 
 STEP 6 - EXPOSURE AND REACTION  (no LLM)
   [ ] Vectorised follower scatter (no per-user loops), fan-out cap

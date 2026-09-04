@@ -19,6 +19,9 @@ LINKS: dict[str, tuple] = {
     "identity": (lambda s: s, lambda u: u),
     "logit": (lambda s: expit(s), lambda u: _logit(np.clip(u, 1e-9, 1 - 1e-9))),
     "log": (lambda s: np.exp(s), lambda u: np.log(np.clip(u, 1e-12, None))),
+    # symmetric bounded traits (e.g. post valence in [-1,1]) use tanh, the
+    # natural analogue of the logit for a [0,1] trait.
+    "tanh": (lambda s: np.tanh(s), lambda u: np.arctanh(np.clip(u, -1 + 1e-9, 1 - 1e-9))),
 }
 
 
