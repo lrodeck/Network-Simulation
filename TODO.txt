@@ -57,16 +57,16 @@ STEP 5 - TIMING AND GENERATION  (done)
       commented, named-entry table; B/C maps; conformity stance line
   [x] Stub renderer emitting "[u17 - topic3 - strong]"
 
-STEP 6 - EXPOSURE AND REACTION  (no LLM)
-  [ ] Vectorised follower scatter (no per-user loops), fan-out cap
-  [ ] Injection (k_inj), attention budget B_u ~ Poisson(b*activity),
+STEP 6 - EXPOSURE AND REACTION  (done)
+  [x] Vectorised follower scatter (no per-user loops), fan-out cap
+  [x] Injection (k_inj), attention budget B_u ~ Poisson(b*activity),
       position decay exp(-r/tau)
-  [ ] Rankers: chronological, random, popularity, affinity,
+  [x] Rankers: chronological, random, popularity, affinity,
       engagement_optimized
-  [ ] Engagement kernel: multinomial logit with skip as reference;
+  [x] Engagement kernel: multinomial logit with skip as reference;
       feature map phi + thetas for homophily / outrage / bandwagon /
       epistemic / null
-  [ ] First runnable dynamics end to end
+  [x] First runnable dynamics end to end
 
 STEP 7 - PERCEPTION AND MEASURES
   [ ] F_local / F_global blending, measure registry

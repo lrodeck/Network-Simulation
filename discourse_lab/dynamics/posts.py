@@ -31,6 +31,14 @@ class PostBatch:
     specificity: np.ndarray
     quality: np.ndarray
     length: np.ndarray
+    # metadata (spec §1.2)
+    id: np.ndarray
+    t: np.ndarray
+    parent: np.ndarray             # -1 for roots
+    root: np.ndarray
+    depth: np.ndarray
+    kind: np.ndarray                # "post" | "reply" | "repost" | "quote"
+    engagement_count: np.ndarray    # mutable running tally, for popularity/social_proof
 
     def __len__(self) -> int:
         return len(self.author)
@@ -75,6 +83,8 @@ def generate_posts(
     rng: np.random.Generator,
     noise_sigma_stance: float = 0.1,
     noise_sigma_d: float = 0.15,
+    start_id: int = 0,
+    t: int = 0,
 ) -> PostBatch:
     names = pop.trait_names
     topic_cols = [i for i, n in enumerate(names) if n.startswith("topic_affinity_")]
@@ -90,6 +100,9 @@ def generate_posts(
 
     d = expression.generate(pop.X_stored[authors], topic_p, s_t, rng, noise_sigma_d)
 
+    m = len(authors)
+    ids = np.arange(start_id, start_id + m)
+
     return PostBatch(
         author=authors,
         topic=topic_p,
@@ -101,4 +114,11 @@ def generate_posts(
         specificity=d["specificity"],
         quality=d["quality"],
         length=d["length"],
+        id=ids,
+        t=np.full(m, t),
+        parent=np.full(m, -1),
+        root=ids.copy(),
+        depth=np.zeros(m, dtype=np.int64),
+        kind=np.full(m, "post"),
+        engagement_count=np.zeros(m, dtype=np.int64),
     )
