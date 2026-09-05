@@ -68,14 +68,17 @@ STEP 6 - EXPOSURE AND REACTION  (done)
       epistemic / null
   [x] First runnable dynamics end to end
 
-STEP 7 - PERCEPTION AND MEASURES
-  [ ] F_local / F_global blending, measure registry
-  [ ] Salience/stance agreement pair, bubble index
+STEP 7 - PERCEPTION AND MEASURES  (done)
+  [x] F_local / F_global blending, measure registry
+  [x] Salience/stance agreement pair, bubble index
+      -- attention_gini also added to the measure registry here, since
+      dev 7.1 lists it alongside the agreement pair and bubble index as
+      what the run monitor plots live.
 
-STEP 8 - FRONTIER CASCADES
-  [ ] Derived posts, depth decay rho^depth, hard caps with warnings
-  [ ] R_eff diagnostic per tick (warn when it sits above 1)
-  [ ] Verify: cascade size distribution heavy-tailed, >90% singletons
+STEP 8 - FRONTIER CASCADES  (done)
+  [x] Derived posts, depth decay rho^depth, hard caps with warnings
+  [x] R_eff diagnostic per tick (warn when it sits above 1)
+  [x] Verify: cascade size distribution heavy-tailed, >90% singletons
       at scale; boundary-crossing diagnostic works
 
 STEP 9 - RUN MONITOR WIDGET + POST-RUN ANALYSIS
