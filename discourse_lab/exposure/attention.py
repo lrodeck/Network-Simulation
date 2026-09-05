@@ -33,9 +33,17 @@ def select_exposures(
     attention_budget: float,
     tau_position: float,
     rng: np.random.Generator,
+    cascade_depth: np.ndarray | None = None,
+    cascade_rho: float = 1.0,
 ) -> Exposures:
     """Rank each user's candidates by score, cap at their Poisson attention
     budget `B_u`, then thin by position-decay visibility.
+
+    `cascade_depth` (aligned with `pairs`, spec §2.7) additionally multiplies
+    visibility by `cascade_rho ** depth`: a derived (repost/quote) post's
+    reach shrinks geometrically with how far it is from its root, on top of
+    ordinary position decay. Omit it (the default) for root-only posts, where
+    depth is always 0 and the multiplier is exactly 1.
     """
     if len(pairs) == 0:
         empty = np.empty(0, dtype=np.int64)
@@ -53,6 +61,8 @@ def select_exposures(
 
     within_budget = rank < budget_per_row
     visibility = np.exp(-rank / tau_position)
+    if cascade_depth is not None:
+        visibility = visibility * (cascade_rho ** cascade_depth[order])
     seen = rng.random(len(sorted_user)) < visibility
     keep = within_budget & seen
 

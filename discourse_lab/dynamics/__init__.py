@@ -1,5 +1,6 @@
 """Timing, generation, and (later steps) exposure/reaction/drift (spec §2.3-2.8)."""
 
+from discourse_lab.dynamics.cascade import CascadeState, check_r_eff, derive_posts, follower_counts, r_eff
 from discourse_lab.dynamics.expression import ExpressionMap
 from discourse_lab.dynamics.hawkes import HawkesThreads
 from discourse_lab.dynamics.perception import PerceivedState, compute_perception
@@ -19,4 +20,9 @@ __all__ = [
     "sample_post_counts",
     "PerceivedState",
     "compute_perception",
+    "CascadeState",
+    "derive_posts",
+    "follower_counts",
+    "r_eff",
+    "check_r_eff",
 ]

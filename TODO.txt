@@ -75,10 +75,10 @@ STEP 7 - PERCEPTION AND MEASURES  (done)
       dev 7.1 lists it alongside the agreement pair and bubble index as
       what the run monitor plots live.
 
-STEP 8 - FRONTIER CASCADES
-  [ ] Derived posts, depth decay rho^depth, hard caps with warnings
-  [ ] R_eff diagnostic per tick (warn when it sits above 1)
-  [ ] Verify: cascade size distribution heavy-tailed, >90% singletons
+STEP 8 - FRONTIER CASCADES  (done)
+  [x] Derived posts, depth decay rho^depth, hard caps with warnings
+  [x] R_eff diagnostic per tick (warn when it sits above 1)
+  [x] Verify: cascade size distribution heavy-tailed, >90% singletons
       at scale; boundary-crossing diagnostic works
 
 STEP 9 - RUN MONITOR WIDGET + POST-RUN ANALYSIS
