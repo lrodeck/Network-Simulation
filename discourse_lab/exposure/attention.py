@@ -21,6 +21,7 @@ class Exposures:
     post_idx: np.ndarray
     user_id: np.ndarray
     rank: np.ndarray
+    is_follower: np.ndarray | None = None
 
     def __len__(self) -> int:
         return len(self.post_idx)
@@ -47,11 +48,12 @@ def select_exposures(
     """
     if len(pairs) == 0:
         empty = np.empty(0, dtype=np.int64)
-        return Exposures(post_idx=empty, user_id=empty, rank=empty)
+        return Exposures(post_idx=empty, user_id=empty, rank=empty, is_follower=np.empty(0, dtype=bool))
 
     order = np.lexsort((-scores, pairs.user_id))  # primary key: user_id asc; secondary: score desc
     sorted_user = pairs.user_id[order]
     sorted_post = pairs.post_idx[order]
+    sorted_is_follower = pairs.is_follower[order]
 
     unique_users, start_idx, counts = np.unique(sorted_user, return_index=True, return_counts=True)
     rank = np.arange(len(sorted_user)) - np.repeat(start_idx, counts)
@@ -66,4 +68,6 @@ def select_exposures(
     seen = rng.random(len(sorted_user)) < visibility
     keep = within_budget & seen
 
-    return Exposures(post_idx=sorted_post[keep], user_id=sorted_user[keep], rank=rank[keep])
+    return Exposures(
+        post_idx=sorted_post[keep], user_id=sorted_user[keep], rank=rank[keep], is_follower=sorted_is_follower[keep]
+    )

@@ -44,6 +44,24 @@ class PostBatch:
         return len(self.author)
 
 
+_FIELDS = (
+    "author", "topic", "stance", "arousal", "valence", "provocativeness", "novelty",
+    "specificity", "quality", "length", "id", "t", "parent", "root", "depth", "kind",
+    "engagement_count",
+)
+
+
+def concat_post_batches(batches: list["PostBatch"]) -> "PostBatch":
+    batches = [b for b in batches if len(b) > 0]
+    if not batches:
+        raise ValueError("concat_post_batches requires at least one non-empty batch")
+    return PostBatch(**{f: np.concatenate([getattr(b, f) for b in batches]) for f in _FIELDS})
+
+
+def filter_post_batch(batch: "PostBatch", mask: np.ndarray) -> "PostBatch":
+    return PostBatch(**{f: getattr(batch, f)[mask] for f in _FIELDS})
+
+
 def _softmax(logits: np.ndarray) -> np.ndarray:
     z = logits - logits.max(axis=1, keepdims=True)
     e = np.exp(z)
