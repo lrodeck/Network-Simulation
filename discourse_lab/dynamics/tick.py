@@ -91,7 +91,16 @@ class TickEngine:
         self.engagement_events = None
 
         circ = circadian_factor(t, cfg.ticks_per_day, self.phase_ticks, self.circ_shape)
-        n_posts = sample_post_counts(rngs["timing"], self.activity, circ, self.fatigue.factor())
+        # posts_per_tick_rate is the Poisson rate at activity = 1 (spec §2.3's
+        # lambda_u). It was declared in the config and never applied, so the
+        # raw activity trait was the rate: ~2 posts/user/tick instead of
+        # ~0.04. Besides the volume, that washed out the heterogeneity the
+        # lognormal activity trait exists to create — averaging many Poisson
+        # draws per user pulls everyone toward the mean and collapsed the
+        # posting-volume Gini.
+        n_posts = sample_post_counts(
+            rngs["timing"], self.activity * cfg.posts_per_tick_rate, circ, self.fatigue.factor()
+        )
         authors = np.repeat(np.arange(n), n_posts)
 
         new_posts = None

@@ -27,6 +27,7 @@ ACTIONS = ("like", "reply", "repost", "quote", "report")
 # term: a plain positive theta on it reproduces "disagreement raises
 # engagement, more so the more contrarian the user".
 FEATURES = (
+    "intercept",
     "affinity",
     "agreement",
     "arousal",
@@ -43,28 +44,63 @@ FEATURES = (
     "credulity_x_q",
 )
 
+# Per-action intercepts — the baseline propensity to do anything at all.
+#
+# These are load-bearing and were missing until calibration. Without them
+# every action has U_a = 0 before features are consulted, so
+# P(skip) = 1/(1+5) = 17% and the simulation engages on 83% of exposures no
+# matter what the kernel is: even `null`, which the spec describes as
+# "intercept only", had no intercept. Real platforms sit at a few percent,
+# and the difference propagates everywhere — an 80% engagement rate drove
+# R_eff to ~16 against the spec's requirement of E[R] < 1, which in turn
+# made 71% of cascades non-singletons against a >90% singleton target.
+#
+# Levels are set so a featureless exposure engages ~4% of the time with a
+# plausible action mix (roughly 65% like, 14% repost, 14% reply, 5% quote,
+# <1% report), and so the repost rate keeps R_eff subcritical at the default
+# mean degree of 40.
+DEFAULT_INTERCEPTS: dict[str, float] = {
+    "like": -3.5,
+    "repost": -5.0,
+    "reply": -5.0,
+    "quote": -6.0,
+    "report": -8.0,
+}
+
+_INTERCEPT_ENTRIES = tuple(
+    (action, "intercept", weight) for action, weight in DEFAULT_INTERCEPTS.items()
+)
+
+
+def _with_intercepts(entries: tuple[tuple[str, str, float], ...]) -> tuple[tuple[str, str, float], ...]:
+    """Every kernel carries the baseline; features move a user off it."""
+    return _INTERCEPT_ENTRIES + entries
+
+
 # theta entries: (action, feature, weight). Dominant terms per dev §6 step 6
 # table; unlisted (action, feature) pairs are zero.
 KERNEL_THETAS: dict[str, tuple[tuple[str, str, float], ...]] = {
-    "homophily": (
+    "homophily": _with_intercepts((
         ("like", "affinity", 1.0), ("like", "agreement", 1.0),
         ("repost", "affinity", 0.8), ("repost", "agreement", 0.8),
         ("reply", "affinity", 0.5), ("reply", "agreement", 0.5),
-    ),
-    "outrage": (
+    )),
+    "outrage": _with_intercepts((
         ("reply", "disagree_x_con", 1.5), ("reply", "arousal", 1.0),
         ("quote", "disagree_x_con", 1.3), ("quote", "arousal", 0.8),
         ("report", "disagree_x_con", 1.0),
-    ),
-    "bandwagon": (
+    )),
+    "bandwagon": _with_intercepts((
         ("like", "social_proof", 1.0), ("like", "prominence", 0.6),
         ("repost", "social_proof", 1.2), ("repost", "prominence", 0.8),
-    ),
-    "epistemic": (
+    )),
+    "epistemic": _with_intercepts((
         ("like", "quality", 1.0), ("like", "novelty", 0.4),
         ("quote", "quality", 0.8), ("quote", "specificity", 0.4),
-    ),
-    "null": (),
+    )),
+    # spec §2.6: "intercept only" — the pure structural baseline, with no
+    # feature dependence at all
+    "null": _with_intercepts(()),
 }
 for _name, _entries in KERNEL_THETAS.items():
     register("kernel_theta", _name)(_entries)
@@ -100,6 +136,7 @@ def compute_features(
 
     arousal = posts.arousal[p]
     return {
+        "intercept": np.ones(len(u)),
         "affinity": affinity,
         "agreement": agreement,
         "arousal": arousal,
