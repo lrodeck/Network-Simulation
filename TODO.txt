@@ -101,10 +101,21 @@ STEP 9 - RUN MONITOR WIDGET + POST-RUN ANALYSIS  (done)
      Hawkes-thread bookkeeping across ticks), and drift is not wired
      (step 11).
 
-STEP 10 - EXPERIMENT 1
-  [ ] Sweep over kernels/rankers with multiple seeds (min 10), flat
+STEP 10 - EXPERIMENT 1  (done)
+  [x] Sweep over kernels/rankers with multiple seeds (min 10), flat
       seed-major queue, runtime executor detection, workers return paths
-  [ ] Null-comparison protocol: every effect vs kernel="null"
+      -- flat seed-major queue + executor detection were already built in
+      Step 1 (sweep.py); this step adds discourse_lab/experiments/, which
+      builds the (kernel, ranker) x seed cells and drives them through
+      cached_run.
+  [x] Null-comparison protocol: every effect vs kernel="null"
+      -- "familiarity/virality blend" (dev 6 step 10) points at a
+      "design doc" section (design 5.2 / design 10) that isn't checked
+      into this repo, so Experiment 1 is scoped to what TODO.txt itself
+      specifies: sweep kernels x rankers, every effect reported as a
+      delta against a matched kernel="null" run (same population/graph/
+      activity), distributions over >=10 seeds rather than point
+      estimates.
 
 STEP 11 - DRIFT  (no LLM)
   [ ] Channel 1: reinforcement bandit on expression dims (surprise-based)
