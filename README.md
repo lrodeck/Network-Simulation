@@ -27,6 +27,14 @@ A run is keyed by its config's structural hash and seed
 instead of recomputing it. The workspace root defaults to `./dlab`, `DLAB_HOME`
 if set, or `/content/dlab` under Colab.
 
+## Notebook
+
+[`notebooks/demo.ipynb`](notebooks/demo.ipynb) is a runnable, end-to-end tour
+in build order — config, population, graph, both widgets, a run, post-run
+metrics, an Experiment-1-style sweep, drift, and LLM realization. Executes
+top to bottom in well under a minute (`jupyter execute notebooks/demo.ipynb`);
+copy whichever section you need into your own notebook.
+
 ## LLM realization (optional)
 
 Text generation is an offline pass over a completed run, never inside the
