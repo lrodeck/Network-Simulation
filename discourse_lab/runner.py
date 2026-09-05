@@ -14,8 +14,11 @@ from typing import Iterator
 import numpy as np
 
 from discourse_lab.config import Config
+from discourse_lab.dynamics.tick import TickEngine
 from discourse_lab.io.store import RunHandle, RunWriter
 from discourse_lab.io.workspace import runs_dir
+from discourse_lab.network import cached_graph
+from discourse_lab.population import cached_population
 
 # Fixed order: spawning child generators from this list must stay stable across
 # versions, or resuming an old seed produces different streams than it did
@@ -62,11 +65,19 @@ def run_dir(cfg: Config, seed: int) -> Path:
 
 
 def run_iter(cfg: Config, seed: int) -> Iterator[State]:
-    """Generator core. Empty tick body — phases land in later build steps."""
+    """Generator core: population/graph are cached artifacts, then the tick
+    engine (discourse_lab.dynamics.tick.TickEngine) runs timing, generation,
+    exposure, reaction, cascades, perception, and the discourse-state update
+    each tick. Drift (step 11) is not wired in yet, so traits are static.
+    """
     rngs = phase_rngs(seed)
+    pop = cached_population(cfg, seed, rngs["population"])
+    graph = cached_graph(cfg, seed, pop, rngs["graph"])
+    engine = TickEngine(cfg=cfg, pop=pop, graph=graph, rngs=rngs)
+
     for t in range(cfg.dynamics.n_ticks):
-        # phases hook in here, one per build step (dev §6); nothing yet runs.
-        yield State(t=t, cfg=cfg, seed=seed, rngs=rngs, metrics={})
+        metrics = engine.step(t)
+        yield State(t=t, cfg=cfg, seed=seed, rngs=rngs, metrics=metrics)
 
 
 def run(cfg: Config, seed: int) -> Path:
