@@ -31,7 +31,15 @@ def voice_cards_dir() -> Path:
     return workspace() / "voice_cards"
 
 
+def figures_dir() -> Path:
+    return workspace() / "figures"
+
+
+def tables_dir() -> Path:
+    return workspace() / "tables"
+
+
 def ensure_workspace() -> Path:
-    for d in (runs_dir(), artifacts_dir(), scenarios_dir(), voice_cards_dir()):
+    for d in (runs_dir(), artifacts_dir(), scenarios_dir(), voice_cards_dir(), figures_dir(), tables_dir()):
         d.mkdir(parents=True, exist_ok=True)
     return workspace()

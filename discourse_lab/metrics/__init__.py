@@ -13,6 +13,18 @@ from __future__ import annotations
 import numpy as np
 from scipy import stats
 
+from discourse_lab.metrics.powerlaw import PowerLawFit, ccdf, powerlaw_alpha, powerlaw_fit
+from discourse_lab.metrics.stylized import (
+    cascade_singleton_share,
+    cascade_sizes,
+    inter_cluster_interaction,
+    lorenz_curve,
+    posting_volume_gini,
+    stance_clusters,
+    thread_depth_mean,
+    thread_depths,
+)
+
 # --------------------------------------------------------------------------
 # §5.2 experimental metrics
 # --------------------------------------------------------------------------
@@ -118,37 +130,130 @@ def null_comparison(effect: float, null_effect: float) -> float:
 # §5.1 stylized facts
 # --------------------------------------------------------------------------
 
+# All 8 rows of the spec §5.1 table. The three that had no encoded range
+# before (`engagement_alpha`, `clustering_ratio`, `inter_cluster_rate`) are
+# read off the table's prose: alpha in [2,3]; clustering "≫ random graph of
+# same degree", taken as at least 3x; inter-cluster interaction "low", taken
+# as under a third of engagements.
 STYLIZED_FACT_RANGES: dict[str, tuple[float, float]] = {
+    "engagement_alpha": (2.0, 3.0),
+    "cascade_singleton_share": (0.9, 1.0),
+    "thread_depth_mean": (1.5, 3.0),
     "attention_gini": (0.8, 0.95),
     "posting_volume_gini": (0.7, 0.9),
     "reciprocity": (0.2, 0.4),
-    "cascade_singleton_share": (0.9, 1.0),
-    "thread_depth_mean": (1.5, 3.0),
+    "clustering_ratio": (3.0, np.inf),
+    "inter_cluster_rate": (0.0, 0.33),
+}
+
+STYLIZED_FACT_LABELS: dict[str, str] = {
+    "engagement_alpha": "Engagement per post (power-law alpha)",
+    "cascade_singleton_share": "Cascade size (share of singletons)",
+    "thread_depth_mean": "Thread depth (mean, branched cascades)",
+    "attention_gini": "Attention Gini (lifetime, per post)",
+    "posting_volume_gini": "Posting volume Gini",
+    "reciprocity": "Reciprocity",
+    "clustering_ratio": "Clustering vs degree-matched null",
+    "inter_cluster_rate": "Inter-cluster interaction rate",
 }
 
 
-def stylized_facts_report(
-    attention_gini: float | None = None,
-    posting_volume_gini: float | None = None,
-    reciprocity: float | None = None,
-    cascade_singleton_share: float | None = None,
-    thread_depth_mean: float | None = None,
-) -> dict[str, dict]:
+def stylized_facts_report(**values: float | None) -> dict[str, dict]:
     """Check whichever facts are supplied against spec §5.1's target ranges.
     The simulation is calibrated when these emerge without being imposed —
     do not proceed past this step until they hold (dev §6 step 9).
+
+    Unsupplied facts are omitted rather than reported as failures, so a
+    partial run (no posts persisted, say) still produces an honest table of
+    what it could actually measure.
     """
-    values = {
-        "attention_gini": attention_gini,
-        "posting_volume_gini": posting_volume_gini,
-        "reciprocity": reciprocity,
-        "cascade_singleton_share": cascade_singleton_share,
-        "thread_depth_mean": thread_depth_mean,
-    }
+    unknown = set(values) - set(STYLIZED_FACT_RANGES)
+    if unknown:
+        raise ValueError(f"unknown stylized fact(s): {sorted(unknown)}")
+
     report = {}
-    for name, value in values.items():
+    for name in STYLIZED_FACT_RANGES:  # spec table order, not kwargs order
+        value = values.get(name)
         if value is None:
             continue
         lo, hi = STYLIZED_FACT_RANGES[name]
-        report[name] = {"value": value, "target": (lo, hi), "in_range": lo <= value <= hi}
+        report[name] = {
+            "label": STYLIZED_FACT_LABELS[name],
+            "value": float(value),
+            "target": (lo, hi),
+            "in_range": bool(lo <= value <= hi) if np.isfinite(value) else False,
+        }
+    return report
+
+
+def stylized_facts_from_run(handle, graph=None, pop=None, rng=None) -> dict[str, dict]:
+    """Compute every §5.1 fact this run has the data for, and report it.
+
+    `handle` is a `RunHandle`. Facts needing per-post data are skipped unless
+    the run was written with `persist=("posts",)`; the cross-cluster fact also
+    needs `"engagements"` plus `pop` for archetype labels; the graph facts
+    need `graph`. Whatever is missing is simply absent from the report rather
+    than reported as a failure — see `stylized_facts_report`.
+
+    Note the attention Gini here is **lifetime engagement per post**, not the
+    rolling per-tick `attention_gini` column in `metrics.parquet`. The two
+    measure different things and will not agree; any table built from this
+    should say which it shows.
+    """
+    from discourse_lab.measures import gini
+    from discourse_lab.network.measures import clustering_vs_random
+    from discourse_lab.network.measures import reciprocity as measure_reciprocity
+
+    rng = rng if rng is not None else np.random.default_rng(0)
+    facts: dict[str, float] = {}
+
+    if handle.has_posts:
+        posts = handle.posts()
+        engagement = posts["engagement_count"].to_numpy()
+        facts["engagement_alpha"] = powerlaw_alpha(engagement)
+        facts["attention_gini"] = gini(engagement)
+
+        root = posts["root"].to_numpy()
+        facts["cascade_singleton_share"] = cascade_singleton_share(root)
+        facts["thread_depth_mean"] = thread_depth_mean(root, posts["depth"].to_numpy())
+
+        roots_only = posts.filter(posts["kind"] == "post")
+        n_users = int(handle.meta["config"]["population"]["n_users"])
+        facts["posting_volume_gini"] = posting_volume_gini(roots_only["author"].to_numpy(), n_users)
+
+    if graph is not None:
+        facts["reciprocity"] = measure_reciprocity(graph.csr)
+        facts["clustering_ratio"] = clustering_vs_random(graph.csr, rng)[2]
+
+    if handle.has_posts and handle.has_engagements and pop is not None:
+        posts = handle.posts()
+        engagements = handle.engagements()
+        author_of_post = dict(zip(posts["id"].to_list(), posts["author"].to_list()))
+        post_ids = engagements["post"].to_numpy()
+        authors = np.array([author_of_post.get(int(p), -1) for p in post_ids])
+        known = authors >= 0
+        if known.any():
+            # ideological camps, not archetypes — see stylized.stance_clusters
+            stance_cols = [i for i, n in enumerate(pop.trait_names) if n.startswith("stance_")]
+            labels = stance_clusters(pop.X_used[:, stance_cols])
+            rate, hostility = inter_cluster_interaction(
+                engagements["user"].to_numpy()[known],
+                authors[known],
+                engagements["action"].to_numpy()[known],
+                labels,
+            )
+            facts["inter_cluster_rate"] = rate
+            facts["_hostility_given_contact"] = hostility
+
+    hostility = facts.pop("_hostility_given_contact", None)
+    report = stylized_facts_report(**facts)
+    if hostility is not None:
+        # the other half of the fact: "hostility rate high given contact".
+        # No range is quoted in the spec, so it is reported, not graded.
+        report["hostility_given_contact"] = {
+            "label": "Hostility given cross-cluster contact",
+            "value": float(hostility),
+            "target": None,
+            "in_range": None,
+        }
     return report
