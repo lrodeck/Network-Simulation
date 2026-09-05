@@ -29,6 +29,8 @@ class Population:
     trait_names: list[str]
     X_used: np.ndarray     # N x n, constrained space
     X_stored: np.ndarray   # N x n, unconstrained space drift operates on
+    links: list[str]       # per-column link kind ("identity"|"logit"|"log"|"tanh"), so
+                            # drift (dynamics/drift.py) can recompute X_used from X_stored
     archetype_labels: np.ndarray
     archetype_names: list[str]
 
@@ -60,6 +62,7 @@ def sample_population(cfg: Config, rng: np.random.Generator) -> Population:
         trait_names=names,
         X_used=X_used,
         X_stored=X_stored,
+        links=[spec.link for spec in specs],
         archetype_labels=labels,
         archetype_names=[a.name for a in archetypes],
     )
@@ -71,6 +74,7 @@ def _save(path: Path, pop: Population) -> None:
         trait_names=np.array(pop.trait_names),
         X_used=pop.X_used,
         X_stored=pop.X_stored,
+        links=np.array(pop.links),
         archetype_labels=pop.archetype_labels,
         archetype_names=np.array(pop.archetype_names),
     )
@@ -82,6 +86,7 @@ def _load(path: Path) -> Population:
         trait_names=list(data["trait_names"]),
         X_used=data["X_used"],
         X_stored=data["X_stored"],
+        links=list(data["links"]),
         archetype_labels=data["archetype_labels"],
         archetype_names=list(data["archetype_names"]),
     )

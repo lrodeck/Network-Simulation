@@ -18,10 +18,12 @@ from discourse_lab.experiments import (
 
 
 def _base_cfg(n_users=300, n_ticks=6):
+    # Experiment 1 isolates kernel/ranker effects; drift is step 11's own
+    # subject and would otherwise confound the null comparison.
     return dataclasses.replace(
         Config(),
         population=dataclasses.replace(Config().population, n_users=n_users),
-        dynamics=dataclasses.replace(Config().dynamics, n_ticks=n_ticks),
+        dynamics=dataclasses.replace(Config().dynamics, n_ticks=n_ticks, drift="none"),
     )
 
 
