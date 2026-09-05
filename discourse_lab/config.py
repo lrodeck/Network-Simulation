@@ -170,11 +170,33 @@ class ScenarioConfig(Hashable):
 
 
 @dataclass(frozen=True)
+class WorldConfig(Hashable):
+    """LLM realization (spec §2.10, dev §6 step 12) — offline only, never
+    inside the tick. Model choice defaults to an Ollama Cloud model
+    (https://ollama.com); `OllamaCloudClient` reads the API key from
+    `OLLAMA_API_KEY`, not from here.
+    """
+
+    llm_model: str = "gpt-oss:120b-cloud"
+    temperature: float = 0.8
+    voice_card_max_tokens: int = 220
+    render_max_tokens: int = 120
+    render_batch_size: int = 30          # posts per rendering call (spec: 20-50)
+    n_bands: int = 5                     # trait quantization band count (spec §2.10)
+
+    # channel 3 (LLM adjudication) event gating — rare, event-triggered
+    adjudication_top_percentile: float = 0.99   # top 1% engagement
+    adjudication_pile_on_threshold: int = 20    # hostile replies received
+    adjudication_max_delta: float = 0.1         # clip(Δ_llm, -eps, eps)
+
+
+@dataclass(frozen=True)
 class Config(Hashable):
     population: PopulationConfig = field(default_factory=PopulationConfig)
     graph: GraphConfig = field(default_factory=GraphConfig)
     dynamics: DynamicsConfig = field(default_factory=DynamicsConfig)
     scenario: ScenarioConfig = field(default_factory=ScenarioConfig)
+    world: WorldConfig = field(default_factory=WorldConfig)
     label: str = "default"
 
     def stance_dims(self) -> int:
@@ -189,4 +211,5 @@ class Config(Hashable):
             "graph": self.graph.hash(),
             "dynamics": self.dynamics.hash(),
             "scenario": self.scenario.hash(),
+            "world": self.world.hash(),
         }
