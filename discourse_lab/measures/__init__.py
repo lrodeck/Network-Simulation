@@ -50,7 +50,11 @@ def bubble_index(perceived: PerceivedState, global_stance_var: float) -> float:
     return float(per_user_topic.mean())
 
 
-def _gini(x: np.ndarray) -> float:
+def gini(x: np.ndarray) -> float:
+    """Gini coefficient of a non-negative vector: 0 = perfectly even, -> 1 as
+    the mass concentrates on a few entries. Zeros count — for a posting-volume
+    Gini the users who never posted are most of the distribution.
+    """
     if len(x) == 0 or x.sum() == 0:
         return 0.0
     sorted_x = np.sort(x.astype(float))
@@ -61,10 +65,14 @@ def _gini(x: np.ndarray) -> float:
 
 @register("measure", "attention_gini")
 def attention_gini(engagement_count: np.ndarray) -> float:
-    """Gini coefficient of engagement counts across posts this tick: 0 =
-    perfectly even attention, -> 1 as it concentrates on a handful of posts.
+    """Gini of engagement across the posts active this tick.
+
+    Note this is a *rolling* measure over the currently-active pool, not
+    lifetime totals per post — `metrics.parquet` and a per-post figure built
+    from `posts.parquet` will not agree, and any table reporting an attention
+    Gini has to say which one it means.
     """
-    return _gini(engagement_count)
+    return gini(engagement_count)
 
 
 def measure_names() -> list[str]:

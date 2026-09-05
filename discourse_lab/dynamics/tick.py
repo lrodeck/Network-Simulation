@@ -58,6 +58,12 @@ class TickEngine:
     next_post_id: int = field(default=0, init=False)
     global_stance_var: float = field(init=False)
 
+    # Surfaced for persistence (io/store.py) and for interactive callers who
+    # want the raw record off `run_iter` without a writer. Both are replaced
+    # every tick — nothing accumulates, so memory stays flat in run length.
+    retired_posts: PostBatch | None = field(default=None, init=False)
+    engagement_events: dict[str, np.ndarray] | None = field(default=None, init=False)
+
     def __post_init__(self) -> None:
         n = self.cfg.population.n_users
         K, D = self.cfg.population.n_topics, self.cfg.stance_dims()
@@ -81,6 +87,8 @@ class TickEngine:
         cfg = self.cfg.dynamics
         rngs = self.rngs
         n = self.cfg.population.n_users
+        self.retired_posts = None
+        self.engagement_events = None
 
         circ = circadian_factor(t, cfg.ticks_per_day, self.phase_ticks, self.circ_shape)
         n_posts = sample_post_counts(rngs["timing"], self.activity, circ, self.fatigue.factor())
@@ -131,6 +139,15 @@ class TickEngine:
                     before = posts.engagement_count.copy()
                     np.add.at(posts.engagement_count, exposures.post_idx[engaged], 1)
 
+                    # the (user, post, action, t) event log of spec §1.5 —
+                    # skips excluded, they are the reference category
+                    self.engagement_events = {
+                        "t": np.full(int(engaged.sum()), t, dtype=np.int64),
+                        "user": exposures.user_id[engaged],
+                        "post": posts.id[exposures.post_idx[engaged]],
+                        "action": actions[engaged],
+                    }
+
                     cascade_posts, cascade_warnings = derive_posts(
                         actions, exposures.post_idx, exposures.user_id, posts, self.pop, self.expr,
                         self.s, self.sigma, rngs["cascade"], self.cascade_state,
@@ -170,6 +187,10 @@ class TickEngine:
                     self.activity = self.pop.X_used[:, self.pop.trait_names.index("activity")]
 
             alive = (t - self.active_posts.t) < cfg.post_lifetime
-            self.active_posts = filter_post_batch(self.active_posts, alive) if not alive.all() else self.active_posts
+            if not alive.all():
+                # retired posts carry their FINAL engagement count, which is
+                # why persistence writes them here rather than at creation
+                self.retired_posts = filter_post_batch(self.active_posts, ~alive)
+                self.active_posts = filter_post_batch(self.active_posts, alive)
 
         return metrics
