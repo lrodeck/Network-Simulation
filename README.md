@@ -27,6 +27,26 @@ A run is keyed by its config's structural hash and seed
 instead of recomputing it. The workspace root defaults to `./dlab`, `DLAB_HOME`
 if set, or `/content/dlab` under Colab.
 
+## LLM realization (optional)
+
+Text generation is an offline pass over a completed run, never inside the
+tick (`discourse_lab.llm`). It talks to [Ollama Cloud](https://ollama.com) by
+default:
+
+```bash
+export OLLAMA_API_KEY=...   # https://ollama.com/settings/keys
+```
+
+```python
+from discourse_lab.llm import OllamaCloudClient, realize
+
+client = OllamaCloudClient(model="gpt-oss:120b-cloud")
+texts = realize(client, cfg, posts, pop, post_ids=[...])  # lazy: only these posts
+```
+
+Point `OllamaCloudClient(base_url=...)` at a local `ollama serve` instead if
+you'd rather not use the hosted service.
+
 ## Tests
 
 ```bash

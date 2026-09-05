@@ -133,12 +133,23 @@ STEP 11 - DRIFT  (done)
       sums let a fat-tailed activity draw blow up a column over 1000
       ticks despite reversion.
 
-STEP 12 - LLM REALIZATION PASS  (first LLM dependency)
-  [ ] Voice cards (cached, keyed by hash of archetype + quantized traits)
-  [ ] Batched rendering over a COMPLETED run, 20-50 posts per call
-  [ ] Trait band quantization to 5-point verbal labels (never raw floats)
-  [ ] Lazy realization: render only the subgraph a human will read
-  [ ] LLM adjudication (gated, event-triggered, bounded deltas) - last
+STEP 12 - LLM REALIZATION PASS  (done; first LLM dependency)
+  [x] Voice cards (cached, keyed by hash of archetype + quantized traits)
+  [x] Batched rendering over a COMPLETED run, 20-50 posts per call
+  [x] Trait band quantization to 5-point verbal labels (never raw floats)
+  [x] Lazy realization: render only the subgraph a human will read
+  [x] LLM adjudication (gated, event-triggered, bounded deltas) - last
+      -- discourse_lab/llm/, backed by Ollama Cloud (OllamaCloudClient,
+      OLLAMA_API_KEY, model ids like "gpt-oss:120b-cloud"); swappable to
+      a local `ollama serve` via base_url. Adds a WorldConfig to Config
+      for model/prompt knobs. Realization and adjudication both take a
+      PostBatch + Population directly rather than a persisted Run, since
+      posts.parquet isn't implemented yet (io/store.py only ever wrote
+      metrics.parquet) -- wiring this to RunHandle once that lands is a
+      follow-up. Tests use a FakeLLMClient (canned responses, call
+      counting) for determinism; this sandbox's egress policy denies
+      ollama.com outright, so a live-network test couldn't run here
+      regardless of an API key.
 
 OPEN MODELLING DECISIONS (spec 7 - decide when the relevant step lands)
   - Topic representation: one-hot first (recommended), simplex later
