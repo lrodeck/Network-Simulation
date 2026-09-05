@@ -131,6 +131,7 @@ class DynamicsConfig(Hashable):
     drift: str = "full"                       # none | social | full
     drift_lr: float = 0.02                    # reinforcement channel
     drift_lr_social: float = 0.01             # social influence channel
+    drift_ramp_ticks: int = 50                # gains ramp linearly from 0 over this many ticks
     ou_k: tuple[tuple[str, float], ...] = ()  # (block, rate) overrides
     noise_sigma: float = 0.002
     llm_adjudication: bool = False            # queued only; offline pass in v1

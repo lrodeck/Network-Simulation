@@ -26,6 +26,7 @@ import numpy as np
 from discourse_lab.config import Config
 from discourse_lab.dynamics.cascade import CascadeState, derive_posts, r_eff
 from discourse_lab.dynamics.discourse_state import update_discourse
+from discourse_lab.dynamics.drift import DriftState, apply_drift
 from discourse_lab.dynamics.expression import ExpressionMap
 from discourse_lab.dynamics.perception import compute_perception
 from discourse_lab.dynamics.posts import PostBatch, concat_post_batches, filter_post_batch, generate_posts
@@ -52,6 +53,7 @@ class TickEngine:
     phase_ticks: np.ndarray = field(init=False)
     activity: np.ndarray = field(init=False)
     cascade_state: CascadeState = field(default_factory=CascadeState)
+    drift_state: DriftState = field(default_factory=DriftState)
     active_posts: PostBatch | None = field(default=None, init=False)
     next_post_id: int = field(default=0, init=False)
     global_stance_var: float = field(init=False)
@@ -160,6 +162,12 @@ class TickEngine:
                     tick_posts = filter_post_batch(posts, delta > 0)
                     tick_posts.engagement_count = delta[delta > 0]
                     self.s, self.sigma = update_discourse(self.s, self.sigma, tick_posts, cfg.rho_s, cfg.rho_sigma)
+
+                    apply_drift(
+                        self.cfg, self.pop, self.expr, self.drift_state, rngs["drift"], t,
+                        posts, delta.astype(float), exposures, actions,
+                    )
+                    self.activity = self.pop.X_used[:, self.pop.trait_names.index("activity")]
 
             alive = (t - self.active_posts.t) < cfg.post_lifetime
             self.active_posts = filter_post_batch(self.active_posts, alive) if not alive.all() else self.active_posts

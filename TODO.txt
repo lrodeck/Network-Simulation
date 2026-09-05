@@ -117,12 +117,21 @@ STEP 10 - EXPERIMENT 1  (done)
       activity), distributions over >=10 seeds rather than point
       estimates.
 
-STEP 11 - DRIFT  (no LLM)
-  [ ] Channel 1: reinforcement bandit on expression dims (surprise-based)
-  [ ] Channel 2: social influence on stance, action-weighted
-  [ ] Ornstein-Uhlenbeck composition + slow baseline drift Bs
-  [ ] Gains ramped from zero, one loop at a time
-  [ ] Verify: no runaway over 1000 ticks with all channels live
+STEP 11 - DRIFT  (done)
+  [x] Channel 1: reinforcement bandit on expression dims (surprise-based)
+      -- surprise needs a standing per-author expectation, not just this
+      tick's mean (that's always 0 for a single post), so DriftState
+      tracks a running per-author engagement_baseline (EMA) across ticks.
+  [x] Channel 2: social influence on stance, action-weighted
+  [x] Ornstein-Uhlenbeck composition + slow baseline drift Bs
+  [x] Gains ramped from zero, one loop at a time
+  [x] Verify: no runaway over 1000 ticks with all channels live
+      -- both channels' per-user contributions are averaged (not summed)
+      over this tick's posts/exposures, so step size is set by
+      drift_lr/drift_lr_social alone rather than incidentally scaling
+      with how much a busy author/heavy feed did this tick; unnormalised
+      sums let a fat-tailed activity draw blow up a column over 1000
+      ticks despite reversion.
 
 STEP 12 - LLM REALIZATION PASS  (first LLM dependency)
   [ ] Voice cards (cached, keyed by hash of archetype + quantized traits)
