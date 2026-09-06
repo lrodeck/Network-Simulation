@@ -26,7 +26,7 @@ def _cfg(generator: str, n_users: int = 3000, **graph_overrides) -> Config:
 
 
 def test_latent_space_hits_target_mean_degree_and_has_no_self_loops():
-    cfg = _cfg("latent_space", mean_degree=30.0, reciprocity=0.0, long_tie_fraction=0.0)
+    cfg = _cfg("latent_space", mean_degree=30.0, mirror_p=0.0, long_tie_fraction=0.0)
     rng = np.random.default_rng(0)
     pop = sample_population(cfg, rng)
     g = generate_graph(cfg, pop, rng)
@@ -90,7 +90,7 @@ def test_sbm_neighbourhoods_differ_from_configuration_model():
 
 
 def test_barabasi_albert_degree_is_heavy_tailed():
-    cfg = _cfg("barabasi_albert", n_users=1500, mean_degree=10.0, reciprocity=0.0)
+    cfg = _cfg("barabasi_albert", n_users=1500, mean_degree=10.0, mirror_p=0.0)
     rng = np.random.default_rng(8)
     pop = sample_population(cfg, rng)
     g = generate_graph(cfg, pop, rng)

@@ -1,7 +1,21 @@
-"""Frontier cascades (spec §2.7): a repost or quote creates a derived post
-inheriting `root_p`, with dims perturbed (quotes shift stance toward the
-quoter, reposts do not). It re-enters exposure with the reposter as author,
-visible with multiplier `rho ** depth` (applied in `exposure.attention`).
+"""Frontier cascades (spec §2.7): a repost, quote or reply creates a derived
+post inheriting `root_p`, with dims perturbed. It re-enters exposure with the
+deriving user as author, visible with multiplier `rho ** depth` (applied in
+`exposure.attention`).
+
+The three derivation kinds differ in how far the new post's stance moves from
+its parent's toward the deriving user's own:
+
+    repost  0.0   verbatim amplification, dims untouched
+    quote   0.4   the quoter frames someone else's post
+    reply   1.0   the replier's own words, on the parent's topic
+
+Reply spawning is why thread depth is a real measurement rather than a
+degenerate one. Reposts fan out wide and shallow; on real platforms depth
+comes from reply chains. `reply` was previously counted as an engagement and
+fed the discourse-state update but never created a post, so `depth` could
+only grow through repost/quote and the spec §5.1 depth target was
+unreachable by construction.
 
     R = E[# reposts per exposure] * E[audience per repost]
 
@@ -26,7 +40,17 @@ from discourse_lab.dynamics.posts import PostBatch
 from discourse_lab.network import Graph
 from discourse_lab.population import Population
 
-CASCADE_ACTIONS = ("repost", "quote")
+CASCADE_ACTIONS = ("repost", "quote", "reply")
+
+# How far a derived post's stance moves from its parent toward the deriving
+# user's own stance. See the module docstring.
+STANCE_SHIFT = {"repost": 0.0, "quote": 0.4, "reply": 1.0}
+
+# Actions that fan a post out to a *new* audience, which is what the
+# branching factor R in `r_eff` measures. A reply is visible to the replier's
+# followers too, but it is a response rather than an amplification, and spec
+# §2.7 defines R over reposts.
+BRANCHING_ACTIONS = ("repost", "quote")
 
 
 @dataclass
@@ -102,11 +126,16 @@ def derive_posts(
     stance_cols = [i for i, n in enumerate(names) if n.startswith("stance_")]
     stance_quoter = pop.X_used[reposter][:, stance_cols]
 
-    is_quote = kind == "quote"
-    stance_new = stance_orig.copy()
-    stance_new[is_quote] = (
-        (1 - quote_stance_shift) * stance_orig[is_quote] + quote_stance_shift * stance_quoter[is_quote]
-    )
+    # per-row stance shift toward the deriving user (0 for reposts, so they
+    # stay verbatim); `quote_stance_shift` overrides the quote row for
+    # callers that tune it
+    shift = np.array([STANCE_SHIFT[k] for k in kind])
+    shift[kind == "quote"] = quote_stance_shift
+    stance_new = (1 - shift)[:, None] * stance_orig + shift[:, None] * stance_quoter
+
+    # reposts carry the original content; quotes and replies re-run the
+    # expression map for the deriving user's own perturbation
+    regenerates = kind != "repost"
 
     m = len(reposter)
     d_fields = {
@@ -118,12 +147,13 @@ def derive_posts(
         "quality": posts.quality[orig_idx].copy(),
         "length": posts.length[orig_idx].copy(),
     }
-    if is_quote.any():
-        # quotes re-run the expression map for the quoter's own perturbation
-        # on top of the original content; reposts leave dims untouched.
-        d_quote = expression.generate(pop.X_stored[reposter[is_quote]], topic_p[is_quote], s_t, rng)
+    if regenerates.any():
+        d_new = expression.generate(pop.X_stored[reposter[regenerates]], topic_p[regenerates], s_t, rng)
+        # a quote is half the original and half the quoter; a reply is the
+        # replier's own content, only the topic is inherited
+        blend = np.where(kind[regenerates] == "reply", 1.0, 0.5)
         for key in d_fields:
-            d_fields[key][is_quote] = 0.5 * d_fields[key][is_quote] + 0.5 * d_quote[key]
+            d_fields[key][regenerates] = (1 - blend) * d_fields[key][regenerates] + blend * d_new[key]
 
     ids = np.arange(start_id, start_id + m)
     new_posts = PostBatch(
@@ -158,7 +188,7 @@ def r_eff(actions: np.ndarray, n_exposures: int, graph: Graph, reposter_ids: np.
     `reposter_ids` restricts the audience estimate to this tick's actual
     reposters; omit to use the population mean follower count.
     """
-    n_reposts = int(np.isin(actions, CASCADE_ACTIONS).sum())
+    n_reposts = int(np.isin(actions, BRANCHING_ACTIONS).sum())
     p_repost = n_reposts / max(n_exposures, 1)
 
     counts = follower_counts(graph)

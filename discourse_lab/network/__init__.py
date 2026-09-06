@@ -34,7 +34,7 @@ class Graph:
 def generate_graph(cfg: Config, pop: Population, rng: np.random.Generator) -> Graph:
     builder = get("graph_generator", cfg.graph.generator)
     G = builder(cfg, pop, rng)
-    G = add_reciprocity(G, cfg.graph.reciprocity, rng)
+    G = add_reciprocity(G, cfg.graph.mirror_p, rng)
     return Graph(csr=G.tocsr(), csc=G.tocsc())
 
 

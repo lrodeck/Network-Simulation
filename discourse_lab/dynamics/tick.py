@@ -9,11 +9,12 @@ simplification of the spec's per-tick cascade sub-loop, made to keep one tick
 a single exposure/reaction pass; visibility still decays with `rho ** depth`
 regardless of which tick a derived post is exposed in.
 
-Also not yet wired here: Hawkes-driven reply *posts* (a "reply" action is
-counted as an engagement and feeds the discourse-state update, but does not
-yet spawn a new reply PostBatch entry — that needs open-thread bookkeeping
-tied to `HawkesThreads` across ticks, left for a follow-up). Drift (step 11)
-is not implemented yet either, so traits are static within a run.
+Replies spawn posts as of calibration: `derive_posts` handles repost, quote
+and reply alike, differing in how far the derived post's stance moves toward
+the deriving user (see `dynamics/cascade.py`). What is still not wired is
+Hawkes *timing* for those replies — they land in the tick the exposure
+happened rather than being scheduled by the open-thread intensity, which
+needs `HawkesThreads` bookkeeping across ticks.
 """
 
 from __future__ import annotations
@@ -24,13 +25,19 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from discourse_lab.config import Config
-from discourse_lab.dynamics.cascade import CascadeState, derive_posts, r_eff
+from discourse_lab.dynamics.cascade import BRANCHING_ACTIONS, CascadeState, derive_posts, r_eff
 from discourse_lab.dynamics.discourse_state import update_discourse
 from discourse_lab.dynamics.drift import DriftState, apply_drift
 from discourse_lab.dynamics.expression import ExpressionMap
 from discourse_lab.dynamics.perception import compute_perception
 from discourse_lab.dynamics.posts import PostBatch, concat_post_batches, filter_post_batch, generate_posts
-from discourse_lab.dynamics.timing import FatigueState, circadian_factor, circadian_shape, sample_post_counts
+from discourse_lab.dynamics.timing import (
+    FatigueState,
+    HawkesThreads,
+    circadian_factor,
+    circadian_shape,
+    sample_post_counts,
+)
 from discourse_lab.exposure import apply_kernel, candidate_inbox, compute_features, named_kernel, rank_candidates
 from discourse_lab.exposure.attention import select_exposures
 from discourse_lab.measures import attention_gini, bubble_index, salience_stance_agreement
@@ -49,6 +56,7 @@ class TickEngine:
     s: np.ndarray = field(init=False)
     sigma: np.ndarray = field(init=False)
     fatigue: FatigueState = field(init=False)
+    threads: HawkesThreads = field(init=False)
     circ_shape: np.ndarray = field(init=False)
     phase_ticks: np.ndarray = field(init=False)
     activity: np.ndarray = field(init=False)
@@ -73,6 +81,7 @@ class TickEngine:
         self.s = np.zeros(K)
         self.sigma = np.zeros((K, D))
         self.fatigue = FatigueState.initial(n)
+        self.threads = HawkesThreads.empty()
         self.circ_shape = circadian_shape(self.cfg.dynamics.ticks_per_day)
 
         circadian_phase = self.pop.X_used[:, names.index("circadian_phase")]
@@ -90,6 +99,7 @@ class TickEngine:
         self.retired_posts = None
         self.engagement_events = None
 
+        self.threads.step(t, cfg.hawkes_beta, cfg.max_thread_age)
         circ = circadian_factor(t, cfg.ticks_per_day, self.phase_ticks, self.circ_shape)
         # posts_per_tick_rate is the Poisson rate at activity = 1 (spec §2.3's
         # lambda_u). It was declared in the config and never applied, so the
@@ -140,7 +150,10 @@ class TickEngine:
                 )
 
                 if len(exposures) > 0:
-                    features = compute_features(exposures, posts, self.pop, exposures.is_follower, t)
+                    intensity = self.threads.intensity(posts.id[exposures.post_idx], cfg.hawkes_mu0) / cfg.hawkes_mu0
+                    features = compute_features(
+                        exposures, posts, self.pop, exposures.is_follower, t, thread_intensity=intensity
+                    )
                     theta = named_kernel(cfg.kernel)
                     actions = apply_kernel(theta, features, rngs["reaction"])
 
@@ -165,6 +178,12 @@ class TickEngine:
                     for w in cascade_warnings:
                         warnings.warn(w, stacklevel=2)
                     if cascade_posts is not None:
+                        is_reply = cascade_posts.kind == "reply"
+                        if is_reply.any():
+                            self.threads.record(
+                                cascade_posts.parent[is_reply], cascade_posts.id[is_reply],
+                                t, cfg.hawkes_ratio, cfg.hawkes_beta,
+                            )
                         self.next_post_id += len(cascade_posts)
                         self.active_posts = concat_post_batches([self.active_posts, cascade_posts])
 
@@ -173,7 +192,7 @@ class TickEngine:
                     stance_cols = [i for i, nm in enumerate(names) if nm.startswith("stance_")]
                     salience, agreement = salience_stance_agreement(perceived, self.pop.X_used[:, stance_cols])
 
-                    reposter_ids = exposures.user_id[np.isin(actions, ("repost", "quote"))]
+                    reposter_ids = exposures.user_id[np.isin(actions, BRANCHING_ACTIONS)]
                     metrics.update(
                         n_exposures=float(len(exposures)),
                         n_engagements=float(engaged.sum()),

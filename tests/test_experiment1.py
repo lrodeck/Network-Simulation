@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import dataclasses
 
+import numpy as np
+
 from discourse_lab.config import Config
 from discourse_lab.experiments import (
     DEFAULT_KERNELS,
@@ -65,12 +67,30 @@ def test_null_comparison_isolates_homophily_agreement_effect(tmp_path, monkeypat
     """Homophily's whole story is stronger stance agreement with what a user
     consumes; that should show up as a positive agreement_effect against the
     matched null, averaged over several seeds.
+
+    Sized for statistical power, not for speed. The effect is small — a few
+    hundredths of a stance unit — and this ran at n_users=400, n_ticks=6,
+    10 seeds, where it is indistinguishable from noise:
+
+        n=400 ticks=6  seeds=10:  mean=-0.0009  sd=0.0141  t=-0.21
+        n=800 ticks=20 seeds=20:  mean=+0.0258  sd=0.0306  t=+3.77
+
+    At the small size the assertion was passing on the sign of a coin flip,
+    which is why it broke on a calibration change that did not touch the
+    mechanism it tests. The t-statistic, not the bare sign, is what carries
+    the claim, so assert on that.
     """
     monkeypatch.setenv("DLAB_HOME", str(tmp_path))
-    base = _base_cfg(n_users=400, n_ticks=6)
+    base = _base_cfg(n_users=800, n_ticks=20)
     cells = build_experiment1(base, kernels=("homophily",), rankers=("affinity",))
 
-    rows = run_experiment1(cells, seeds=list(range(10)))
+    seeds = list(range(20))
+    rows = run_experiment1(cells, seeds=seeds)
     summary = summarize_experiment1(rows)
-    agreement_effect_mean = summary["agreement_effect_mean"][0]
-    assert agreement_effect_mean > 0
+
+    effects = np.array([r["agreement_effect"] for r in rows])
+    mean = summary["agreement_effect_mean"][0]
+    t_stat = mean / (effects.std(ddof=1) / np.sqrt(len(seeds)))
+
+    assert mean > 0, f"agreement effect {mean:+.4f} is not positive"
+    assert t_stat > 2.0, f"agreement effect {mean:+.4f} is not distinguishable from noise (t={t_stat:.2f})"

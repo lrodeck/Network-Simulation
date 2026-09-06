@@ -66,13 +66,18 @@ def test_attention_gini_is_measured_over_a_run():
 @pytest.mark.xfail(
     strict=False,
     reason=(
-        "Open calibration finding, not a flaky test. This gate passed at ~0.93 only "
-        "because the engagement kernel had no intercept: every action had U_a = 0, so "
-        "83% of exposures engaged and attention concentrated artificially fast. With a "
-        "realistic few-percent engagement rate it reads ~0.50. Raising it is a modelling "
-        "question (attention scarcity: post supply vs the attention budget), not a bound "
-        "to loosen. Marked xfail rather than deleted so the suite reports XPASS the "
-        "moment calibration actually lands."
+        "Open calibration finding, not a flaky test. Attention concentration is "
+        "capped upstream of the kernel: the population's `prominence` trait is "
+        "Pareto(2.30) with a max/mean of 303x, but the latent-space generator "
+        "flattens in-degree to alpha ~4.7 (was 7.9 before long ties were made "
+        "preferential). A user can only be followed by the ~knn_k users whose "
+        "latent neighbourhood contains them, so prominence reorders candidates "
+        "within that pool but cannot lift anyone out of it. Engagement per post "
+        "cannot be more skewed than the audience sizes it is drawn over, which is "
+        "why this reads ~0.67-0.72 and the engagement-alpha row misses too. "
+        "Raising it means changing the graph generator, not loosening a bound. "
+        "Marked xfail rather than deleted so the suite reports XPASS the moment "
+        "that lands."
     ),
 )
 def test_calibration_gate_attention_gini_in_spec_range():

@@ -176,7 +176,7 @@ def _graph(reciprocity_rate: float, seed: int = 0, n_users: int = 800):
     cfg = dataclasses.replace(
         Config(),
         population=dataclasses.replace(Config().population, n_users=n_users),
-        graph=dataclasses.replace(Config().graph, reciprocity=reciprocity_rate),
+        graph=dataclasses.replace(Config().graph, mirror_p=reciprocity_rate),
     )
     rng = np.random.default_rng(seed)
     pop = sample_population(cfg, rng)
@@ -264,3 +264,81 @@ def test_stylized_facts_from_a_real_run_are_all_computed(tmp_path, monkeypatch):
     for name, entry in report.items():
         assert np.isfinite(entry["value"]), f"{name} came back non-finite"
         assert entry["label"]
+
+
+# --------------------------------------------------------------------------
+# reply self-excitation and preferential long ties (calibration)
+# --------------------------------------------------------------------------
+
+
+def test_hawkes_threads_decay_and_close():
+    from discourse_lab.dynamics.timing import HawkesThreads
+
+    th = HawkesThreads.empty()
+    th.record(np.array([1]), np.array([2]), t=0, ratio=0.6, beta=1.5)
+    opened = th.intensity(np.array([1]), mu0=0.004)[0]
+
+    th.step(t=1, beta=1.5, max_thread_age=10)
+    assert th.intensity(np.array([1]), mu0=0.004)[0] < opened  # decayed
+    assert th.intensity(np.array([99]), mu0=0.004)[0] == pytest.approx(0.004)  # cold post
+
+    th.step(t=99, beta=1.5, max_thread_age=10)
+    assert th.intensity(np.array([1]), mu0=0.004)[0] == pytest.approx(0.004)  # aged out
+
+
+def test_a_reply_inherits_its_parents_heat_so_chains_can_deepen():
+    """The child seeding is what carries activity *down* a chain — without it
+    every reply starts cold and depth cannot grow past 1.
+    """
+    from discourse_lab.dynamics.timing import HawkesThreads
+
+    th = HawkesThreads.empty()
+    for _ in range(5):  # a parent that has been replied to repeatedly
+        th.record(np.array([1]), np.array([2]), t=0, ratio=0.6, beta=1.5)
+
+    assert th.intensity(np.array([2]), mu0=0.004)[0] > 0.004  # child is born warm
+    assert th.excess[2] < th.excess[1]  # but cooler than its parent, so it terminates
+
+
+def test_reply_actions_now_spawn_posts_at_greater_depth():
+    from discourse_lab.dynamics.cascade import BRANCHING_ACTIONS, CASCADE_ACTIONS, STANCE_SHIFT
+
+    assert "reply" in CASCADE_ACTIONS  # it did not, and thread depth was unreachable
+    assert "reply" not in BRANCHING_ACTIONS  # but R in spec §2.7 is over reposts
+    assert STANCE_SHIFT["repost"] == 0.0 < STANCE_SHIFT["quote"] < STANCE_SHIFT["reply"]
+
+
+def test_long_ties_are_prominence_weighted_so_hubs_can_form():
+    """`prominence` enters as Pareto(2.3); a uniform long-tie draw threw that
+    tail away and in-degree came out at alpha ~7.9.
+    """
+    cfg = dataclasses.replace(
+        Config(),
+        population=dataclasses.replace(Config().population, n_users=2000),
+    )
+    rng = np.random.default_rng(0)
+    pop = sample_population(cfg, rng)
+    graph = generate_graph(cfg, pop, rng)
+
+    in_degree = np.asarray(graph.csr.sum(axis=0)).ravel()
+    prominence = pop.X_used[:, pop.trait_names.index("prominence")]
+
+    # the most prominent users are genuinely the most followed. Bounds are
+    # loose because prominence is Pareto: only the very top of the tail pulls
+    # far away from the mean, and where that top lands is seed-dependent
+    # (measured over 3 seeds: top-10 ratio 2.6-2.9, max ratio 4.0-9.4).
+    top_prominent = np.argsort(prominence)[-10:]
+    assert in_degree[top_prominent].mean() > 2 * in_degree.mean()
+    # and a hub exists at all, rather than everyone sitting near mean degree
+    assert in_degree.max() > 3.5 * in_degree.mean()
+    assert np.corrcoef(np.log1p(prominence), in_degree)[0, 1] > 0.15
+
+
+def test_knn_pool_must_leave_room_for_the_preference_weights():
+    """At knn_k <= mean_degree every candidate is taken, so homophily_beta and
+    prominence_gamma stop doing anything at all.
+    """
+    from discourse_lab.config import GraphConfig
+
+    with pytest.raises(ValueError, match="inert"):
+        GraphConfig(knn_k=40, mean_degree=40.0)

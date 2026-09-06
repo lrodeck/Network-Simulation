@@ -82,7 +82,12 @@ class PopulationConfig(Hashable):
     archetype_weights: tuple[tuple[str, float], ...] = ()   # () → library defaults
     archetype_offsets: tuple[tuple[str, str, float], ...] = ()  # (archetype, trait, offset)
     correlation_pairs: tuple[tuple[str, str, float], ...] = ()  # () → library defaults
-    activity_sigma: float = 1.2
+    # Gini of a lognormal is erf(sigma/2) in closed form, so this parameter
+    # *is* the spec §5.1 posting-volume inequality target. The spec's own
+    # sigma = 1.2 gives 0.604 against its stated target of 0.7-0.9 — the two
+    # clauses are mutually incompatible. 1.8 gives 0.797, mid-band, with the
+    # top 1% of users producing ~30% of posts.
+    activity_sigma: float = 1.8
     pareto_alpha: float = 2.3
     topic_logit_sigma: float = 1.0
 
@@ -93,12 +98,31 @@ class GraphConfig(Hashable):
     mean_degree: float = 40.0
     homophily_beta: float = 0.35              # β on latent distance
     prominence_gamma: float = 0.6             # γ on log(1 + prominence)
-    reciprocity: float = 0.2
+    # Probability of mirroring each generated edge — NOT the measured
+    # reciprocity of the result, which is what spec §5.1's 0.2-0.4 target
+    # refers to. Mirroring a fraction r yields 2r/(1+r) reciprocated edges,
+    # on top of a ~0.16 baseline the homophilous generator produces by
+    # chance. 0.10 measures ~0.30.
+    mirror_p: float = 0.02
     fanout_cap: int = 400                     # max followers reached per post per tick
-    knn_k: int = 150                          # candidate pool when N is large
+    knn_k: int = 60                           # candidate pool when N is large
     long_tie_fraction: float = 0.1            # uniform random component in kNN graphs
     sbm_blocks: int = 0                       # 0 → one block per archetype
     sbm_homophily: float = 0.8
+
+    def __post_init__(self) -> None:
+        # The kNN pool is the set of candidates homophily_beta and
+        # prominence_gamma then *weight*. If the pool is no bigger than the
+        # degree being drawn from it, every candidate is taken and both
+        # weights become inert — the generator silently degrades to plain
+        # kNN. Measured: at knn_k=40, mean_degree=40, sweeping beta from
+        # 0.35 to 1.5 changed clustering by exactly nothing.
+        if self.knn_k <= self.mean_degree:
+            raise ValueError(
+                f"knn_k={self.knn_k} <= mean_degree={self.mean_degree}: the candidate pool "
+                "leaves no room for homophily_beta or prominence_gamma to select, so both "
+                "become inert. Raise knn_k above mean_degree."
+            )
 
 
 @dataclass(frozen=True)
@@ -125,7 +149,7 @@ class DynamicsConfig(Hashable):
     rho_s: float = 0.9                        # discourse attention decay
     rho_sigma: float = 0.9                    # dominant stance decay
     cascade_depth_decay: float = 0.7          # rho^depth visibility
-    max_cascade_depth: int = 4
+    max_cascade_depth: int = 25
     max_cascade_size: int = 1000              # warning threshold, per tick
 
     drift: str = "full"                       # none | social | full

@@ -5,8 +5,24 @@
 
 `alpha` is calibrated by bisection to hit the target mean degree. Candidate
 edges come from a kNN search in latent space (exact for small N, and the only
-tractable option once N grows past ~20k) plus a uniform long-tie component —
-a pure kNN graph has no shortcuts and cascades die in-cluster.
+tractable option once N grows past ~20k) plus a long-tie component — a pure
+kNN graph has no shortcuts and cascades die in-cluster.
+
+Long ties are drawn **proportional to prominence**, not uniformly. This is
+the only global channel in the generator, and it is load-bearing for the
+degree distribution: within the kNN pool a user can only be followed by the
+~k users whose neighbourhood contains them, so the `gamma * log(1 +
+prominence)` term can reorder candidates but never lift anyone out of that
+geometric ceiling. Measured, `prominence` enters as Pareto(2.30) with a
+max/mean of 303x and in-degree came out at alpha 7.93 with a max of 4x the
+mean — the population's heavy tail was being destroyed by the graph. Drawing
+long ties uniformly made them pure noise; weighting them by prominence
+restores hubs (max in-degree 175 -> 1006 at N=3000) and is what "you follow
+your neighbourhood plus a few well-known accounts" actually means.
+
+The residual matters for anything reading spec §5.1: this lifts in-degree to
+alpha ~4.7, not to the 2-3 the engagement-per-post target implies. The kNN
+ceiling is still the binding constraint on the tail.
 """
 
 from __future__ import annotations
@@ -76,7 +92,9 @@ def latent_space_graph(cfg: Config, pop: Population, rng: np.random.Generator) -
     n_long = int(gcfg.long_tie_fraction * len(rows))
     if n_long > 0:
         long_rows = rng.integers(0, n, n_long)
-        long_cols = rng.integers(0, n, n_long)
+        # destinations by prominence, not uniform — see the module docstring
+        weights = prominence / prominence.sum()
+        long_cols = rng.choice(n, size=n_long, p=weights)
         keep = long_rows != long_cols
         rows = np.concatenate([rows, long_rows[keep]])
         cols = np.concatenate([cols, long_cols[keep]])
