@@ -119,23 +119,36 @@ def lorenz_curve(x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 
 def stance_clusters(stance: np.ndarray) -> np.ndarray:
-    """Ideological camps, as a median split on each stance axis.
+    """Two ideological camps: the sign of each user's position on the dominant
+    axis of stance variation (the first principal component).
 
     **Interpretation.** Spec §5.1's "inter-cluster interaction rate" needs a
     notion of cluster, and archetype labels are the wrong one: archetypes are
-    behavioural roles (lurker, poster, institution) that the dynamics never
-    read, so a lurker engaging a poster is ordinary traffic, not a boundary
+    behavioural roles (lurker, poster, institution) the dynamics never read,
+    so a lurker engaging a poster is ordinary traffic, not a boundary
     crossing. Ideological position is what the fact is about — "low contact,
-    high hostility given contact" is a claim about opposing camps. Splitting
-    each stance axis at the population median gives 2^D camps, which for the
-    default one-axis scenario is simply left and right of centre.
+    high hostility given contact" is a claim about opposing camps.
+
+    Two camps, not 2^D. A median split per axis was the first implementation
+    and it does not survive D > 1: at the spec's D = 3 it makes 8 camps, so
+    even a perfectly homophilous population crosses a boundary on 87.5% of
+    random contacts and the measured rate (0.63) sits *below* chance while
+    reading as a catastrophic failure. Projecting onto the first principal
+    component instead measures the polarisation axis the population actually
+    has, at any D, and keeps the rate comparable across scenarios. This also
+    matches spec §7.5's expectation that correlated axes collapse toward a
+    single dominant dimension.
     """
     stance = np.atleast_2d(np.asarray(stance, dtype=float))
     if stance.shape[0] == 1 and stance.shape[1] > 1:
         stance = stance.T
-    above = stance > np.median(stance, axis=0)
-    weights = 2 ** np.arange(above.shape[1])
-    return (above * weights).sum(axis=1)
+    centred = stance - stance.mean(axis=0)
+    if centred.shape[1] == 1:
+        projection = centred[:, 0]
+    else:
+        _, _, vt = np.linalg.svd(centred, full_matrices=False)
+        projection = centred @ vt[0]
+    return (projection > np.median(projection)).astype(np.int64)
 
 
 def inter_cluster_interaction(

@@ -169,3 +169,30 @@ def test_default_hawkes_settings_are_subcritical():
         f"reply volume grew from {early:.1f} to {late:.1f} per tick — "
         "the default Hawkes settings are supercritical"
     )
+
+
+def test_alpha_bisection_hits_the_target_mean_degree():
+    """spec §2.2: "alpha is calibrated by bisection to hit a target mean
+    degree". The bisection runs over the kNN candidate draw, but long ties are
+    added afterwards, so without correcting for `long_tie_fraction` the graph
+    lands (1 + f) over target — measured 22.3 against 20, and 44.5 against 40.
+
+    The residual tolerated here is the reciprocity pass, which §2.2 applies
+    after generation as a separate step.
+    """
+    from discourse_lab.network import generate_graph
+    from discourse_lab.population import sample_population
+
+    for target in (20.0, 40.0):
+        cfg = dataclasses.replace(
+            Config(),
+            population=dataclasses.replace(Config().population, n_users=4000),
+            graph=dataclasses.replace(Config().graph, mean_degree=target),
+        )
+        rng = np.random.default_rng(0)
+        pop = sample_population(cfg, rng)
+        achieved = generate_graph(cfg, pop, rng).csr.nnz / 4000
+
+        assert abs(achieved / target - 1) < 0.05, (
+            f"target mean degree {target}, achieved {achieved:.2f}"
+        )

@@ -78,7 +78,14 @@ class Hashable:
 class PopulationConfig(Hashable):
     n_users: int = 10_000
     n_topics: int = 8
-    stance_dims: int = -1                     # -1 → derived from scenario axes
+    # spec §1.1: "D ~ 3-5 latent ideological axes"; §4.3's config sketch says
+    # 3. A scenario, when loaded, overrides this with its own axis count.
+    # This was -1, and Config.stance_dims() floors at 1, so every run without
+    # a scenario silently collapsed stance to a single axis — which is not a
+    # smaller version of the model but a different geometry: with D=1 there is
+    # no orientation for homophily to be homophilous *in*, and §7.5's
+    # orthogonal-vs-correlated axes question cannot be posed at all.
+    stance_dims: int = 3
     archetype_weights: tuple[tuple[str, float], ...] = ()   # () → library defaults
     archetype_offsets: tuple[tuple[str, str, float], ...] = ()  # (archetype, trait, offset)
     correlation_pairs: tuple[tuple[str, str, float], ...] = ()  # () → library defaults

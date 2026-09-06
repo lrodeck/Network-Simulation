@@ -84,7 +84,13 @@ def latent_space_graph(cfg: Config, pop: Population, rng: np.random.Generator) -
     src, dst, dist = _candidate_edges(pop, gcfg.knn_k)
     logit_base = -gcfg.homophily_beta * dist + gcfg.prominence_gamma * log_prom[dst]
 
-    alpha = _calibrate_alpha(logit_base, gcfg.mean_degree, n, rng)
+    # Long ties are added *after* this draw, so the bisection must aim below
+    # the target or the graph lands (1 + long_tie_fraction) over it — measured
+    # 22.3 against a target of 20, and 44.5 against 40, before this correction.
+    # spec §2.2 says alpha is calibrated to hit the target mean degree; that
+    # has to mean the degree of the graph you end up with.
+    knn_target = gcfg.mean_degree / (1.0 + gcfg.long_tie_fraction)
+    alpha = _calibrate_alpha(logit_base, knn_target, n, rng)
     probs = expit(logit_base + alpha)
     draws = rng.random(probs.shape) < probs
 
