@@ -88,7 +88,14 @@ class PopulationConfig(Hashable):
     stance_dims: int = 3
     archetype_weights: tuple[tuple[str, float], ...] = ()   # () → library defaults
     archetype_offsets: tuple[tuple[str, str, float], ...] = ()  # (archetype, trait, offset)
-    correlation_pairs: tuple[tuple[str, str, float], ...] = ()  # () → library defaults
+    # (trait_i, trait_j, rho). NOT defaulted to anything: an empty tuple gives
+    # an identity correlation matrix, so every trait — including the stance
+    # axes — is independent unless listed here. spec §7.5 notes that correlated
+    # stance axes are what produce the empirically observed collapse toward a
+    # single dominant dimension, and measured here they do: cross-camp exposure
+    # falls from 0.362 to 0.326 at rho=0.85. Trait names must match this
+    # config's own columns (see semantics.Lexicon.trait_column).
+    correlation_pairs: tuple[tuple[str, str, float], ...] = ()
     # Gini of a lognormal is erf(sigma/2) in closed form, so this parameter
     # *is* the spec §5.1 posting-volume inequality target. The spec's own
     # sigma = 1.2 gives 0.604 against its stated target of 0.7-0.9 — the two

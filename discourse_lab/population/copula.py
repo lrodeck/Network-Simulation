@@ -17,6 +17,21 @@ def sparse_pairs_to_matrix(
     idx = {name: i for i, name in enumerate(trait_names)}
     corr = np.eye(n)
     for a, b, rho in pairs:
+        for name in (a, b):
+            if name not in idx:
+                # A bare dict lookup here raised a naked KeyError, which is a
+                # bad failure for the most likely mistake: stance columns are
+                # named `stance_{axis_name}` when a scenario is attached
+                # (`stance_provision`) and `stance_{i}` otherwise
+                # (`stance_0`), so a pair written for one mode fails in the
+                # other with no hint about why.
+                stance = [t for t in trait_names if t.startswith("stance_")]
+                raise KeyError(
+                    f"correlation pair references unknown trait {name!r}. "
+                    f"Stance columns in this config are {stance} — note they are "
+                    "named after the scenario's axes when one is attached. "
+                    "Use semantics.Lexicon.trait_column(d) to get them."
+                )
         i, j = idx[a], idx[b]
         corr[i, j] = rho
         corr[j, i] = rho
