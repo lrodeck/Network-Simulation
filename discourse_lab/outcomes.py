@@ -62,7 +62,11 @@ def cross_cutting_exposure(handle, pop, lex, delta: float | None = None) -> dict
     Measured, injected items are far more cross-cutting than the feed they land
     in (0.396 vs 0.288) while barely moving the aggregate — the mechanism works
     per item and is drowned out by follower fanout at any inject_k a platform
-    would plausibly ship.
+    would plausibly ship. It is NaN whenever `inject_k == 0`: random injection
+    is the *only* source of non-follower candidates, so the subset is empty and
+    no ranker setting can make it non-empty. That is a property of the feed
+    construction, not a measurement failure -- a lever sweep over rankers at
+    inject_k=0 will report this column as all-NaN by construction.
 
     Sampling caveat: at `exposure_sample_rate=0.01` a user contributes ~2 rows
     per run, so only the population mean is interpretable, never a per-user
