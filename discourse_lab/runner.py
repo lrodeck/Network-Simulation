@@ -81,13 +81,35 @@ class State:
     # channel-3 pass and never executed inside the tick. Replaced every tick, like
     # the other raw records — a consumer that wants the whole run accumulates.
     salient_events: list = field(default_factory=list)
+    # Deterministic per-tick narration (semantics/narrate.py), None unless
+    # `run_iter(..., narrate=True)`. Numbers only — the sentence is formatted
+    # on demand by `describe_state`, so a run never pays for text nobody reads.
+    summary: "object | None" = None
 
 
 def run_dir(cfg: Config, seed: int) -> Path:
     return runs_dir() / cfg.hash() / str(seed)
 
 
-def run_iter(cfg: Config, seed: int) -> Iterator[State]:
+def _authors_of(engine, post_ids):
+    """Map engaged post ids to their authors, for the cross-camp measure.
+
+    The engagement log stores post *ids*; camp membership is a property of the
+    author, so the narrator needs the join. `active_posts` still holds every
+    post any engagement this tick could reference.
+    """
+    if post_ids is None or engine.active_posts is None or len(post_ids) == 0:
+        return None
+    order = np.argsort(engine.active_posts.id)
+    sorted_ids = engine.active_posts.id[order]
+    pos = np.clip(np.searchsorted(sorted_ids, post_ids), 0, len(sorted_ids) - 1)
+    hit = sorted_ids[pos] == post_ids
+    authors = np.full(len(post_ids), -1, dtype=np.int64)
+    authors[hit] = engine.active_posts.author[order[pos[hit]]]
+    return authors
+
+
+def run_iter(cfg: Config, seed: int, *, narrate: bool = False) -> Iterator[State]:
     """Generator core: population/graph are cached artifacts, then the tick
     engine (discourse_lab.dynamics.tick.TickEngine) runs timing, generation,
     exposure, reaction, cascades, perception, and the discourse-state update
@@ -97,6 +119,15 @@ def run_iter(cfg: Config, seed: int) -> Iterator[State]:
     pop = cached_population(cfg, seed, rngs["population"])
     graph = cached_graph(cfg, seed, pop, rngs["graph"])
     engine = TickEngine(cfg=cfg, pop=pop, graph=graph, rngs=rngs)
+
+    narrator = None
+    stance_cols: list[int] = []
+    if narrate:
+        from discourse_lab.semantics import Narrator, lexicon_for
+
+        lex = lexicon_for(cfg)
+        narrator = Narrator(lex=lex)
+        stance_cols = lex.stance_columns(pop.trait_names)
 
     last_tick = cfg.dynamics.n_ticks - 1
     for t in range(cfg.dynamics.n_ticks):
@@ -120,6 +151,17 @@ def run_iter(cfg: Config, seed: int) -> Iterator[State]:
                 else None
             ),
             salient_events=engine.salient_events,
+            summary=(
+                narrator.observe(
+                    t, engine.s, engine.sigma, pop.X_used[:, stance_cols],
+                    users=(engine.engagement_events or {}).get("user"),
+                    authors=_authors_of(engine, (engine.engagement_events or {}).get("post")),
+                    actions=(engine.engagement_events or {}).get("action"),
+                    metrics=metrics,
+                )
+                if narrator is not None
+                else None
+            ),
         )
 
 
