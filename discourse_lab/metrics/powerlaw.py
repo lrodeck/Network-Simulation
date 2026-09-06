@@ -16,6 +16,22 @@ the Hurwitz zeta function:
     P(X >= x) = zeta(alpha, x) / zeta(alpha, x_min)
 
 No `powerlaw` package — scipy.special.zeta is all that is needed.
+
+**Fitting a power law is not evidence that there is one.** The MLE returns an
+alpha for any data at all, and spec §5.1's target of [2, 3] can be met or
+missed on the same sample purely by where x_min lands. Measured on this
+model's engagement counts under an engagement-optimised feed:
+
+    x_min      2      5     20     40     80    150    190    300
+    alpha   1.54   1.66   1.96   2.28   2.92   3.68   4.08   5.66
+
+A genuine power law gives roughly constant alpha across x_min; this rises
+monotonically, which is the signature of a curved (lognormal-like or
+exponentially truncated) tail. So `powerlaw_fit` also reports
+`lognormal_ratio` — Vuong's normalised log-likelihood ratio against a
+lognormal fitted to the same tail — and `is_powerlaw`, which is False when a
+lognormal explains the tail at least as well. Quote alpha only when that
+holds.
 """
 
 from __future__ import annotations
@@ -36,11 +52,119 @@ MIN_TAIL = 50
 class PowerLawFit:
     alpha: float
     xmin: float
-    ks: float          # KS distance at the chosen xmin
-    n_tail: int        # points at or above xmin
+    ks: float               # KS distance at the chosen xmin
+    n_tail: int             # points at or above xmin
+    lognormal_ratio: float = float("nan")   # Vuong R, >0 favours the power law
+    lognormal_p: float = float("nan")       # two-sided p for R != 0
+    alpha_spread: float = float("nan")      # (max-min)/median of alpha across x_min
 
     def __bool__(self) -> bool:
         return bool(np.isfinite(self.alpha))
+
+    @property
+    def is_powerlaw(self) -> bool:
+        """Whether `alpha` describes the data or merely where x_min landed.
+
+        Gated on `alpha_spread`, the fractional variation of alpha across
+        x_min, not on the lognormal comparison. A power law is scale-free, so
+        its exponent is the same wherever the tail is cut; a curved tail gives
+        an exponent that climbs with x_min. That is a property of the data and
+        needs no competing model.
+
+        The lognormal likelihood ratio is reported alongside but deliberately
+        not used as the gate: the lognormal has two free parameters against
+        the power law's one and wins on in-sample likelihood even for genuine
+        Zipf draws (R = -12.6 on a synthetic Zipf(2.5)), which is the
+        inconclusiveness Clauset-Shalizi-Newman note for samples of this size.
+        """
+        return bool(np.isfinite(self.alpha_spread) and self.alpha_spread < 0.30)
+
+
+def alpha_spread(x: np.ndarray, xmin: float | None = None) -> float:
+    """Fractional variation of alpha as x_min is swept across the data.
+
+    A power law is scale-free: cutting the tail higher must not change the
+    exponent. Curvature shows up here immediately, and this is the evidence
+    that the engagement distribution is not a power law — alpha ran 1.54 at
+    x_min 2 to 5.66 at x_min 300, a spread of 1.6, while the fit at the
+    KS-optimal x_min reported a single authoritative-looking 4.08.
+
+    Swept over the whole support, not just above the fitted x_min: the KS
+    choice picks the most power-law-looking stretch by construction, so
+    measuring the spread only above it hides exactly what is being tested.
+    """
+    x = np.asarray(x, dtype=float)
+    x = x[np.isfinite(x) & (x >= 1)]
+    if len(x) < 4 * MIN_TAIL:
+        return float("nan")
+
+    lo = max(float(np.quantile(x, 0.50)), 1.0)
+    hi = max(float(np.quantile(x, 0.995)), lo + 1)
+    cuts = np.unique(np.geomspace(lo, hi, 8))
+
+    alphas = []
+    for cut in cuts:
+        sub = x[x >= cut]
+        if len(sub) < MIN_TAIL:
+            continue
+        a = _alpha_mle(sub, float(cut))
+        if np.isfinite(a) and a > 1:
+            alphas.append(a)
+    if len(alphas) < 3:
+        return float("nan")
+    alphas = np.array(alphas)
+    return float((alphas.max() - alphas.min()) / np.median(alphas))
+
+
+def compare_lognormal(tail: np.ndarray, xmin: float, alpha: float) -> tuple[float, float]:
+    """Vuong's normalised log-likelihood ratio, power law vs lognormal, on the
+    same tail. Returns `(R, p)`: R > 0 favours the power law, and p is the
+    two-sided probability of an |R| this large when the two fit equally well.
+
+    The lognormal is fitted to the tail and renormalised above `xmin`, which
+    is the standard companion test to a CSN fit — without it the fit reports
+    an exponent for data that is not power-law distributed at all.
+    """
+    from scipy import stats
+
+    n = len(tail)
+    if n < MIN_TAIL:
+        return float("nan"), float("nan")
+
+    log_x = np.log(tail)
+
+    def _ll_ln(params: np.ndarray) -> np.ndarray:
+        mu, log_sigma = params[0], params[1]
+        sigma = np.exp(log_sigma)
+        survival = stats.norm.sf((np.log(xmin) - mu) / sigma)
+        if not np.isfinite(survival) or survival <= 0:
+            return np.full(len(tail), -1e12)
+        return (
+            -log_x - np.log(sigma) - 0.5 * np.log(2 * np.pi)
+            - 0.5 * ((log_x - mu) / sigma) ** 2 - np.log(survival)
+        )
+
+    # The lognormal must be fitted to the *truncated* tail, by maximising the
+    # same renormalised likelihood it is then scored on. Using the plain
+    # (untruncated) MLE of mu and sigma on tail data is biased and makes the
+    # power law win spuriously — on a synthetic lognormal(0, 2) sample that
+    # version reported R = +5.6, confidently backing the wrong model.
+    from scipy.optimize import minimize
+
+    start = np.array([log_x.mean(), np.log(max(log_x.std(ddof=0), 1e-6))])
+    opt = minimize(lambda q: -_ll_ln(q).sum(), start, method="Nelder-Mead",
+                   options={"maxiter": 2000, "xatol": 1e-6, "fatol": 1e-6})
+    ll_ln = _ll_ln(opt.x)
+
+    ll_pl = -alpha * log_x - np.log(zeta(alpha, xmin))
+
+    diff = ll_pl - ll_ln
+    r = float(diff.sum())
+    sd = float(diff.std(ddof=0))
+    if sd <= 0:
+        return r, float("nan")
+    z = r / (np.sqrt(n) * sd)
+    return z, float(stats.norm.sf(abs(z)) * 2)
 
 
 def _alpha_mle(tail: np.ndarray, xmin: float) -> float:
@@ -97,7 +221,11 @@ def powerlaw_fit(x: np.ndarray, xmin: float | None = None) -> PowerLawFit:
         if len(tail) < MIN_TAIL:
             return PowerLawFit(float("nan"), float(xmin), float("nan"), len(tail))
         alpha = _alpha_mle(tail, xmin)
-        return PowerLawFit(float(alpha), float(xmin), _ks_distance(tail, xmin, alpha), len(tail))
+        r, pval = compare_lognormal(tail, float(xmin), alpha)
+        return PowerLawFit(
+            float(alpha), float(xmin), _ks_distance(tail, xmin, alpha), len(tail),
+            r, pval, alpha_spread(x),
+        )
 
     # sweep candidate x_min over distinct observed values, leaving enough tail
     candidates = np.unique(x)
@@ -114,6 +242,12 @@ def powerlaw_fit(x: np.ndarray, xmin: float | None = None) -> PowerLawFit:
         ks = _ks_distance(tail, candidate, alpha)
         if ks < best.ks:
             best = PowerLawFit(float(alpha), float(candidate), ks, len(tail))
+
+    if best:
+        tail = x[x >= best.xmin]
+        r, pval = compare_lognormal(tail, best.xmin, best.alpha)
+        best = PowerLawFit(best.alpha, best.xmin, best.ks, best.n_tail, r, pval,
+                           alpha_spread(x))
 
     return best
 
