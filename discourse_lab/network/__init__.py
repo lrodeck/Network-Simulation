@@ -18,7 +18,7 @@ from discourse_lab.registry import get
 from discourse_lab.network.reciprocity import add_reciprocity
 
 # import for registration side effects
-from discourse_lab.network import barabasi, configuration, latent_space, sbm  # noqa: F401,E402
+from discourse_lab.network import barabasi, configuration, latent_pa, latent_space, sbm  # noqa: F401,E402
 
 
 @dataclass

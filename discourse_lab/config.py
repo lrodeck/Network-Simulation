@@ -101,7 +101,7 @@ class PopulationConfig(Hashable):
 
 @dataclass(frozen=True)
 class GraphConfig(Hashable):
-    generator: str = "latent_space"           # latent_space | sbm | configuration | barabasi
+    generator: str = "latent_space"           # latent_space | latent_pa | sbm | configuration | barabasi
     mean_degree: float = 40.0
     homophily_beta: float = 0.35              # β on latent distance
     prominence_gamma: float = 0.6             # γ on log(1 + prominence)
@@ -114,6 +114,11 @@ class GraphConfig(Hashable):
     fanout_cap: int = 400                     # max followers reached per post per tick
     knn_k: int = 60                           # candidate pool when N is large
     long_tie_fraction: float = 0.1            # uniform random component in kNN graphs
+    # `latent_pa` only: share of edges drawn globally with destination
+    # probability proportional to prominence, rather than from the kNN pool.
+    # The dial between local structure (clustering) and a heavy in-degree
+    # tail (spec §5.1's engagement rows). Ignored by every other generator.
+    pa_fraction: float = 0.35
     sbm_blocks: int = 0                       # 0 → one block per archetype
     sbm_homophily: float = 0.8
 

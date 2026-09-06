@@ -378,3 +378,38 @@ def test_knn_pool_must_leave_room_for_the_preference_weights():
 
     with pytest.raises(ValueError, match="inert"):
         GraphConfig(knn_k=40, mean_degree=40.0)
+
+
+def test_attention_concentration_comes_from_the_feed_not_the_graph(tmp_path, monkeypatch):
+    """spec §5.1's attention Gini (0.8-0.95) is a claim about engagement-
+    optimised platforms, and this pins where the concentration comes from.
+
+    A chronological feed orders by time, so exposure is spread evenly across
+    every active post regardless of who wrote it, and no post can run away.
+    Measured at n_users=3000, n_ticks=60: the largest engagement count any
+    post ever reached was 15 under `chronological`, 32 under `popularity`, and
+    733 under `engagement_optimized` + `bandwagon` (Gini 0.609 / 0.706 /
+    0.887). Making the graph heavy-tailed instead does not do it — raising max
+    in-degree tenfold via the `latent_pa` generator left the Gini at 0.609.
+    """
+    monkeypatch.setenv("DLAB_HOME", str(tmp_path))
+    base = dataclasses.replace(
+        Config(),
+        population=dataclasses.replace(Config().population, n_users=600),
+        dynamics=dataclasses.replace(Config().dynamics, n_ticks=25, drift="none"),
+    )
+
+    def max_engagement(ranker: str, kernel: str) -> int:
+        cfg = dataclasses.replace(
+            base, dynamics=dataclasses.replace(base.dynamics, ranker=ranker, kernel=kernel)
+        )
+        cached_run(cfg, seed=0, persist=("posts",))
+        return int(load_run(cfg, seed=0).posts()["engagement_count"].max())
+
+    chronological = max_engagement("chronological", "homophily")
+    optimized = max_engagement("engagement_optimized", "bandwagon")
+
+    assert optimized > 3 * chronological, (
+        f"engagement_optimized+bandwagon peaked at {optimized}, chronological at "
+        f"{chronological} — the feed is no longer concentrating attention"
+    )
