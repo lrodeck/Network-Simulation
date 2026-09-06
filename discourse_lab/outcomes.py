@@ -34,7 +34,8 @@ def _join_authors(frame: pl.DataFrame, posts: pl.DataFrame) -> pl.DataFrame:
 
 
 @register("outcome", "cross_cutting_exposure")
-def cross_cutting_exposure(handle, pop, lex, delta: float | None = None) -> dict:
+def cross_cutting_exposure(handle, pop, lex, delta: float | None = None,
+                           top_ranks: int = 5) -> dict:
     """Does the platform put people in front of the other side?
 
     The most established construct in the democratic-discourse literature
@@ -68,6 +69,20 @@ def cross_cutting_exposure(handle, pop, lex, delta: float | None = None) -> dict
     construction, not a measurement failure -- a lever sweep over rankers at
     inject_k=0 will report this column as all-NaN by construction.
 
+    `rank_penalty` is the measure that survives that. It is the cross-cutting
+    share of the items the ranker put **at the top of the feed** minus the
+    share of everything below, using the persisted `rank`. That is the
+    recommender's actual contribution: the candidate pool is fixed by the graph
+    and by injection, and all a ranker does is order it, so a ranker that
+    demotes disagreement shows up here as a negative number. Unlike
+    `algorithmic_share` it is defined at every `inject_k`, including zero,
+    because ordering exists whether or not anything was injected. Zero under
+    `chronological`, which orders by recency and cannot see stance.
+
+    `top_ranks` sets the cut. It is a rank count and not a quantile: ranks are
+    already truncated by position decay (`tau_position`), so a quantile of the
+    surviving rows would move with the truncation rather than with the ranker.
+
     Sampling caveat: at `exposure_sample_rate=0.01` a user contributes ~2 rows
     per run, so only the population mean is interpretable, never a per-user
     value.
@@ -78,7 +93,8 @@ def cross_cutting_exposure(handle, pop, lex, delta: float | None = None) -> dict
     joined = _join_authors(exposures, posts)
     if len(joined) == 0:
         return {"camp_share": float("nan"), "stance_share": float("nan"),
-                "algorithmic_share": float("nan"), "n": 0}
+                "algorithmic_share": float("nan"), "rank_penalty": float("nan"),
+                "n": 0}
 
     labels = _camp_labels(pop, lex)
     users = joined["user"].to_numpy()
@@ -106,10 +122,16 @@ def cross_cutting_exposure(handle, pop, lex, delta: float | None = None) -> dict
         delta=delta,
     )
 
+    rank = joined["rank"].to_numpy()
+    top = rank < top_ranks
+    rank_penalty = (float(crossing[top].mean() - crossing[~top].mean())
+                    if top.any() and (~top).any() else float("nan"))
+
     return {
         "camp_share": float(crossing.mean()),
         "stance_share": float(1.0 - np.nanmean(index)),
         "algorithmic_share": float(crossing[injected].mean()) if injected.any() else float("nan"),
+        "rank_penalty": rank_penalty,
         "delta": float(delta),
         "n": int(len(joined)),
     }
@@ -199,6 +221,35 @@ def hostility_given_contact(handle, pop, lex) -> dict:
     return {"contact_rate": float(rate), "hostility": float(hostility), "n": int(len(joined))}
 
 
+@register("outcome", "feed_narrowing")
+def feed_narrowing(handle, pop, lex) -> dict:
+    """How much narrower the feed was than the world it was drawn from.
+
+    The other four constructs describe what the platform delivered. This one
+    describes what it *withheld*, by measuring each exposure against a post
+    published in the same tick chosen at random --- same vintage, ordered by a
+    coin flip instead of by the ranker. See `discourse_lab.users` for why the
+    baseline is "what existed" rather than "what the ranker was offered".
+
+    `bubble` is negative when feeds sit closer to their viewer than the world
+    does, in stance units. `topic_narrowing` is the same idea for variety: the
+    feed's Shannon entropy over topics minus the world's.
+    """
+    from discourse_lab.users import feed_composition
+
+    feeds = feed_composition(handle, pop, lex)
+    if feeds.height == 0:
+        return {"bubble": float("nan"), "topic_narrowing": float("nan"), "n_users": 0}
+    return {
+        "feed_dist": float(feeds["feed_dist"].mean()),
+        "world_dist": float(feeds["world_dist"].mean()),
+        "bubble": float(feeds["bubble"].mean()),
+        "topic_narrowing": float(feeds["feed_topic_entropy"].mean()
+                                 - feeds["world_topic_entropy"].mean()),
+        "n_users": int(feeds.height),
+    }
+
+
 def outcome_names() -> list[str]:
     return names("outcome")
 
@@ -220,6 +271,7 @@ def normative_outcomes(handle, pop=None, lex=None) -> dict[str, float]:
         "voice_inequality": ("posts",),
         "epistemic_alignment": ("posts",),
         "hostility_given_contact": ("posts", "engagements"),
+        "feed_narrowing": ("posts", "exposures"),
     }
     for name in outcome_names():
         if not all(getattr(handle, f"has_{table}") for table in needs[name]):

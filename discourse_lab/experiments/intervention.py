@@ -23,10 +23,33 @@ exposure_sample_rate=0.10, 4 seeds, cross-camp exposure share, chance = 0.50):
                      follower fanout at any dosage a platform would ship — which
                      is itself the finding, and why `algorithmic_share` is
                      reported separately.
-    attention_budget 30 -> 100 moves it 0.288 -> 0.296. Weak.
+    attention_budget was swept at 15/30/60 and moved nothing on any of the 13
+                     outcome columns over 10 seeds. That was a dead-zone sweep,
+                     not an inert lever: visibility decays as exp(-r/tau_pos)
+                     with tau_pos = 6, so the budget cap only binds on 10% of
+                     surviving items at b=15, 1.2% at b=30 and 0.0% at b=60 --
+                     30 and 60 are the same platform. Re-ranged to 30/10/3,
+                     where it binds on 1%/25%/60%, and `tau_position` added
+                     alongside it as the knob that actually rations attention.
     homophily_beta   0.35 -> 1.5 moves it 0.288 -> 0.280. Effectively inert, as
                      it is for clustering; the knob named "homophily strength"
                      is not the one that controls homophily.
+
+**One lever at a time is a design choice, and it has a blind spot.** Measured,
+`tau_position` (how far down the feed anyone reads) moves cross-camp exposure by
+-0.004 under a chronological feed and by **+0.088** under an affinity feed, over
+5 seeds at N=800 --- larger than every main effect in the 10-seed sweep except
+the ranker itself. The reason is mechanical: rank order under `chronological` is
+recency, which is independent of stance, so truncating the feed removes a random
+slice; under `affinity` rank order *is* stance order, so truncating removes
+precisely the disagreement. The main-effects sweep reports `tau_position` as
+inert because it is evaluated at the base ranker, and averaging over a factor it
+interacts with is how a real lever disappears.
+
+So: the sweep below is a screen, not the study. A lever that reads flat here has
+been shown flat *at the base configuration*, which is a weaker claim than "this
+does not matter". Anything that survives the screen deserves a small factorial
+against `dynamics.ranker` before it goes in a paper.
 """
 
 from __future__ import annotations
@@ -54,7 +77,9 @@ PERSIST = ("posts", "engagements", "exposures", "traits")
 DEFAULT_LEVERS: dict[str, tuple] = {
     "dynamics.ranker": ("chronological", "affinity", "engagement_optimized", "popularity"),
     "dynamics.inject_k": (0, 5, 20),
-    "dynamics.attention_budget": (15.0, 30.0, 60.0),
+    # first value is the reference; both of these are the shipped default
+    "dynamics.attention_budget": (30.0, 10.0, 3.0),
+    "dynamics.tau_position": (6.0, 15.0, 2.0),
     "graph.long_tie_fraction": (0.05, 0.1, 0.4),
 }
 

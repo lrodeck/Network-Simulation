@@ -137,6 +137,28 @@ def test_normative_outcomes_degrades_when_tables_are_missing(tmp_path, monkeypat
 
 def test_every_outcome_is_registered_and_reachable_by_name():
     assert set(outcome_names()) == {
-        "cross_cutting_exposure", "epistemic_alignment",
+        "cross_cutting_exposure", "epistemic_alignment", "feed_narrowing",
         "hostility_given_contact", "voice_inequality",
     }
+
+
+def test_rank_penalty_is_defined_without_injection_and_reads_the_ranker(tmp_path, monkeypatch):
+    """`algorithmic_share` needs a non-follower subset that only `inject_k`
+    creates, so it is NaN for every ranker sweep at k=0. `rank_penalty` reads
+    the ordering instead, which is the thing a ranker actually does.
+
+    Rankers that cannot see the viewer's stance (recency, global popularity)
+    must come out near zero; `affinity` scores by agreement and must not.
+    """
+    import numpy as np
+
+    monkeypatch.setenv("DLAB_HOME", str(tmp_path))
+    penalties = {}
+    for ranker in ("chronological", "affinity"):
+        result = cross_cutting_exposure(*_run(_cfg(ranker=ranker, inject_k=0)))
+        assert np.isnan(result["algorithmic_share"]), "no injection, yet a non-follower subset"
+        penalties[ranker] = result["rank_penalty"]
+
+    assert abs(penalties["chronological"]) < 0.05, penalties
+    assert penalties["affinity"] < -0.05, penalties
+    assert penalties["affinity"] < penalties["chronological"], penalties

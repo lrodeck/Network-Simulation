@@ -166,7 +166,10 @@ class DynamicsConfig(Hashable):
     ticks_per_day: int = 24
     fatigue_decay: float = 0.9
 
-    attention_budget: float = 30.0            # b in B_u ~ Poisson(b · activity)
+    # b in B_u ~ Poisson(b · activity). NOTE: composes with tau_position, and at
+    # this default the position decay binds first — the budget removes ~1% of
+    # what decay already let through. See exposure/attention.py before sweeping it.
+    attention_budget: float = 30.0
     tau_position: float = 6.0                 # position decay exp(-r / tau)
     inject_k: int = 0                         # algorithmic injections per post
     ranker: str = "chronological"
