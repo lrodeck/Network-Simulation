@@ -16,6 +16,8 @@ _FIGURE_EXPORTS = {
     "fig_lorenz": "discourse_lab.viz.figures.distribution",
     "fig_effect_dots": "discourse_lab.viz.figures.experiment",
     "fig_degree_ccdf": "discourse_lab.viz.figures.network",
+    "fig_lever_effects": "discourse_lab.viz.figures.normative",
+    "fig_contact_vs_hostility": "discourse_lab.viz.figures.normative",
     "save_figure": "discourse_lab.viz.save",
     "styled": "discourse_lab.viz.style",
     "series_colors": "discourse_lab.viz.style",

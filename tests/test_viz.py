@@ -206,3 +206,58 @@ def test_save_table_writes_both_formats(tmp_path):
     frame = pl.DataFrame({"a": [1.0]})
     out = tables.save_table(frame, "t", directory=tmp_path)
     assert out["tex"].exists() and out["md"].exists()
+
+
+def test_lever_effects_marks_unresolved_effects_hollow():
+    """An effect that does not clear its noise must not read as a small one.
+    Filled vs hollow is a second channel beside position, so the distinction
+    survives being printed in greyscale."""
+    from discourse_lab.viz import fig_lever_effects
+
+    summary = pl.DataFrame({
+        "lever": ["dynamics.ranker"] * 3,
+        "value": ["chronological", "affinity", "popularity"],
+        "outcome": ["cross_cutting_exposure.camp_share"] * 3,
+        "model_mean": [0.39, 0.31, 0.38],
+        "model_sd": [0.01, 0.01, 0.05],
+        "null_mean": [0.39, 0.31, 0.38],
+        "kernel_delta": [0.0, -0.001, 0.0],
+        "n_seeds": [4, 4, 4],
+        "lever_effect": [0.0, -0.078, -0.01],
+        "reference": ["chronological"] * 3,
+        "resolves": [False, True, False],
+    })
+    fig = fig_lever_effects(summary)
+    ax = fig.axes[0]
+
+    faces = [line.get_markerfacecolor() for line in ax.lines if line.get_marker() == "o"]
+    assert any(f == CHROME["surface"] for f in faces), "no hollow marker for an unresolved effect"
+    assert any(f in PALETTE for f in faces), "no filled marker for a resolved effect"
+
+
+def test_contact_vs_hostility_merges_coincident_points():
+    """Every lever contributes its own reference row, so the baseline config
+    lands at identical coordinates once per lever. Unmerged, those labels
+    overprint into a smear."""
+    from discourse_lab.viz import fig_contact_vs_hostility
+
+    summary = pl.DataFrame({
+        "lever": ["dynamics.ranker", "dynamics.inject_k"],
+        "value": ["chronological", "0"],
+        "outcome": ["hostility_given_contact.contact_rate"] * 2,
+        "model_mean": [0.3466, 0.3466],
+        "model_sd": [0.01, 0.01],
+        "n_seeds": [4, 4],
+    })
+    hostility = summary.with_columns(
+        pl.lit("hostility_given_contact.hostility").alias("outcome"),
+        pl.lit(0.0285).alias("model_mean"),
+    )
+    fig = fig_contact_vs_hostility(pl.concat([summary, hostility]))
+    ax = fig.axes[0]
+
+    drawn = [line for line in ax.lines if line.get_marker() == "o"]
+    assert sum(len(line.get_xdata()) for line in drawn) == 1, "coincident points not merged"
+    assert len(ax.texts) == 1, "one label block for one point"
+    assert "ranker=chronological" in ax.texts[0].get_text()
+    assert "inject_k=0" in ax.texts[0].get_text()
