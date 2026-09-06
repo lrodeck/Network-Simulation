@@ -88,7 +88,22 @@ class PopulationConfig(Hashable):
     stance_dims: int = 3
     archetype_weights: tuple[tuple[str, float], ...] = ()   # () → library defaults
     archetype_offsets: tuple[tuple[str, str, float], ...] = ()  # (archetype, trait, offset)
-    # (trait_i, trait_j, rho). NOT defaulted to anything: an empty tuple gives
+    # (trait_i, trait_j, rho). ADDS to whatever the archetype mixture already
+    # induces — it does not set the realised correlation. An archetype that
+    # shifts two traits together correlates them, and the two mechanisms
+    # compose without either knowing about the other. Measured at N=20000 on
+    # the shipped defaults, for activity x reply_prop:
+    #
+    #     archetypes off, no pairs           -0.001
+    #     archetypes off, asked for 0.30     +0.299   <- you get what you ask
+    #     archetypes on,  no pairs           +0.303   <- the lurker archetype
+    #     archetypes on,  asked for 0.30     +0.493   <- both, added
+    #
+    # `sample_population` warns when a requested pair touches traits an
+    # archetype also moves. To control a pair exactly, use one mechanism or
+    # the other.
+    #
+    # NOT defaulted to anything: an empty tuple gives
     # an identity correlation matrix, so every trait — including the stance
     # axes — is independent unless listed here. spec §7.5 notes that correlated
     # stance axes are what produce the empirically observed collapse toward a
