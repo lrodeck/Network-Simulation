@@ -101,3 +101,48 @@ def test_sensitivity_covers_the_parameters_the_spec_names(tmp_path, monkeypatch)
     cfg = _small()
     for path in SENSITIVITY_PARAMS:
         assert get_param(cfg, path) is not None, path
+
+
+def test_agreement_metric_removes_the_dimension_dependent_offset():
+    """spec §7.5's open choice, as a dial. `euclidean` is the raw stance
+    distance, whose mean grows like sqrt(D) — measured -1.13 at D=1, -2.26 at
+    D=3, -3.01 at D=5 — while its spread barely moves. Raising D under that
+    metric silently subtracts a constant from every utility, which is an
+    intercept shift wearing a feature's clothes. `rms` divides by sqrt(D) so
+    the feature has the same location at any D and a theta transfers.
+    """
+    import numpy as np
+
+    from discourse_lab.dynamics import ExpressionMap, generate_posts
+    from discourse_lab.exposure.attention import Exposures
+    from discourse_lab.exposure.kernel import compute_features
+    from discourse_lab.population import sample_population
+
+    means = {}
+    for metric in ("euclidean", "rms"):
+        for D in (1, 4):
+            cfg = dataclasses.replace(
+                Config(),
+                population=dataclasses.replace(Config().population, n_users=500, stance_dims=D),
+            )
+            rng = np.random.default_rng(0)
+            pop = sample_population(cfg, rng)
+            K = cfg.population.n_topics
+            expr = ExpressionMap.build(pop.trait_names, K)
+            authors = rng.choice(500, size=300)
+            posts = generate_posts(
+                authors, pop, expr, np.zeros(K), np.zeros((K, D)), 0.3, rng, t=0
+            )
+            m = len(posts)
+            ex = Exposures(
+                post_idx=np.arange(m), user_id=rng.choice(500, size=m), rank=np.zeros(m, dtype=int)
+            )
+            feats = compute_features(
+                ex, posts, pop, np.ones(m, dtype=bool), 0, agreement_metric=metric
+            )
+            means[(metric, D)] = float(feats["agreement"].mean())
+
+    euclid_drift = abs(means[("euclidean", 4)] / means[("euclidean", 1)])
+    rms_drift = abs(means[("rms", 4)] / means[("rms", 1)])
+    assert euclid_drift > 1.4, f"euclidean should grow with D, got ratio {euclid_drift:.2f}"
+    assert rms_drift < 1.25, f"rms should be near scale-free in D, got ratio {rms_drift:.2f}"

@@ -104,18 +104,28 @@ def test_null_comparison_isolates_homophily_agreement_effect(tmp_path, monkeypat
 @pytest.mark.xfail(
     strict=False,
     reason=(
-        "Open finding, not a flaky test. The homophily kernel's agreement effect "
-        "against its matched null is strongly dependent on stance dimensionality. "
-        "Measured at n_users=800, n_ticks=20, 20 seeds: D=1 gives +0.0025 (t=+4.44), "
-        "D=3 gives -0.0012 (t=-1.42). D=3 is spec §1.1's own range and the default. "
-        "Two candidate causes, neither yet ruled out: (a) `agreement` is "
-        "-||s_u - s_p||, whose spread relative to its mean shrinks as D grows, so a "
-        "theta authored at D=1 carries less discriminative power at D=3; (b) the "
-        "latent-space graph already sorts users on stance, so at higher D the "
-        "*graph* does the homophily and the kernel adds nothing measurable over the "
-        "null. (b) would be a real result about where homophily lives; (a) would be "
-        "a scaling bug in the feature map. Resolving it needs a D-sweep with the "
-        "agreement feature normalised by sqrt(D) as the control."
+        "Open finding, diagnosed. Homophily's effect on consumed-stance "
+        "agreement is dimensionality-dependent and is absent at spec §1.1's "
+        "default D=3, while its effect on topic salience is not. Measured at "
+        "n_users=800, n_ticks=20, 20 seeds:\n"
+        "                     agreement_effect      salience_effect\n"
+        "  D=1                  +0.0049 (t=+2.46)   +0.0054 (t=+3.4)\n"
+        "  D=3 independent      -0.0001 (t=-0.05)   +0.0046 (t=+3.64)\n"
+        "  D=3 rho=0.85         +0.0015 (t=+0.46)   +0.0066 (t=+5.90)\n"
+        "At D=3 the model and null agree to four decimals (-1.2325 vs "
+        "-1.2324), so this is a real convergence, not sampling noise. "
+        "Both hypotheses recorded earlier were tested and are wrong: the "
+        "graph does NOT do the sorting at higher D (stance homophily ratio "
+        "0.595 at D=1 vs 0.623 at D=3), and normalising the agreement feature "
+        "by sqrt(D) does not restore it (t=-0.05 rms vs +0.01 euclidean) — a "
+        "t-statistic is scale-invariant, so no rescaling ever could. "
+        "The mechanism is that agreement requires simultaneous alignment on "
+        "every axis, which gets rarer as D grows, so the kernel finds less "
+        "near-stance content to select. Correlated axes recover it partially, "
+        "which is exactly the collapse to a dominant dimension spec §7.5 "
+        "predicts. The null comparison itself is healthy at D=3 — salience "
+        "separates model from null at t=+3.64; it is the stance channel "
+        "specifically that weakens."
     ),
 )
 def test_homophily_agreement_effect_at_the_spec_default_dimensionality(tmp_path, monkeypatch):
@@ -131,3 +141,24 @@ def test_homophily_agreement_effect_at_the_spec_default_dimensionality(tmp_path,
     t_stat = mean / (effects.std(ddof=1) / np.sqrt(len(seeds)))
 
     assert t_stat > 2.0, f"agreement effect {mean:+.4f} (t={t_stat:.2f}) at D=3"
+
+
+def test_the_null_comparison_still_resolves_at_the_default_dimensionality(tmp_path, monkeypatch):
+    """The §5.3 protocol is not broken at D=3 — only its stance channel is.
+
+    Guards against reading the agreement xfail above as "Experiment 1 does not
+    work at the default config". Topic salience separates the homophily kernel
+    from its matched null at D=3 with t > 3, so the instrument resolves; what
+    weakens is the specific claim about stance agreement.
+    """
+    monkeypatch.setenv("DLAB_HOME", str(tmp_path))
+    base = _base_cfg(n_users=800, n_ticks=20)
+    assert base.stance_dims() == 3
+
+    cells = build_experiment1(base, kernels=("homophily",), rankers=("affinity",))
+    seeds = list(range(20))
+    rows = run_experiment1(cells, seeds=seeds)
+
+    effects = np.array([r["salience_effect"] for r in rows], dtype=float)
+    t_stat = effects.mean() / (effects.std(ddof=1) / np.sqrt(len(seeds)))
+    assert t_stat > 2.0, f"salience effect {effects.mean():+.4f} (t={t_stat:.2f}) at D=3"

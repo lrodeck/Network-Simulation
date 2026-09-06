@@ -208,7 +208,10 @@ class TickEngine:
                 )
 
                 if len(exposures) > 0:
-                    features = compute_features(exposures, posts, self.pop, exposures.is_follower, t)
+                    features = compute_features(
+                        exposures, posts, self.pop, exposures.is_follower, t,
+                        agreement_metric=cfg.agreement_metric,
+                    )
                     theta = named_kernel(cfg.kernel)
                     actions = apply_kernel(theta, features, rngs["reaction"])
 
