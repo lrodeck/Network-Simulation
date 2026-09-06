@@ -76,8 +76,9 @@ class State:
     exposure_sample: dict[str, np.ndarray] | None = None
     # spec §3.5: X snapshots every `snapshot_every` ticks. None on other ticks.
     traits_snapshot: np.ndarray | None = None
-    # spec §3.1 step 6: queued for the offline channel-3 pass, never executed
-    # inside the tick.
+    # spec §3.1 step 6: THIS TICK's salient events, queued for the offline
+    # channel-3 pass and never executed inside the tick. Replaced every tick, like
+    # the other raw records — a consumer that wants the whole run accumulates.
     salient_events: list = field(default_factory=list)
 
 
@@ -117,7 +118,7 @@ def run_iter(cfg: Config, seed: int) -> Iterator[State]:
                 if cfg.dynamics.snapshot_every > 0 and t % cfg.dynamics.snapshot_every == 0
                 else None
             ),
-            salient_events=list(engine.salient_events),
+            salient_events=engine.salient_events,
         )
 
 

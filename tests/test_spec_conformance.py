@@ -133,3 +133,39 @@ def test_every_config_field_is_read_by_something():
             unread.append(name)
 
     assert not unread, f"config fields declared but never read: {unread}"
+
+
+def test_reply_inheritance_seeds_decaying_excitation_not_the_baseline():
+    """`hawkes_mu_inherit` must warm a reply's thread through `excitation`,
+    which decays at beta, and never through `mu`, which does not.
+
+    Seeding `mu` gives every reply a permanently raised floor, so the process
+    runs away regardless of alpha/beta. Measured replies/tick over ticks
+    0-20 / 40-60 / 100-120 with mu-seeding at ratio=0.6: 1.9 / 10.0 / 400.7.
+    """
+    from discourse_lab.dynamics.hawkes import HawkesThreads
+
+    th = HawkesThreads()
+    th.open_threads(np.array([1]), mu=0.004, excitation=10.0)
+
+    assert th.mu[0] == 0.004, "inherited heat leaked into the permanent baseline"
+    assert th.excitation[0] == 10.0
+
+    th.step(np.random.default_rng(0), alpha=0.9, beta=1.5, max_age=50)
+    assert th.excitation[0] < 10.0, "inherited heat is not decaying"
+
+
+def test_default_hawkes_settings_are_subcritical():
+    """spec §2.3 requires alpha/beta < 1 for stability and warns that threads
+    otherwise run away. The inheritance channel adds to that, so the defaults
+    are checked end to end rather than trusted from the ratio alone.
+    """
+    cfg = _cfg(n_users=600, n_ticks=60, drift="none")
+    replies = [state.metrics["n_replies"] for state in run_iter(cfg, seed=0)]
+
+    early = float(np.mean(replies[:15]))
+    late = float(np.mean(replies[-15:]))
+    assert late < 10 * max(early, 1.0), (
+        f"reply volume grew from {early:.1f} to {late:.1f} per tick — "
+        "the default Hawkes settings are supercritical"
+    )

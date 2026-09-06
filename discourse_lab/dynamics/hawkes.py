@@ -28,11 +28,28 @@ class HawkesThreads:
     excitation: np.ndarray = field(default_factory=lambda: np.empty(0))
     age: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=np.int64))
 
+    def open_threads(
+        self, post_ids: np.ndarray, mu: np.ndarray | float, excitation: np.ndarray | float = 0.0
+    ) -> None:
+        """Open many threads at once — one concatenation, not one per post.
+
+        Opening them one at a time made thread bookkeeping O(n^2): every
+        `np.append` reallocates and copies the whole array, and a busy tick
+        opens thousands of threads. spec §3.2 rules out per-user Python loops
+        in the tick for exactly this reason.
+        """
+        post_ids = np.atleast_1d(np.asarray(post_ids, dtype=np.int64))
+        if len(post_ids) == 0:
+            return
+        mu_arr = np.broadcast_to(np.asarray(mu, dtype=float), post_ids.shape)
+        self.post_id = np.concatenate([self.post_id, post_ids])
+        self.mu = np.concatenate([self.mu, mu_arr])
+        exc = np.broadcast_to(np.asarray(excitation, dtype=float), post_ids.shape)
+        self.excitation = np.concatenate([self.excitation, exc])
+        self.age = np.concatenate([self.age, np.zeros(len(post_ids), dtype=np.int64)])
+
     def open_thread(self, post_id: int, mu: float) -> None:
-        self.post_id = np.append(self.post_id, post_id)
-        self.mu = np.append(self.mu, mu)
-        self.excitation = np.append(self.excitation, 0.0)
-        self.age = np.append(self.age, 0)
+        self.open_threads(np.array([post_id], dtype=np.int64), mu)
 
     def step(self, rng: np.random.Generator, alpha: float, beta: float, max_age: int, dt: float = 1.0) -> dict[int, int]:
         """Advance one tick: decay, draw replies, excite, age out. Returns
@@ -53,6 +70,44 @@ class HawkesThreads:
         self.post_id, self.mu = self.post_id[keep], self.mu[keep]
         self.excitation, self.age = self.excitation[keep], self.age[keep]
         return result
+
+    def excitation_of(self, post_ids: np.ndarray) -> np.ndarray:
+        """Current *excitation* (the decaying part) for each id, 0 if closed.
+
+        Inheritance must be seeded here and never into `mu`: `mu` is the
+        permanent baseline and does not decay, so folding a parent's heat into
+        a child's `mu` gives every reply a permanently raised floor and the
+        process runs away. Measured with mu-inheritance at hawkes_ratio=0.6
+        and n_users=800, replies/tick over ticks 0-20 / 40-60 / 100-120:
+
+            inherit 0.00    1.1     1.1     0.8      stable
+            inherit 0.10    1.9     2.2     3.4      creeping
+            inherit 0.13    1.9    10.0   400.7      saturated
+
+        Excitation decays at `beta`, so an inherited share fades like any
+        other event and stability stays governed by alpha/beta < 1.
+        """
+        return self._lookup(post_ids, self.excitation)
+
+    def intensity_of(self, post_ids: np.ndarray, alpha: float) -> np.ndarray:
+        """Current reply intensity for each id, 0.0 where the thread is closed.
+
+        Vectorised over ids: a linear scan per id was the other half of the
+        O(n^2) — replies are looked up in bulk once per tick.
+        """
+        return self._lookup(post_ids, self.mu) + alpha * self._lookup(post_ids, self.excitation)
+
+    def _lookup(self, post_ids: np.ndarray, values: np.ndarray) -> np.ndarray:
+        post_ids = np.atleast_1d(np.asarray(post_ids, dtype=np.int64))
+        out = np.zeros(len(post_ids))
+        if len(self.post_id) == 0:
+            return out
+        order = np.argsort(self.post_id)
+        sorted_ids = self.post_id[order]
+        pos = np.clip(np.searchsorted(sorted_ids, post_ids), 0, len(sorted_ids) - 1)
+        hit = sorted_ids[pos] == post_ids
+        out[hit] = values[order[pos[hit]]]
+        return out
 
     def __len__(self) -> int:
         return len(self.post_id)

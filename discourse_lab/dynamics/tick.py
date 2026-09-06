@@ -74,8 +74,10 @@ class TickEngine:
     engagement_events: dict[str, np.ndarray] | None = field(default=None, init=False)
     exposure_sample: dict[str, np.ndarray] | None = field(default=None, init=False)
     # spec §3.1 step 6: "flag_salient_events(engagements)  # queued, not
-    # executed". Channel 3 is the only place the LLM touches dynamics and is
-    # gated; this accumulates the queue an offline pass consumes.
+    # executed". Channel 3 is the only place the LLM touches dynamics and it
+    # is gated. Replaced every tick like the other raw records — accumulating
+    # it here and copying the whole list per tick was O(n^2) and broke the
+    # flat-memory-in-run-length rule (dev §7.3); the consumer accumulates.
     salient_events: list = field(default_factory=list, init=False)
 
     def __post_init__(self) -> None:
@@ -105,6 +107,7 @@ class TickEngine:
         self.retired_posts = None
         self.engagement_events = None
         self.exposure_sample = None
+        self.salient_events = []
         engaged_this_tick: tuple = (None, None, None, None)
 
         circ = circadian_factor(t, cfg.ticks_per_day, self.phase_ticks, self.circ_shape)
@@ -127,8 +130,7 @@ class TickEngine:
                 start_id=self.next_post_id, t=t,
             )
             self.next_post_id += len(new_posts)
-            for post_id in new_posts.id:
-                self.threads.open_thread(int(post_id), cfg.hawkes_mu0)
+            self.threads.open_threads(new_posts.id, cfg.hawkes_mu0)
         self.fatigue.step(n_posts, cfg.fatigue_decay)
 
         if self.active_posts is None:
@@ -136,6 +138,7 @@ class TickEngine:
         elif new_posts is not None:
             self.active_posts = concat_post_batches([self.active_posts, new_posts])
 
+        n_replies = 0
         # spec §3.1 step 2: replies are drawn from the self-exciting thread
         # intensity (§2.3), not derived from the exposure pass. alpha = ratio
         # * beta keeps the branching ratio alpha/beta = hawkes_ratio < 1.
@@ -151,12 +154,38 @@ class TickEngine:
                 warnings.warn(w, stacklevel=2)
             if reply_posts is not None:
                 self.next_post_id += len(reply_posts)
-                for post_id in reply_posts.id:
-                    self.threads.open_thread(int(post_id), cfg.hawkes_mu0)
+                # A reply's own thread opens warm in proportion to the thread
+                # it landed in — seeded into `excitation`, which decays, never
+                # into `mu`, which does not (see HawkesThreads.excitation_of).
+                # At 0.0 it opens cold: the spec-literal reading, depth ~1.
+                inherited = 0.0
+                if cfg.hawkes_mu_inherit > 0:
+                    inherited = cfg.hawkes_mu_inherit * self.threads.excitation_of(reply_posts.parent)
+                self.threads.open_threads(reply_posts.id, cfg.hawkes_mu0, inherited)
                 self.active_posts = concat_post_batches([self.active_posts, reply_posts])
+                n_replies = len(reply_posts)
+
+                # Same discipline spec §2.7 applies to cascades via r_eff: the
+                # reply process is a branching process too, and it has its own
+                # critical point. `hawkes_ratio` bounds excitation *within* a
+                # thread, but `hawkes_mu_inherit` adds a second channel across
+                # generations, so alpha/beta < 1 alone no longer guarantees
+                # stability. Measured at hawkes_ratio=0.6: inherit 0.16 gives
+                # 2.4 replies per post, 0.20 gives 473 — the transition is
+                # sharp, so warn rather than let a run silently saturate.
+                if len(reply_posts) > 50 * max(len(new_posts) if new_posts is not None else 1, 1):
+                    warnings.warn(
+                        f"hawkes: {len(reply_posts)} replies against "
+                        f"{len(new_posts) if new_posts is not None else 0} new posts at t={t} — "
+                        f"the reply process looks supercritical. Lower hawkes_mu_inherit "
+                        f"({cfg.hawkes_mu_inherit}) or hawkes_ratio ({cfg.hawkes_ratio}).",
+                        stacklevel=2,
+                    )
 
         metrics: dict[str, float] = {
             "n_posts": float(len(new_posts) if new_posts is not None else 0),
+            "n_replies": float(n_replies),
+            "open_threads": 0.0,
             "n_exposures": 0.0,
             "n_engagements": 0.0,
             "attention_gini": float("nan"),
@@ -239,7 +268,7 @@ class TickEngine:
                     # spec §3.1 step 6: queued, never executed inside the tick
                     reply_counts = np.zeros(len(posts), dtype=np.int64)
                     np.add.at(reply_counts, exposures.post_idx[actions == "reply"], 1)
-                    self.salient_events.extend(
+                    self.salient_events = list(
                         detect_salient_events(
                             posts, reply_counts,
                             self.cfg.world.adjudication_top_percentile,
@@ -263,6 +292,7 @@ class TickEngine:
         # quiet ticks lets drift deltas accumulate without their matching
         # reversion. (Measured, quiet ticks never occur at n_users >= 300, so
         # this was latent rather than active; it is still wrong.)
+        metrics["open_threads"] = float(len(self.threads))
         posts_e, delta_e, exposures_e, actions_e = engaged_this_tick
 
         if posts_e is not None:

@@ -143,6 +143,32 @@ class DynamicsConfig(Hashable):
     hawkes_ratio: float = 0.6                 # alpha/beta, must stay < 1
     hawkes_beta: float = 1.5
     max_thread_age: int = 15                  # ticks a thread stays open for Hawkes
+    # Fraction of its parent's current reply intensity that a new reply post's
+    # own thread opens with. spec §2.3 gives lambda_p per post and leaves mu_p
+    # unspecified, so this is the §7-style open choice made into a dial.
+    #
+    #   0.0  every post opens at hawkes_mu0 — the literal reading. A reply
+    #        inside a raging thread is as cold as a fresh post, so depth
+    #        cannot compound and thread depth sits at ~1.06.
+    #   >0   heat propagates down the chain: replying to a hot reply is
+    #        itself likely, which is what makes threads deep rather than wide.
+    #
+    # Measured frontier (n_users=800-1500, replies/tick over ticks 0-20 vs
+    # 100-120 for stability; singleton share and depth at 40 ticks):
+    #
+    #   mu0    ratio  inherit   singleton  depth   long-run replies/tick
+    #   0.004  0.6    0.0       0.884      1.06    1.1 -> 0.8    stable
+    #   0.004  0.6    0.6       0.884      1.11    1.9 -> 1.7    stable
+    #   0.03   0.9    0.9       0.786      2.78    —             saturates
+    #   0.005  0.95   0.95      0.910      1.65    4.8 -> 3907   saturates
+    #
+    # Both spec §5.1 cascade rows are reachable (bottom row) but only at
+    # hawkes_ratio ~ 0.95, and §2.3 says that is the pile-on regime: it does
+    # not survive the default 500 ticks. The default here is the stable
+    # corner; the deep-thread corner is an experimental condition you select
+    # deliberately, with n_ticks short enough that it has not saturated.
+    # The tick warns when replies run away.
+    hawkes_mu_inherit: float = 0.6
 
     trend_eta: float = 0.3                    # topic susceptibility to discourse state
     post_lifetime: int = 5                    # ticks a post stays in candidate inboxes
