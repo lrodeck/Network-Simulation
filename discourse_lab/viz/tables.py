@@ -85,8 +85,10 @@ def save_table(
         "tex": directory / f"{name}.tex",
         "md": directory / f"{name}.md",
     }
-    out["tex"].write_text(to_latex_booktabs(df, caption, label, precision), encoding="utf-8")
-    out["md"].write_text(to_markdown(df, precision), encoding="utf-8")
+    # trailing newline: these are files a person opens in an editor and a
+    # `\input{}` in a paper, both of which expect one
+    out["tex"].write_text(to_latex_booktabs(df, caption, label, precision) + "\n", encoding="utf-8")
+    out["md"].write_text(to_markdown(df, precision) + "\n", encoding="utf-8")
     return out
 
 
