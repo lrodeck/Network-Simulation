@@ -70,7 +70,31 @@ def sample_post_counts(
 
 @dataclass
 class HawkesThreads:
-    """Self-exciting reply intensity per post (spec §2.4).
+    """Self-exciting reply intensity per post.
+
+    APPROXIMATES spec §2.3, it does not implement it. Read this before
+    citing it as the spec's Hawkes process.
+
+    §2.3 specifies reply *timing*: lambda_p(t) governs WHEN replies fire, so
+    a post "gets its comments in a clump, not spread uniformly". What this
+    class does instead is feed the intensity into the engagement kernel as
+    a utility term, so it changes the PROBABILITY that a given exposure
+    becomes a reply. The consequences differ:
+
+      reproduced    replies concentrate on already-active threads, which is
+                    what makes chains deepen
+      NOT reproduced within-thread burstiness. A reply still lands in
+                    whichever tick its exposure happened to occur in; the
+                    intensity never schedules an arrival time of its own.
+
+    So `alpha/beta < 1` is honoured as a stability bound (`hawkes_ratio` is
+    exactly alpha/beta) but the "pile-on dynamics as alpha/beta -> 1" dial
+    §2.3 describes is only partly present: pile-ons get more replies, not
+    more tightly clumped ones.
+
+    Implementing §2.3 properly means drawing reply arrival times against
+    open threads in the timing phase, rather than deriving replies from
+    whatever the exposure pass produced.
 
     A post that has just been replied to is more likely to be replied to
     again — this is what makes discourse threads *deep* rather than merely

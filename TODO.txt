@@ -166,3 +166,62 @@ NOTES / RULES THAT APPLY THROUGHOUT
   - Registry stays a sorted list; never branch on exact float equality
   - Statistical reproducibility across seeds is the promise, not bitwise
   - Always sweep multiple seeds; report distributions, not points
+
+======================================================================
+SPEC CONFORMANCE AUDIT (post-calibration)
+Every section below was checked against discourse-lab-spec.md directly,
+not against build notes. Prompted by finding that a mechanism written in
+step 5 had never been called.
+======================================================================
+
+VERIFIED FAITHFUL
+  2.1  copula population - Higham nearest-PSD, mixture (not per-component)
+       moments, every marginal matches the spec table
+  2.2  all four generators present and swappable
+  2.4  expression map sparse/named, conviction conformity line, topic
+       softmax with eta
+  2.5  all five rankers, B_u ~ Poisson(b * activity), position decay
+  2.6  multinomial logit, skip as reference category at U = 0
+  2.8  discourse state weighted by engagement, not post count
+  2.9  channels 1-2 with the spec's exact action weights; OU composition
+       with Bs initialised to the population baseline
+  3.4  RNG phase discipline via root.spawn
+
+DEVIATIONS
+  2.3  Hawkes replies are a KERNEL TERM, not a scheduler. See the
+       HawkesThreads docstring in dynamics/timing.py. Reproduces reply
+       concentration on hot threads; does NOT reproduce within-thread
+       burstiness, because a reply lands in whichever tick its exposure
+       occurred in rather than at a drawn arrival time.
+  2.2  long ties are drawn PROPORTIONAL TO PROMINENCE, not uniformly as
+       the spec specifies. Introduced during calibration to stop the
+       generator flattening the Pareto(2.3) prominence tail (in-degree
+       alpha was 7.93). Shortcut property is preserved, but this is a
+       deliberate departure from a spec clause that argues for uniform.
+  3.1  cascades re-expose on the NEXT tick rather than in a within-tick
+       wave loop. Documented in dynamics/tick.py.
+  3.1  gumbel_argmax replaced by inverse-CDF sampling. Same distribution.
+
+WRITTEN BUT NEVER WIRED  (the pattern to watch for)
+  - dynamics/hawkes.py: a CORRECT spec 2.3 implementation, with arrival
+    times drawn as Poisson(mu + alpha * excitation), exponential-kernel
+    recursion and thread ageing. Added in step 5 (commit 1ae4250),
+    exported from dynamics/__init__.py, tested - and never called by the
+    tick loop. A second class of the SAME NAME now lives in
+    dynamics/timing.py and is the one tick.py actually uses. Resolve the
+    collision: wire hawkes.py where spec 3.1 puts it (generation phase),
+    delete the duplicate, then RE-MEASURE - the thread-depth vs
+    Experiment-1 trade-off was measured against the approximation.
+  - llm/adjudication.py detect_salient_events: exists, tested, never
+    called from the tick loop. Spec 2.9 channel 3 / spec 3.1 step 6.
+
+NOT IMPLEMENTED
+  - 3.5 X snapshots every k ticks (snapshot_every is a dead config field)
+  - 3.5 the 1% exposure sample (exposure_sample_rate is dead). This is
+    why metrics.echo_chamber_index has no data source in any run.
+
+Six config fields are still never read outside config.py:
+  adjudication_max_delta, adjudication_pile_on_threshold,
+  adjudication_top_percentile, exposure_sample_rate, llm_model,
+  snapshot_every
+A declared parameter is not a wired mechanism. Check both.
