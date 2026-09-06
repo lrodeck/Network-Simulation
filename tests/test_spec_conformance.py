@@ -253,3 +253,65 @@ def test_marginal_inversion_is_vectorised():
 
     assert len(x) == 100_000
     assert elapsed < 1.0, f"{elapsed:.1f}s to invert 100k draws — per-element root-finding is back"
+
+
+def test_derived_posts_can_be_replied_to():
+    """Reposts and quotes must open Hawkes threads like any other post.
+
+    They did not, so every cascade-derived post sat outside the reply pool and
+    was structurally unreplyable. In a 3000-user run, 711 of 971 depth-1 posts
+    were reposts or quotes with a zero chance of a reply, which understated
+    thread depth and made the branching probability depth-dependent in the
+    wrong direction. (End to end at n_users=1500 over 40 ticks, reposts and
+    quotes now do receive replies — but only a handful, so this asserts the
+    mechanism rather than waiting on a rare event.)
+    """
+    from discourse_lab.dynamics.tick import TickEngine
+    from discourse_lab.network import cached_graph
+    from discourse_lab.population import cached_population
+    from discourse_lab.runner import phase_rngs
+
+    cfg = _cfg(n_users=1500, n_ticks=1, drift="none")
+    rngs = phase_rngs(0)
+    pop = cached_population(cfg, 0, rngs["population"])
+    graph = cached_graph(cfg, 0, pop, rngs["graph"])
+    engine = TickEngine(cfg=cfg, pop=pop, graph=graph, rngs=rngs)
+
+    for t in range(6):
+        engine.step(t)
+        kinds = engine.active_posts.kind
+        derived = engine.active_posts.id[np.isin(kinds, ("repost", "quote"))]
+        if len(derived) > 0:
+            break
+
+    assert len(derived) > 0, "no reposts or quotes produced, cannot check"
+    open_threads = set(engine.threads.post_id.tolist())
+    assert set(int(x) for x in derived) <= open_threads, (
+        "cascade-derived posts are not opening Hawkes threads, so nothing can reply to them"
+    )
+
+
+def test_reply_arrivals_are_capped_so_threads_chain_rather_than_bush():
+    """`max_replies_per_tick = 1` is what makes depth reachable without the
+    reply process going supercritical.
+
+    Uncapped, a hot post collects many simultaneous children and volume
+    explodes before depth grows: at hawkes_mu_inherit 1.8 replies/tick went
+    6 -> 4453 by tick 30, and at 2.5 the run exhausted memory. Capped, the
+    same inheritance produces chains, and inherit 2.65 holds a plateau over
+    90+ ticks while reaching thread depth 2.3.
+    """
+    from discourse_lab.dynamics.hawkes import HawkesThreads
+
+    th = HawkesThreads()
+    th.open_threads(np.arange(500), mu=5.0)     # a very hot intensity
+    drawn = th.step(np.random.default_rng(0), alpha=0.9, beta=1.5, max_age=50,
+                    max_replies_per_tick=1)
+
+    assert drawn, "no replies drawn at all"
+    assert max(drawn.values()) == 1, f"cap ignored: a post drew {max(drawn.values())} replies"
+
+    uncapped = HawkesThreads()
+    uncapped.open_threads(np.arange(500), mu=5.0)
+    drawn_u = uncapped.step(np.random.default_rng(0), alpha=0.9, beta=1.5, max_age=50)
+    assert max(drawn_u.values()) > 1, "uncapped draw should be able to exceed 1"

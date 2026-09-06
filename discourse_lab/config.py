@@ -165,22 +165,51 @@ class DynamicsConfig(Hashable):
     #   >0   heat propagates down the chain: replying to a hot reply is
     #        itself likely, which is what makes threads deep rather than wide.
     #
-    # Measured frontier (n_users=800-1500, replies/tick over ticks 0-20 vs
-    # 100-120 for stability; singleton share and depth at 40 ticks):
+    # Values above 1 are meaningful and are where the useful regime is: a
+    # reply lands in a conversation already hotter than a cold post, so its
+    # own thread starts hotter still. What bounds it is stability, not 1.
     #
-    #   mu0    ratio  inherit   singleton  depth   long-run replies/tick
-    #   0.004  0.6    0.0       0.884      1.06    1.1 -> 0.8    stable
-    #   0.004  0.6    0.6       0.884      1.11    1.9 -> 1.7    stable
-    #   0.03   0.9    0.9       0.786      2.78    —             saturates
-    #   0.005  0.95   0.95      0.910      1.65    4.8 -> 3907   saturates
+    # Measured (n_users=1500, 40 ticks; stability over 90 ticks at n=800),
+    # with max_replies_per_tick = 1:
     #
-    # Both spec §5.1 cascade rows are reachable (bottom row) but only at
-    # hawkes_ratio ~ 0.95, and §2.3 says that is the pile-on regime: it does
-    # not survive the default 500 ticks. The default here is the stable
-    # corner; the deep-thread corner is an experimental condition you select
-    # deliberately, with n_ticks short enough that it has not saturated.
-    # The tick warns when replies run away.
-    hawkes_mu_inherit: float = 0.6
+    #   inherit   P(branch|root)  P(branch|in-thread)  singleton  depth
+    #   0.6                0.085                0.123      0.915   1.16
+    #   1.8                0.092                0.294      0.908   1.43
+    #   1.0                    -                    -          -   ~1.2   <- default
+    #   1.8                0.092                0.294      0.908   1.43
+    #   2.65               0.080                0.55       0.926   2.30
+    #   3.0                0.080                0.608      0.920   2.54
+    #
+    # The default is 1.0, not the depth-optimal 2.65, because deep threads
+    # dilute the thing Experiment 1 measures. Hawkes replies are not
+    # kernel-driven — a reply carries the replier's own stance — so the more
+    # of the corpus is replies, the less of what a user consumes was selected
+    # by the engagement kernel, and the §5.3 null comparison loses power.
+    # Measured at n_users=800, n_ticks=20, 20 seeds, D=1, the homophily
+    # agreement effect against its matched null:
+    #
+    #   inherit 0.6 -> t=+3.77    1.0 -> t=+2.46    1.8 -> t=+1.93
+    #   inherit 2.65 -> t=+0.74 (indistinguishable from noise)
+    #
+    # spec §5.1's depth row is a description of the model; §5.2/§5.3 are what
+    # the model is for. Depth 1.5-3 is reachable and stable at inherit >= 2.2
+    # and is an experimental condition to select deliberately, not the
+    # default. Setting it costs the null comparison its resolution.
+    #
+    # That separation is what spec §5.1 actually requires: its two cascade
+    # rows (>90% singletons AND depth 1.5-3) can only both hold if roots
+    # branch rarely while threads already started continue often. A flat
+    # branching probability gives depth = 1/(1-p), which is 1.1 at p = 0.09
+    # no matter how the other knobs are set.
+    #
+    # Uncapped (max_replies_per_tick = 0) every depth-productive setting was
+    # supercritical: at inherit 1.8, replies/tick went 6 -> 4453 by tick 30;
+    # at 2.5 the run exhausted memory. The tick warns when replies run away.
+    hawkes_mu_inherit: float = 1.0
+    # Arrivals per post per tick; 0 = uncapped Poisson. At 1 a conversation
+    # extends as a chain rather than a bush, which is what gives depth without
+    # runaway volume — see HawkesThreads.step.
+    max_replies_per_tick: int = 1
 
     trend_eta: float = 0.3                    # topic susceptibility to discourse state
     post_lifetime: int = 5                    # ticks a post stays in candidate inboxes

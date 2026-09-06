@@ -51,16 +51,44 @@ class HawkesThreads:
     def open_thread(self, post_id: int, mu: float) -> None:
         self.open_threads(np.array([post_id], dtype=np.int64), mu)
 
-    def step(self, rng: np.random.Generator, alpha: float, beta: float, max_age: int, dt: float = 1.0) -> dict[int, int]:
+    def step(
+        self,
+        rng: np.random.Generator,
+        alpha: float,
+        beta: float,
+        max_age: int,
+        dt: float = 1.0,
+        max_replies_per_tick: int = 0,
+    ) -> dict[int, int]:
         """Advance one tick: decay, draw replies, excite, age out. Returns
         {post_id: n_replies} for threads that got at least one reply.
+
+        `max_replies_per_tick` caps arrivals per post per tick (0 = uncapped
+        Poisson). At 1 the draw becomes Bernoulli with the same per-tick
+        probability, 1 - exp(-lambda), which is the discrete-time reading of
+        the same point process and produces a very different *shape*:
+
+        Uncapped, a hot post collects many simultaneous children, so a thread
+        grows as a bush and volume explodes before depth does. Measured, every
+        setting that raised thread depth toward spec §5.1's 1.5-3 was
+        supercritical: at hawkes_mu_inherit 1.8 replies per tick went 6 -> 4453
+        by tick 30, and at 2.5 the run exhausted memory. Capped, a post is
+        replied to at most once per tick, so a conversation extends as a chain
+        — which is what a real reply thread is, and what produces depth
+        without runaway volume.
         """
         if len(self.post_id) == 0:
             return {}
 
         self.excitation *= np.exp(-beta * dt)
         intensity = self.mu + alpha * self.excitation
-        n_replies = rng.poisson(np.clip(intensity * dt, 0, None))
+        rate = np.clip(intensity * dt, 0, None)
+        if max_replies_per_tick == 1:
+            n_replies = (rng.random(len(rate)) < -np.expm1(-rate)).astype(np.int64)
+        else:
+            n_replies = rng.poisson(rate)
+            if max_replies_per_tick > 1:
+                n_replies = np.minimum(n_replies, max_replies_per_tick)
         self.excitation += n_replies.astype(float)
         self.age += 1
 

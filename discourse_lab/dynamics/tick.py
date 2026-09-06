@@ -143,7 +143,8 @@ class TickEngine:
         # intensity (§2.3), not derived from the exposure pass. alpha = ratio
         # * beta keeps the branching ratio alpha/beta = hawkes_ratio < 1.
         reply_targets = self.threads.step(
-            rngs["timing"], cfg.hawkes_ratio * cfg.hawkes_beta, cfg.hawkes_beta, cfg.max_thread_age
+            rngs["timing"], cfg.hawkes_ratio * cfg.hawkes_beta, cfg.hawkes_beta,
+            cfg.max_thread_age, max_replies_per_tick=cfg.max_replies_per_tick,
         )
         if reply_targets:
             reply_posts, reply_warnings = generate_reply_posts(
@@ -233,6 +234,15 @@ class TickEngine:
                         warnings.warn(w, stacklevel=2)
                     if cascade_posts is not None:
                         self.next_post_id += len(cascade_posts)
+                        # Reposts and quotes open threads too: a quote is a
+                        # post, and people reply to quotes. They did not, so
+                        # every derived post was unreplyable — of 971 depth-1
+                        # posts in a 3000-user run, 711 were reposts/quotes
+                        # sitting outside the Hawkes pool entirely, which both
+                        # understated thread depth and silently made the
+                        # branching probability depth-dependent in the wrong
+                        # direction.
+                        self.threads.open_threads(cascade_posts.id, cfg.hawkes_mu0)
                         self.active_posts = concat_post_batches([self.active_posts, cascade_posts])
 
                     perceived = compute_perception(n, exposures, exposures.is_follower, posts, self.s, self.sigma)
