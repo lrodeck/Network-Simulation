@@ -119,6 +119,7 @@ def compute_features(
     pop: Population,
     is_follower: np.ndarray,
     t_current: int,
+    agreement_metric: str = "rms",
 ) -> dict[str, np.ndarray]:
     names_ = pop.trait_names
     topic_cols = [i for i, n in enumerate(names_) if n.startswith("topic_affinity_")]
@@ -134,7 +135,15 @@ def compute_features(
 
     s_u = pop.X_used[u][:, stance_cols]
     s_p = posts.stance[p]
+    # spec §7.5's open choice, made into a dial: "euclidean" is the raw
+    # distance, whose mean grows like sqrt(D) and so shifts every utility as
+    # stance dimensionality rises; "rms" divides by sqrt(D) so a theta means
+    # the same thing at any D. See DynamicsConfig.agreement_metric.
     agreement = -np.linalg.norm(s_u - s_p, axis=1)
+    if agreement_metric == "rms":
+        agreement = agreement / np.sqrt(max(len(stance_cols), 1))
+    elif agreement_metric != "euclidean":
+        raise ValueError(f"unknown agreement_metric {agreement_metric!r}; expected 'rms' or 'euclidean'")
 
     neuroticism = pop.X_used[u, names_.index("neuroticism")]
     contrarianism = pop.X_used[u, names_.index("contrarianism")]

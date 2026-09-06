@@ -150,6 +150,21 @@ class DynamicsConfig(Hashable):
     ranker: str = "chronological"
     kernel: str = "homophily"
     kernel_theta: tuple[tuple[str, str, float], ...] = ()   # (feature, action, value)
+    # How stance disagreement is measured in the engagement kernel (spec §2.6
+    # `phi`), and therefore whether a theta authored at one stance
+    # dimensionality means the same thing at another. spec §7.5 leaves the
+    # treatment of multiple stance axes open; this is that choice.
+    #
+    #   "euclidean"  ||s_u - s_p||, the total distance. Its mean grows like
+    #                sqrt(D) (-1.13 at D=1, -2.26 at D=3, -3.01 at D=5) while
+    #                its spread barely moves (0.86 -> 0.95 -> 0.97), so raising
+    #                D silently subtracts a constant from every utility and
+    #                suppresses engagement — a D-dependent intercept shift
+    #                wearing a feature's clothes.
+    #   "rms"        the same distance per dimension, ||s_u - s_p|| / sqrt(D),
+    #                so the feature has the same location and scale at any D
+    #                and a kernel theta transfers across dimensionalities.
+    agreement_metric: str = "rms"
 
     hawkes_mu0: float = 0.004                 # baseline reply intensity per tick
     hawkes_ratio: float = 0.6                 # alpha/beta, must stay < 1

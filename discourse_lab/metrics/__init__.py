@@ -206,11 +206,13 @@ def stylized_facts_from_run(handle, graph=None, pop=None, rng=None) -> dict[str,
 
     rng = rng if rng is not None else np.random.default_rng(0)
     facts: dict[str, float] = {}
+    engagement_fit = None
 
     if handle.has_posts:
         posts = handle.posts()
         engagement = posts["engagement_count"].to_numpy()
-        facts["engagement_alpha"] = powerlaw_alpha(engagement)
+        engagement_fit = powerlaw_fit(engagement)
+        facts["engagement_alpha"] = engagement_fit.alpha
         facts["attention_gini"] = gini(engagement)
 
         root = posts["root"].to_numpy()
@@ -247,6 +249,21 @@ def stylized_facts_from_run(handle, graph=None, pop=None, rng=None) -> dict[str,
 
     hostility = facts.pop("_hostility_given_contact", None)
     report = stylized_facts_report(**facts)
+
+    if engagement_fit is not None and "engagement_alpha" in report:
+        # spec §5.1 asks for alpha in [2, 3], which presumes the distribution
+        # is a power law at all. It is not: alpha climbs monotonically with
+        # x_min (1.54 at 2, 5.66 at 300), so grading a single value against a
+        # range reports on where x_min landed rather than on the model. The
+        # row carries the diagnostic and is ungraded when the tail is curved.
+        entry = report["engagement_alpha"]
+        entry["alpha_spread"] = engagement_fit.alpha_spread
+        entry["is_powerlaw"] = engagement_fit.is_powerlaw
+        entry["xmin"] = engagement_fit.xmin
+        entry["n_tail"] = engagement_fit.n_tail
+        if not engagement_fit.is_powerlaw:
+            entry["in_range"] = None
+            entry["label"] += " — not a power law"
     if hostility is not None:
         # the other half of the fact: "hostility rate high given contact".
         # No range is quoted in the spec, so it is reported, not graded.

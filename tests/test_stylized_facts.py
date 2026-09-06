@@ -413,3 +413,57 @@ def test_attention_concentration_comes_from_the_feed_not_the_graph(tmp_path, mon
         f"engagement_optimized+bandwagon peaked at {optimized}, chronological at "
         f"{chronological} — the feed is no longer concentrating attention"
     )
+
+
+# --------------------------------------------------------------------------
+# is the tail actually a power law?
+# --------------------------------------------------------------------------
+
+
+def test_alpha_spread_separates_power_laws_from_curved_tails():
+    """A power law is scale-free: its exponent must not move as x_min is
+    swept. Curved tails give an exponent that climbs, which is the whole
+    reason `alpha` alone cannot be graded against spec §5.1's [2, 3].
+
+    Controls at n=40000: true Zipf draws come back tight, lognormal and
+    exponential draws come back spread.
+    """
+    rng = np.random.default_rng(0)
+    cases = {
+        "zipf_2.5": (rng.zipf(2.5, 40_000).astype(float), True),
+        "zipf_2.0": (rng.zipf(2.0, 40_000).astype(float), True),
+        "lognormal": (np.ceil(rng.lognormal(0, 2, 40_000)), False),
+        "exponential": (np.ceil(rng.exponential(10, 40_000)), False),
+    }
+    for name, (draw, expected) in cases.items():
+        fit = powerlaw_fit(draw)
+        assert fit.is_powerlaw is expected, (
+            f"{name}: alpha={fit.alpha:.2f} spread={fit.alpha_spread:.2f} "
+            f"judged power law = {fit.is_powerlaw}, expected {expected}"
+        )
+
+
+def test_engagement_alpha_is_reported_ungraded_when_the_tail_is_curved(tmp_path, monkeypatch):
+    """spec §5.1 asks for engagement alpha in [2, 3], which presumes there is
+    a power law to have an exponent. In this model there is not — alpha runs
+    1.54 at x_min 2 to 5.66 at x_min 300 — so the row reports the value and
+    the diagnostic rather than grading it, which would only be reporting on
+    where x_min landed.
+    """
+    monkeypatch.setenv("DLAB_HOME", str(tmp_path))
+    cfg = dataclasses.replace(
+        Config(),
+        population=dataclasses.replace(Config().population, n_users=800),
+        dynamics=dataclasses.replace(Config().dynamics, n_ticks=30, drift="none"),
+    )
+    cached_run(cfg, seed=0, persist=("posts", "engagements"))
+    handle = load_run(cfg, seed=0)
+    rngs = phase_rngs(0)
+    pop = cached_population(cfg, 0, rngs["population"])
+    graph = cached_graph(cfg, 0, pop, rngs["graph"])
+
+    entry = stylized_facts_from_run(handle, graph=graph, pop=pop)["engagement_alpha"]
+    assert "alpha_spread" in entry and "is_powerlaw" in entry
+    if not entry["is_powerlaw"]:
+        assert entry["in_range"] is None, "a non-power-law tail must not be graded"
+        assert "not a power law" in entry["label"]

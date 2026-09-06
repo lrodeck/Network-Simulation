@@ -138,3 +138,81 @@ def apply_adjudication(pop: Population, user_idx: int, result: AdjudicationResul
         col = pop.trait_names.index(trait)
         pop.X_stored[user_idx, col] += delta
         pop.X_used[user_idx, col] = to_used(pop.X_stored[user_idx : user_idx + 1, col], pop.links[col])[0]
+
+
+def adjudicate_run(
+    client: LLMClient,
+    cfg,
+    events: "list[SalientEvent]",
+    pop: Population,
+    cache_dir=None,
+    apply: bool = False,
+    max_events: int | None = None,
+) -> dict[int, AdjudicationResult]:
+    """Channel 3 (spec §2.9) as the offline pass §2.10 requires.
+
+    "Only on salient events... The LLM sees the voice card, a digest of the
+    event, and returns bounded deltas with justification. This is the only
+    place the LLM touches dynamics, and it is gated to keep both cost and
+    non-determinism bounded."
+
+    Everything this needs already existed and nothing called it:
+    `detect_salient_events` queues per tick, `request_adjudication` asks,
+    `parse_adjudication` clips to `cfg.world.adjudication_max_delta`, and
+    `apply_adjudication` folds the result into stored traits. This is the
+    missing orchestrator, deliberately shaped like `llm.realize`: a view over
+    a completed run, never called inside the tick.
+
+    The gating §2.9 asks for is enforced here rather than left to the caller:
+    one adjudication per user per run (the most extreme event they were
+    involved in), so a user in fifty pile-ons costs one call, not fifty.
+    `apply=False` by default — returning the deltas without mutating the
+    population keeps this inspectable, which matters for the one channel that
+    is non-deterministic.
+    """
+    from discourse_lab.llm.voice_card import fit_bands, get_voice_card, user_bands
+
+    world = cfg.world
+    if not events:
+        return {}
+
+    def severity(e: "SalientEvent") -> float:
+        detail = e.detail or {}
+        return float(detail.get("engagement_count", detail.get("reply_count", 0)))
+
+    worst: dict[int, SalientEvent] = {}
+    for event in sorted(events, key=severity, reverse=True):
+        worst.setdefault(int(event.author), event)
+
+    selected = list(worst.items())
+    if max_events is not None:
+        selected = sorted(selected, key=lambda kv: severity(kv[1]), reverse=True)[:max_events]
+
+    bands_fitted = fit_bands(pop, n_bands=world.n_bands)
+    results: dict[int, AdjudicationResult] = {}
+    for user, event in selected:
+        archetype = pop.archetype_names[pop.archetype_labels[user]]
+        card = get_voice_card(
+            client, archetype, user_bands(pop, bands_fitted, user), cache_dir=cache_dir,
+            temperature=world.temperature, max_tokens=world.voice_card_max_tokens,
+        )
+        result = request_adjudication(
+            client, card, event, list(pop.trait_names),
+            max_delta=world.adjudication_max_delta, temperature=world.temperature,
+        )
+        results[user] = result
+        if apply:
+            apply_adjudication(pop, user, result)
+    return results
+
+
+def events_from_run(handle) -> "list[SalientEvent]":
+    """Rebuild the queue from `salient_events.parquet`."""
+    frame = handle.salient_events()
+    return [
+        SalientEvent(
+            post_id=int(row["post_id"]), author=int(row["author"]),
+            kind=str(row["kind"]), detail=json.loads(row["detail"]),
+        )
+        for row in frame.iter_rows(named=True)
+    ]
