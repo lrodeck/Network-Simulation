@@ -7,7 +7,7 @@ directly to inspect or break mid-run.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator, Sequence
 
@@ -16,7 +16,15 @@ import numpy as np
 from discourse_lab.config import Config
 from discourse_lab.dynamics.posts import PostBatch, concat_post_batches
 from discourse_lab.dynamics.tick import TickEngine
-from discourse_lab.io.store import RUN_FORMAT, RunHandle, RunWriter, engagements_schema, posts_schema
+from discourse_lab.io.store import (
+    RUN_FORMAT,
+    RunHandle,
+    RunWriter,
+    engagements_schema,
+    exposures_schema,
+    posts_schema,
+    traits_schema,
+)
 from discourse_lab.io.workspace import runs_dir
 from discourse_lab.network import cached_graph
 from discourse_lab.population import cached_population
@@ -65,6 +73,12 @@ class State:
     # post is lost. Both are per-tick, never cumulative.
     retired_posts: "PostBatch | None" = None
     engagement_events: dict[str, np.ndarray] | None = None
+    exposure_sample: dict[str, np.ndarray] | None = None
+    # spec §3.5: X snapshots every `snapshot_every` ticks. None on other ticks.
+    traits_snapshot: np.ndarray | None = None
+    # spec §3.1 step 6: queued for the offline channel-3 pass, never executed
+    # inside the tick.
+    salient_events: list = field(default_factory=list)
 
 
 def run_dir(cfg: Config, seed: int) -> Path:
@@ -97,6 +111,13 @@ def run_iter(cfg: Config, seed: int) -> Iterator[State]:
         yield State(
             t=t, cfg=cfg, seed=seed, rngs=rngs, metrics=metrics,
             retired_posts=retired, engagement_events=engine.engagement_events,
+            exposure_sample=engine.exposure_sample,
+            traits_snapshot=(
+                engine.pop.X_stored.copy()
+                if cfg.dynamics.snapshot_every > 0 and t % cfg.dynamics.snapshot_every == 0
+                else None
+            ),
+            salient_events=list(engine.salient_events),
         )
 
 
@@ -109,9 +130,12 @@ def run(cfg: Config, seed: int, persist: Sequence[str] = ()) -> Path:
     `cfg.hash()` and invalidate every cached artifact.
     """
     persist = tuple(persist)
-    unknown = set(persist) - {"posts", "engagements"}
+    unknown = set(persist) - {"posts", "engagements", "exposures", "traits"}
     if unknown:
-        raise ValueError(f"unknown persist target(s): {sorted(unknown)}; expected 'posts' and/or 'engagements'")
+        raise ValueError(
+            f"unknown persist target(s): {sorted(unknown)}; "
+            "expected any of 'posts', 'engagements', 'exposures', 'traits'"
+        )
 
     path = run_dir(cfg, seed)
     writer = RunWriter(path, cfg, seed)
@@ -122,6 +146,8 @@ def run(cfg: Config, seed: int, persist: Sequence[str] = ()) -> Path:
             writer.ensure_empty("posts", posts_schema(cfg.stance_dims()))
         if "engagements" in persist:
             writer.ensure_empty("engagements", engagements_schema())
+        if "exposures" in persist:
+            writer.ensure_empty("exposures", exposures_schema())
 
         for state in run_iter(cfg, seed):
             writer.write_tick(state.t, state.metrics)
@@ -129,6 +155,12 @@ def run(cfg: Config, seed: int, persist: Sequence[str] = ()) -> Path:
                 writer.write_posts(state.retired_posts)
             if "engagements" in persist:
                 writer.write_engagements(state.engagement_events)
+            if "exposures" in persist:
+                writer.write_exposure_sample(state.exposure_sample)
+            if "traits" in persist and state.traits_snapshot is not None:
+                # created on first snapshot rather than up front: the trait
+                # count is only known once the population is sampled
+                writer.write_traits(state.t, state.traits_snapshot)
     finally:
         writer.close()
     return path

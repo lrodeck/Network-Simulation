@@ -31,9 +31,10 @@ from discourse_lab.dynamics.drift import DriftState, apply_drift
 from discourse_lab.dynamics.expression import ExpressionMap
 from discourse_lab.dynamics.perception import compute_perception
 from discourse_lab.dynamics.posts import PostBatch, concat_post_batches, filter_post_batch, generate_posts
+from discourse_lab.dynamics.hawkes import HawkesThreads, generate_reply_posts
+from discourse_lab.llm.adjudication import detect_salient_events
 from discourse_lab.dynamics.timing import (
     FatigueState,
-    HawkesThreads,
     circadian_factor,
     circadian_shape,
     sample_post_counts,
@@ -71,6 +72,11 @@ class TickEngine:
     # every tick — nothing accumulates, so memory stays flat in run length.
     retired_posts: PostBatch | None = field(default=None, init=False)
     engagement_events: dict[str, np.ndarray] | None = field(default=None, init=False)
+    exposure_sample: dict[str, np.ndarray] | None = field(default=None, init=False)
+    # spec §3.1 step 6: "flag_salient_events(engagements)  # queued, not
+    # executed". Channel 3 is the only place the LLM touches dynamics and is
+    # gated; this accumulates the queue an offline pass consumes.
+    salient_events: list = field(default_factory=list, init=False)
 
     def __post_init__(self) -> None:
         n = self.cfg.population.n_users
@@ -81,7 +87,7 @@ class TickEngine:
         self.s = np.zeros(K)
         self.sigma = np.zeros((K, D))
         self.fatigue = FatigueState.initial(n)
-        self.threads = HawkesThreads.empty()
+        self.threads = HawkesThreads()
         self.circ_shape = circadian_shape(self.cfg.dynamics.ticks_per_day)
 
         circadian_phase = self.pop.X_used[:, names.index("circadian_phase")]
@@ -98,8 +104,9 @@ class TickEngine:
         n = self.cfg.population.n_users
         self.retired_posts = None
         self.engagement_events = None
+        self.exposure_sample = None
+        engaged_this_tick: tuple = (None, None, None, None)
 
-        self.threads.step(t, cfg.hawkes_beta, cfg.max_thread_age)
         circ = circadian_factor(t, cfg.ticks_per_day, self.phase_ticks, self.circ_shape)
         # posts_per_tick_rate is the Poisson rate at activity = 1 (spec §2.3's
         # lambda_u). It was declared in the config and never applied, so the
@@ -120,12 +127,33 @@ class TickEngine:
                 start_id=self.next_post_id, t=t,
             )
             self.next_post_id += len(new_posts)
+            for post_id in new_posts.id:
+                self.threads.open_thread(int(post_id), cfg.hawkes_mu0)
         self.fatigue.step(n_posts, cfg.fatigue_decay)
 
         if self.active_posts is None:
             self.active_posts = new_posts
         elif new_posts is not None:
             self.active_posts = concat_post_batches([self.active_posts, new_posts])
+
+        # spec §3.1 step 2: replies are drawn from the self-exciting thread
+        # intensity (§2.3), not derived from the exposure pass. alpha = ratio
+        # * beta keeps the branching ratio alpha/beta = hawkes_ratio < 1.
+        reply_targets = self.threads.step(
+            rngs["timing"], cfg.hawkes_ratio * cfg.hawkes_beta, cfg.hawkes_beta, cfg.max_thread_age
+        )
+        if reply_targets:
+            reply_posts, reply_warnings = generate_reply_posts(
+                reply_targets, self.active_posts, self.pop, self.expr, self.s, self.sigma,
+                rngs["generation"], self.next_post_id, t, cfg.max_cascade_depth,
+            )
+            for w in reply_warnings:
+                warnings.warn(w, stacklevel=2)
+            if reply_posts is not None:
+                self.next_post_id += len(reply_posts)
+                for post_id in reply_posts.id:
+                    self.threads.open_thread(int(post_id), cfg.hawkes_mu0)
+                self.active_posts = concat_post_batches([self.active_posts, reply_posts])
 
         metrics: dict[str, float] = {
             "n_posts": float(len(new_posts) if new_posts is not None else 0),
@@ -150,10 +178,7 @@ class TickEngine:
                 )
 
                 if len(exposures) > 0:
-                    intensity = self.threads.intensity(posts.id[exposures.post_idx], cfg.hawkes_mu0) / cfg.hawkes_mu0
-                    features = compute_features(
-                        exposures, posts, self.pop, exposures.is_follower, t, thread_intensity=intensity
-                    )
+                    features = compute_features(exposures, posts, self.pop, exposures.is_follower, t)
                     theta = named_kernel(cfg.kernel)
                     actions = apply_kernel(theta, features, rngs["reaction"])
 
@@ -178,12 +203,6 @@ class TickEngine:
                     for w in cascade_warnings:
                         warnings.warn(w, stacklevel=2)
                     if cascade_posts is not None:
-                        is_reply = cascade_posts.kind == "reply"
-                        if is_reply.any():
-                            self.threads.record(
-                                cascade_posts.parent[is_reply], cascade_posts.id[is_reply],
-                                t, cfg.hawkes_ratio, cfg.hawkes_beta,
-                            )
                         self.next_post_id += len(cascade_posts)
                         self.active_posts = concat_post_batches([self.active_posts, cascade_posts])
 
@@ -203,16 +222,32 @@ class TickEngine:
                         r_eff=r_eff(actions, len(exposures), self.graph, reposter_ids),
                     )
 
-                    delta = posts.engagement_count - before
-                    tick_posts = filter_post_batch(posts, delta > 0)
-                    tick_posts.engagement_count = delta[delta > 0]
-                    self.s, self.sigma = update_discourse(self.s, self.sigma, tick_posts, cfg.rho_s, cfg.rho_sigma)
+                    # spec §3.5: exposures are never persisted in full (they
+                    # outnumber engagements ~50:1); a fixed random sample is.
+                    if cfg.exposure_sample_rate > 0:
+                        keep = rngs["exposure"].random(len(exposures)) < cfg.exposure_sample_rate
+                        if keep.any():
+                            self.exposure_sample = {
+                                "t": np.full(int(keep.sum()), t, dtype=np.int64),
+                                "user": exposures.user_id[keep],
+                                "post": posts.id[exposures.post_idx[keep]],
+                                "rank": exposures.rank[keep],
+                                "is_follower": exposures.is_follower[keep],
+                                "action": actions[keep],
+                            }
 
-                    apply_drift(
-                        self.cfg, self.pop, self.expr, self.drift_state, rngs["drift"], t,
-                        posts, delta.astype(float), exposures, actions,
+                    # spec §3.1 step 6: queued, never executed inside the tick
+                    reply_counts = np.zeros(len(posts), dtype=np.int64)
+                    np.add.at(reply_counts, exposures.post_idx[actions == "reply"], 1)
+                    self.salient_events.extend(
+                        detect_salient_events(
+                            posts, reply_counts,
+                            self.cfg.world.adjudication_top_percentile,
+                            self.cfg.world.adjudication_pile_on_threshold,
+                        )
                     )
-                    self.activity = self.pop.X_used[:, self.pop.trait_names.index("activity")]
+
+                    engaged_this_tick = (posts, posts.engagement_count - before, exposures, actions)
 
             alive = (t - self.active_posts.t) < cfg.post_lifetime
             if not alive.all():
@@ -220,5 +255,27 @@ class TickEngine:
                 # why persistence writes them here rather than at creation
                 self.retired_posts = filter_post_batch(self.active_posts, ~alive)
                 self.active_posts = filter_post_batch(self.active_posts, alive)
+
+        # spec §3.1 steps 6-7 run EVERY tick, not only on ticks that produced
+        # exposures. Both were nested three deep inside the exposure guard.
+        # §2.9 is explicit that the OU mean-reversion term "is not optional"
+        # and that its absence fails "monotone and quiet" — skipping it on
+        # quiet ticks lets drift deltas accumulate without their matching
+        # reversion. (Measured, quiet ticks never occur at n_users >= 300, so
+        # this was latent rather than active; it is still wrong.)
+        posts_e, delta_e, exposures_e, actions_e = engaged_this_tick
+
+        if posts_e is not None:
+            tick_posts = filter_post_batch(posts_e, delta_e > 0)
+            tick_posts.engagement_count = delta_e[delta_e > 0]
+        else:
+            tick_posts = None
+        self.s, self.sigma = update_discourse(self.s, self.sigma, tick_posts, cfg.rho_s, cfg.rho_sigma)
+
+        apply_drift(
+            self.cfg, self.pop, self.expr, self.drift_state, rngs["drift"], t,
+            posts_e, None if delta_e is None else delta_e.astype(float), exposures_e, actions_e,
+        )
+        self.activity = self.pop.X_used[:, self.pop.trait_names.index("activity")]
 
         return metrics

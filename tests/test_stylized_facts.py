@@ -267,71 +267,107 @@ def test_stylized_facts_from_a_real_run_are_all_computed(tmp_path, monkeypatch):
 
 
 # --------------------------------------------------------------------------
-# reply self-excitation and preferential long ties (calibration)
+# Hawkes reply scheduling (spec §2.3, §3.1 step 2)
 # --------------------------------------------------------------------------
 
 
-def test_hawkes_threads_decay_and_close():
-    from discourse_lab.dynamics.timing import HawkesThreads
+def test_hawkes_intensity_is_self_exciting_and_threads_age_out():
+    from discourse_lab.dynamics.hawkes import HawkesThreads
 
-    th = HawkesThreads.empty()
-    th.record(np.array([1]), np.array([2]), t=0, ratio=0.6, beta=1.5)
-    opened = th.intensity(np.array([1]), mu0=0.004)[0]
+    th = HawkesThreads()
+    th.open_thread(1, mu=5.0)          # mu high enough that replies fire reliably
+    rng = np.random.default_rng(0)
 
-    th.step(t=1, beta=1.5, max_thread_age=10)
-    assert th.intensity(np.array([1]), mu0=0.004)[0] < opened  # decayed
-    assert th.intensity(np.array([99]), mu0=0.004)[0] == pytest.approx(0.004)  # cold post
+    th.step(rng, alpha=0.9, beta=1.5, max_age=10)
+    assert th.excitation[0] > 0        # the replies it drew excite the thread
 
-    th.step(t=99, beta=1.5, max_thread_age=10)
-    assert th.intensity(np.array([1]), mu0=0.004)[0] == pytest.approx(0.004)  # aged out
+    assert len(th) == 1
+    for _ in range(12):
+        th.step(rng, alpha=0.9, beta=1.5, max_age=10)
+    assert len(th) == 0                # aged out past max_age
 
 
-def test_a_reply_inherits_its_parents_heat_so_chains_can_deepen():
-    """The child seeding is what carries activity *down* a chain — without it
-    every reply starts cold and depth cannot grow past 1.
+def test_hawkes_draws_more_replies_on_hotter_threads():
+    """Self-excitation is the whole point: a thread that has been replied to
+    should attract more replies than an equally-aged cold one.
     """
-    from discourse_lab.dynamics.timing import HawkesThreads
+    from discourse_lab.dynamics.hawkes import HawkesThreads
 
-    th = HawkesThreads.empty()
-    for _ in range(5):  # a parent that has been replied to repeatedly
-        th.record(np.array([1]), np.array([2]), t=0, ratio=0.6, beta=1.5)
+    hot, cold = HawkesThreads(), HawkesThreads()
+    hot.open_thread(1, mu=2.0)
+    cold.open_thread(1, mu=2.0)
+    hot.excitation[0] = 20.0           # a thread already in full flow
 
-    assert th.intensity(np.array([2]), mu0=0.004)[0] > 0.004  # child is born warm
-    assert th.excess[2] < th.excess[1]  # but cooler than its parent, so it terminates
-
-
-def test_reply_actions_now_spawn_posts_at_greater_depth():
-    from discourse_lab.dynamics.cascade import BRANCHING_ACTIONS, CASCADE_ACTIONS, STANCE_SHIFT
-
-    assert "reply" in CASCADE_ACTIONS  # it did not, and thread depth was unreachable
-    assert "reply" not in BRANCHING_ACTIONS  # but R in spec §2.7 is over reposts
-    assert STANCE_SHIFT["repost"] == 0.0 < STANCE_SHIFT["quote"] < STANCE_SHIFT["reply"]
+    rng_a, rng_b = np.random.default_rng(0), np.random.default_rng(0)
+    n_hot = sum(hot.step(rng_a, 0.9, 1.5, 50).get(1, 0) for _ in range(5))
+    n_cold = sum(cold.step(rng_b, 0.9, 1.5, 50).get(1, 0) for _ in range(5))
+    assert n_hot > n_cold
 
 
-def test_long_ties_are_prominence_weighted_so_hubs_can_form():
-    """`prominence` enters as Pareto(2.3); a uniform long-tie draw threw that
-    tail away and in-degree came out at alpha ~7.9.
+def test_reply_posts_are_generated_not_derived_from_engagement():
+    """spec §2.7 keeps cascades to repost/quote; reply *posts* come from the
+    Hawkes draw in the generation phase. Both facts, asserted together,
+    because conflating them is exactly the mistake this replaced.
     """
+    from discourse_lab.dynamics.cascade import BRANCHING_ACTIONS, CASCADE_ACTIONS
+
+    assert CASCADE_ACTIONS == ("repost", "quote")
+    assert BRANCHING_ACTIONS == ("repost", "quote")
+
+    import discourse_lab.dynamics.timing as timing
+    assert not hasattr(timing, "HawkesThreads"), "the duplicate is back"
+
+    from discourse_lab.dynamics import HawkesThreads as exported
+    from discourse_lab.dynamics.hawkes import HawkesThreads as canonical
+    assert exported is canonical  # one class, one name
+
+
+def test_a_run_produces_reply_posts_with_real_thread_depth():
     cfg = dataclasses.replace(
         Config(),
-        population=dataclasses.replace(Config().population, n_users=2000),
+        population=dataclasses.replace(Config().population, n_users=600),
+        dynamics=dataclasses.replace(Config().dynamics, n_ticks=30, drift="none"),
+    )
+    kinds, depths = set(), []
+    for state in __import__("discourse_lab.runner", fromlist=["run_iter"]).run_iter(cfg, seed=0):
+        if state.retired_posts is not None and len(state.retired_posts) > 0:
+            kinds.update(np.unique(state.retired_posts.kind).tolist())
+            depths.extend(state.retired_posts.depth.tolist())
+
+    assert "reply" in kinds, "the Hawkes draw produced no reply posts at all"
+    assert max(depths) > 1, "no thread got past depth 1"
+
+
+# --------------------------------------------------------------------------
+# graph consequences of spec §2.2's uniform long ties
+# --------------------------------------------------------------------------
+
+
+def test_uniform_long_ties_cap_the_in_degree_tail():
+    """§2.2 mandates a *uniform* long-tie component. The consequence is that
+    the population's Pareto prominence tail does not reach the graph: within
+    the kNN pool you can only be followed by the users whose neighbourhood
+    contains you, and a uniform long tie is as likely to land on a nobody.
+
+    This test pins the limitation in place so it is a known property rather
+    than a surprise in a figure. If it ever starts failing because in-degree
+    got heavy-tailed, the generator changed and §5.1's engagement rows should
+    be re-checked.
+    """
+    cfg = dataclasses.replace(
+        Config(), population=dataclasses.replace(Config().population, n_users=2000)
     )
     rng = np.random.default_rng(0)
     pop = sample_population(cfg, rng)
     graph = generate_graph(cfg, pop, rng)
 
-    in_degree = np.asarray(graph.csr.sum(axis=0)).ravel()
-    prominence = pop.X_used[:, pop.trait_names.index("prominence")]
+    in_degree = np.asarray(graph.csr.sum(axis=0)).ravel().astype(float)
+    fit = powerlaw_fit(in_degree)
 
-    # the most prominent users are genuinely the most followed. Bounds are
-    # loose because prominence is Pareto: only the very top of the tail pulls
-    # far away from the mean, and where that top lands is seed-dependent
-    # (measured over 3 seeds: top-10 ratio 2.6-2.9, max ratio 4.0-9.4).
-    top_prominent = np.argsort(prominence)[-10:]
-    assert in_degree[top_prominent].mean() > 2 * in_degree.mean()
-    # and a hub exists at all, rather than everyone sitting near mean degree
-    assert in_degree.max() > 3.5 * in_degree.mean()
-    assert np.corrcoef(np.log1p(prominence), in_degree)[0, 1] > 0.15
+    # measured alpha ~4.9 at N=2000, ~7.9 at N=3000 — scale-dependent, but far
+    # from the 2-3 §5.1's engagement rows need
+    assert fit.alpha > 4.0, "in-degree became heavy-tailed; re-check spec §5.1"
+    assert in_degree.max() < 10 * in_degree.mean()
 
 
 def test_knn_pool_must_leave_room_for_the_preference_weights():

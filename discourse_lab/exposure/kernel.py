@@ -42,7 +42,6 @@ FEATURES = (
     "specificity",
     "recency",
     "credulity_x_q",
-    "thread_activity",
 )
 
 # Per-action intercepts — the baseline propensity to do anything at all.
@@ -61,13 +60,11 @@ FEATURES = (
 # <1% report), and so the repost rate keeps R_eff subcritical at the default
 # mean degree of 40.
 # The repost/quote/reply levels are additionally set against spec §5.1's
-# cascade shape (>90% of roots stay singletons, mean depth 1.5-3 over the
-# ones that branch). That shape is *narrow and deep*, and it is reached by
-# pairing a low baseline reply propensity with strong self-excitation
-# (`_HAWKES_ENTRIES` below): almost no cold post attracts a reply, but a
-# thread that has started attracts many. Suppressing branching through the
-# intercepts alone cannot reach it — measured, the two targets then trade
-# off directly and no setting satisfies both.
+# cascade shape (>90% of roots stay singletons). Reply *posts* are no longer
+# produced here at all — they are scheduled by the Hawkes intensity in
+# dynamics/hawkes.py per §2.3 — so the "reply" intercept now governs only the
+# reply engagement *event*, which feeds the discourse-state update and drift
+# channel 2.
 DEFAULT_INTERCEPTS: dict[str, float] = {
     "like": -3.5,
     "repost": -7.0,
@@ -80,29 +77,11 @@ _INTERCEPT_ENTRIES = tuple(
     (action, "intercept", weight) for action, weight in DEFAULT_INTERCEPTS.items()
 )
 
-# Reply self-excitation (spec §2.4) rides on every kernel, alongside the
-# intercepts: which posts are *open for reply* is a property of the
-# conversation, not of a theory of what makes people engage. Swapping
-# homophily for outrage should not change whether threads can get deep.
-#
-# The weight is set at 1.5 to protect Experiment 1, not to maximise the
-# spec §5.1 thread-depth row, and the two genuinely conflict:
-#
-#     weight   thread depth      replies/post   §5.3 agreement effect
-#     1.5      1.34 (short)      1.2            +0.0258, t=3.77
-#     2.0      1.82 (in range)   7.35           +0.0049, t=1.15
-#
-# At 2.0 replies are 88% of all posts, and because thread heat rather than
-# stance agreement decides them, the null comparison spec §5.3 requires can
-# no longer separate homophily from the null at practical run sizes. A
-# calibration row describes the model; Experiment 1 is what the model is
-# *for*, so depth ships out of range and says so.
-_HAWKES_ENTRIES = (("reply", "thread_activity", 1.5),)
 
 
 def _with_intercepts(entries: tuple[tuple[str, str, float], ...]) -> tuple[tuple[str, str, float], ...]:
     """Every kernel carries the baseline; features move a user off it."""
-    return _INTERCEPT_ENTRIES + _HAWKES_ENTRIES + entries
+    return _INTERCEPT_ENTRIES + entries
 
 
 # theta entries: (action, feature, weight). Dominant terms per dev §6 step 6
@@ -140,7 +119,6 @@ def compute_features(
     pop: Population,
     is_follower: np.ndarray,
     t_current: int,
-    thread_intensity: np.ndarray | None = None,   # lambda_p / mu0, i.e. 1.0 for a cold post
 ) -> dict[str, np.ndarray]:
     names_ = pop.trait_names
     topic_cols = [i for i, n in enumerate(names_) if n.startswith("topic_affinity_")]
@@ -180,17 +158,6 @@ def compute_features(
         "specificity": posts.specificity[p],
         "recency": -(t_current - posts.t[p]),
         "credulity_x_q": credulity * (1 - posts.specificity[p]),
-        # log reply intensity *relative to baseline* (spec §2.4). The caller
-        # passes lambda_p / mu0, so this is 0 for a post nobody has replied
-        # to and grows with the thread's heat: a positive theta on
-        # ("reply", "thread_activity") is exactly "replies attract replies",
-        # and a cold post is left exactly on its intercept. Passing the raw
-        # intensity instead would add a constant log(mu0) = -5.5 to every
-        # reply utility and suppress replies everywhere. Callers without a
-        # HawkesThreads pass None and get the feature switched off.
-        "thread_activity": (
-            np.zeros(len(u)) if thread_intensity is None else np.log(thread_intensity)
-        ),
     }
 
 

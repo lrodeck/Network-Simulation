@@ -18,11 +18,17 @@ from discourse_lab.dynamics.posts import PostBatch
 def update_discourse(
     s: np.ndarray,
     sigma: np.ndarray,
-    posts: PostBatch,
+    posts: PostBatch | None,
     rho_s: float,
     rho_sigma: float,
 ) -> tuple[np.ndarray, np.ndarray]:
+    """`posts` is None on a tick that produced no engagement. The decay still
+    runs — spec §3.1 puts `decay_discourse` at step 1, unconditionally, so a
+    quiet tick lets attention fade rather than freezing the agenda."""
     K = s.shape[0]
+    if posts is None:
+        return rho_s * s, sigma.copy()
+
     w = posts.engagement_count.astype(float) if len(posts) > 0 else np.zeros(0)
 
     if len(posts) == 0 or w.sum() == 0:

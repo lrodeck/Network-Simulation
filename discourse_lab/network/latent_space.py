@@ -8,21 +8,22 @@ edges come from a kNN search in latent space (exact for small N, and the only
 tractable option once N grows past ~20k) plus a long-tie component — a pure
 kNN graph has no shortcuts and cascades die in-cluster.
 
-Long ties are drawn **proportional to prominence**, not uniformly. This is
-the only global channel in the generator, and it is load-bearing for the
-degree distribution: within the kNN pool a user can only be followed by the
-~k users whose neighbourhood contains them, so the `gamma * log(1 +
-prominence)` term can reorder candidates but never lift anyone out of that
-geometric ceiling. Measured, `prominence` enters as Pareto(2.30) with a
-max/mean of 303x and in-degree came out at alpha 7.93 with a max of 4x the
-mean — the population's heavy tail was being destroyed by the graph. Drawing
-long ties uniformly made them pure noise; weighting them by prominence
-restores hubs (max in-degree 175 -> 1006 at N=3000) and is what "you follow
-your neighbourhood plus a few well-known accounts" actually means.
+Long ties are drawn **uniformly**, per §2.2: "a uniform random component for
+long ties. The uniform component matters — a pure k-NN graph has no shortcuts
+and cascades die in-cluster."
 
-The residual matters for anything reading spec §5.1: this lifts in-degree to
-alpha ~4.7, not to the 2-3 the engagement-per-post target implies. The kNN
-ceiling is still the binding constraint on the tail.
+Known consequence, recorded rather than worked around: this caps the in-degree
+tail. `prominence` enters as Pareto(2.30) with a max/mean of 303x, but
+in-degree comes out at alpha ~7.9 with a max of ~4x the mean, because within
+the kNN pool a user can only be followed by the ~knn_k users whose
+neighbourhood contains them — the `gamma * log(1 + prominence)` term reorders
+candidates but cannot lift anyone out of that geometric ceiling. Engagement
+per post cannot be more skewed than the audience sizes it is drawn over, so
+spec §5.1's engagement-alpha (2-3) and attention-Gini (0.8-0.95) rows are not
+reachable while long ties stay uniform. Drawing them proportional to
+prominence instead lifts in-degree to alpha ~4.7 and max in-degree from 175 to
+1006 at N=3000 — a real improvement, but a deviation from §2.2, so it is not
+taken here.
 """
 
 from __future__ import annotations
@@ -92,9 +93,7 @@ def latent_space_graph(cfg: Config, pop: Population, rng: np.random.Generator) -
     n_long = int(gcfg.long_tie_fraction * len(rows))
     if n_long > 0:
         long_rows = rng.integers(0, n, n_long)
-        # destinations by prominence, not uniform — see the module docstring
-        weights = prominence / prominence.sum()
-        long_cols = rng.choice(n, size=n_long, p=weights)
+        long_cols = rng.integers(0, n, n_long)
         keep = long_rows != long_cols
         rows = np.concatenate([rows, long_rows[keep]])
         cols = np.concatenate([cols, long_cols[keep]])
