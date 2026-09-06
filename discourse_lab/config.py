@@ -252,6 +252,17 @@ class ScenarioConfig(Hashable):
 
     Each axis: {name, pole_neg, pole_pos, marginal: {kind: empirical, bins,
     support, density}, expression_cost: {neg, pos}}.
+
+    `name`, `pole_neg` and `pole_pos` are what make a result readable —
+    "provision: leans market" rather than "stance_0 = -1.2" — and are consumed
+    by `semantics.Lexicon`. `expression_cost` is written by the stance editor
+    and read by nothing: it is reserved for an asymmetric expression-cost
+    extension (it costs more to voice an unpopular position), not a bug.
+
+    Note that a scenario *overrides* `population.stance_dims` through
+    `Config.stance_dims()`. `data.scenario_config()` refuses the substitution
+    unless asked, because silently changing D changes which mechanisms are
+    even measurable.
     """
 
     name: str = "default"
@@ -265,14 +276,34 @@ class ScenarioConfig(Hashable):
                 raise ValueError(f"axis {ax.get('name')!r} lacks an empirical marginal")
         if self.topic_names and len(self.topic_names) != len(set(self.topic_names)):
             raise ValueError("topic names must be unique")
+        for name in self.topic_names:
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError(f"topic names must be non-empty strings, got {name!r}")
 
     @classmethod
     def from_editor_json(cls, data: dict, name: str = "scenario") -> "ScenarioConfig":
-        axes = tuple(data["scenario"]["stance_axes"])
-        return cls(name=name, stance_axes=axes)
+        scenario = data["scenario"]
+        # topic_names was dropped here silently, which is why cfg.scenario
+        # .topic_names has been declared, validated and empty since it was
+        # added — nothing could ever populate it.
+        return cls(
+            name=name,
+            stance_axes=tuple(scenario["stance_axes"]),
+            topic_names=tuple(scenario.get("topic_names", ())),
+        )
 
     def axis_count(self) -> int:
         return len(self.stance_axes)
+
+    def axis_names(self) -> tuple[str, ...]:
+        return tuple(str(ax.get("name", i)) for i, ax in enumerate(self.stance_axes))
+
+    def poles(self) -> tuple[tuple[str, str], ...]:
+        """`(negative, positive)` pole label per axis, in axis order."""
+        return tuple(
+            (str(ax.get("pole_neg", "-")), str(ax.get("pole_pos", "+")))
+            for ax in self.stance_axes
+        )
 
 
 @dataclass(frozen=True)
@@ -304,6 +335,14 @@ class Config(Hashable):
     scenario: ScenarioConfig = field(default_factory=ScenarioConfig)
     world: WorldConfig = field(default_factory=WorldConfig)
     label: str = "default"
+
+    def __post_init__(self):
+        n_topics = self.population.n_topics
+        if len(self.scenario.topic_names) > n_topics:
+            raise ValueError(
+                f"scenario names {len(self.scenario.topic_names)} topics but "
+                f"population.n_topics is {n_topics}"
+            )
 
     def stance_dims(self) -> int:
         n = self.scenario.axis_count()
