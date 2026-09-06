@@ -18,7 +18,7 @@ from discourse_lab.registry import get
 from discourse_lab.network.reciprocity import add_reciprocity
 
 # import for registration side effects
-from discourse_lab.network import barabasi, configuration, latent_space, sbm  # noqa: F401,E402
+from discourse_lab.network import barabasi, configuration, latent_pa, latent_space, sbm  # noqa: F401,E402
 
 
 @dataclass
@@ -34,7 +34,7 @@ class Graph:
 def generate_graph(cfg: Config, pop: Population, rng: np.random.Generator) -> Graph:
     builder = get("graph_generator", cfg.graph.generator)
     G = builder(cfg, pop, rng)
-    G = add_reciprocity(G, cfg.graph.reciprocity, rng)
+    G = add_reciprocity(G, cfg.graph.mirror_p, rng)
     return Graph(csr=G.tocsr(), csc=G.tocsc())
 
 

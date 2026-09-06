@@ -176,7 +176,7 @@ def _graph(reciprocity_rate: float, seed: int = 0, n_users: int = 800):
     cfg = dataclasses.replace(
         Config(),
         population=dataclasses.replace(Config().population, n_users=n_users),
-        graph=dataclasses.replace(Config().graph, reciprocity=reciprocity_rate),
+        graph=dataclasses.replace(Config().graph, mirror_p=reciprocity_rate),
     )
     rng = np.random.default_rng(seed)
     pop = sample_population(cfg, rng)
@@ -264,3 +264,152 @@ def test_stylized_facts_from_a_real_run_are_all_computed(tmp_path, monkeypatch):
     for name, entry in report.items():
         assert np.isfinite(entry["value"]), f"{name} came back non-finite"
         assert entry["label"]
+
+
+# --------------------------------------------------------------------------
+# Hawkes reply scheduling (spec §2.3, §3.1 step 2)
+# --------------------------------------------------------------------------
+
+
+def test_hawkes_intensity_is_self_exciting_and_threads_age_out():
+    from discourse_lab.dynamics.hawkes import HawkesThreads
+
+    th = HawkesThreads()
+    th.open_thread(1, mu=5.0)          # mu high enough that replies fire reliably
+    rng = np.random.default_rng(0)
+
+    th.step(rng, alpha=0.9, beta=1.5, max_age=10)
+    assert th.excitation[0] > 0        # the replies it drew excite the thread
+
+    assert len(th) == 1
+    for _ in range(12):
+        th.step(rng, alpha=0.9, beta=1.5, max_age=10)
+    assert len(th) == 0                # aged out past max_age
+
+
+def test_hawkes_draws_more_replies_on_hotter_threads():
+    """Self-excitation is the whole point: a thread that has been replied to
+    should attract more replies than an equally-aged cold one.
+    """
+    from discourse_lab.dynamics.hawkes import HawkesThreads
+
+    hot, cold = HawkesThreads(), HawkesThreads()
+    hot.open_thread(1, mu=2.0)
+    cold.open_thread(1, mu=2.0)
+    hot.excitation[0] = 20.0           # a thread already in full flow
+
+    rng_a, rng_b = np.random.default_rng(0), np.random.default_rng(0)
+    n_hot = sum(hot.step(rng_a, 0.9, 1.5, 50).get(1, 0) for _ in range(5))
+    n_cold = sum(cold.step(rng_b, 0.9, 1.5, 50).get(1, 0) for _ in range(5))
+    assert n_hot > n_cold
+
+
+def test_reply_posts_are_generated_not_derived_from_engagement():
+    """spec §2.7 keeps cascades to repost/quote; reply *posts* come from the
+    Hawkes draw in the generation phase. Both facts, asserted together,
+    because conflating them is exactly the mistake this replaced.
+    """
+    from discourse_lab.dynamics.cascade import BRANCHING_ACTIONS, CASCADE_ACTIONS
+
+    assert CASCADE_ACTIONS == ("repost", "quote")
+    assert BRANCHING_ACTIONS == ("repost", "quote")
+
+    import discourse_lab.dynamics.timing as timing
+    assert not hasattr(timing, "HawkesThreads"), "the duplicate is back"
+
+    from discourse_lab.dynamics import HawkesThreads as exported
+    from discourse_lab.dynamics.hawkes import HawkesThreads as canonical
+    assert exported is canonical  # one class, one name
+
+
+def test_a_run_produces_reply_posts_with_real_thread_depth():
+    cfg = dataclasses.replace(
+        Config(),
+        population=dataclasses.replace(Config().population, n_users=600),
+        dynamics=dataclasses.replace(Config().dynamics, n_ticks=30, drift="none"),
+    )
+    kinds, depths = set(), []
+    for state in __import__("discourse_lab.runner", fromlist=["run_iter"]).run_iter(cfg, seed=0):
+        if state.retired_posts is not None and len(state.retired_posts) > 0:
+            kinds.update(np.unique(state.retired_posts.kind).tolist())
+            depths.extend(state.retired_posts.depth.tolist())
+
+    assert "reply" in kinds, "the Hawkes draw produced no reply posts at all"
+    assert max(depths) > 1, "no thread got past depth 1"
+
+
+# --------------------------------------------------------------------------
+# graph consequences of spec §2.2's uniform long ties
+# --------------------------------------------------------------------------
+
+
+def test_uniform_long_ties_cap_the_in_degree_tail():
+    """§2.2 mandates a *uniform* long-tie component. The consequence is that
+    the population's Pareto prominence tail does not reach the graph: within
+    the kNN pool you can only be followed by the users whose neighbourhood
+    contains you, and a uniform long tie is as likely to land on a nobody.
+
+    This test pins the limitation in place so it is a known property rather
+    than a surprise in a figure. If it ever starts failing because in-degree
+    got heavy-tailed, the generator changed and §5.1's engagement rows should
+    be re-checked.
+    """
+    cfg = dataclasses.replace(
+        Config(), population=dataclasses.replace(Config().population, n_users=2000)
+    )
+    rng = np.random.default_rng(0)
+    pop = sample_population(cfg, rng)
+    graph = generate_graph(cfg, pop, rng)
+
+    in_degree = np.asarray(graph.csr.sum(axis=0)).ravel().astype(float)
+    fit = powerlaw_fit(in_degree)
+
+    # measured alpha ~4.9 at N=2000, ~7.9 at N=3000 — scale-dependent, but far
+    # from the 2-3 §5.1's engagement rows need
+    assert fit.alpha > 4.0, "in-degree became heavy-tailed; re-check spec §5.1"
+    assert in_degree.max() < 10 * in_degree.mean()
+
+
+def test_knn_pool_must_leave_room_for_the_preference_weights():
+    """At knn_k <= mean_degree every candidate is taken, so homophily_beta and
+    prominence_gamma stop doing anything at all.
+    """
+    from discourse_lab.config import GraphConfig
+
+    with pytest.raises(ValueError, match="inert"):
+        GraphConfig(knn_k=40, mean_degree=40.0)
+
+
+def test_attention_concentration_comes_from_the_feed_not_the_graph(tmp_path, monkeypatch):
+    """spec §5.1's attention Gini (0.8-0.95) is a claim about engagement-
+    optimised platforms, and this pins where the concentration comes from.
+
+    A chronological feed orders by time, so exposure is spread evenly across
+    every active post regardless of who wrote it, and no post can run away.
+    Measured at n_users=3000, n_ticks=60: the largest engagement count any
+    post ever reached was 15 under `chronological`, 32 under `popularity`, and
+    733 under `engagement_optimized` + `bandwagon` (Gini 0.609 / 0.706 /
+    0.887). Making the graph heavy-tailed instead does not do it — raising max
+    in-degree tenfold via the `latent_pa` generator left the Gini at 0.609.
+    """
+    monkeypatch.setenv("DLAB_HOME", str(tmp_path))
+    base = dataclasses.replace(
+        Config(),
+        population=dataclasses.replace(Config().population, n_users=600),
+        dynamics=dataclasses.replace(Config().dynamics, n_ticks=25, drift="none"),
+    )
+
+    def max_engagement(ranker: str, kernel: str) -> int:
+        cfg = dataclasses.replace(
+            base, dynamics=dataclasses.replace(base.dynamics, ranker=ranker, kernel=kernel)
+        )
+        cached_run(cfg, seed=0, persist=("posts",))
+        return int(load_run(cfg, seed=0).posts()["engagement_count"].max())
+
+    chronological = max_engagement("chronological", "homophily")
+    optimized = max_engagement("engagement_optimized", "bandwagon")
+
+    assert optimized > 3 * chronological, (
+        f"engagement_optimized+bandwagon peaked at {optimized}, chronological at "
+        f"{chronological} — the feed is no longer concentrating attention"
+    )

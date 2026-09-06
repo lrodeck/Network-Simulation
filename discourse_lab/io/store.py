@@ -34,12 +34,13 @@ import pyarrow.parquet as pq
 # written at this version or later, so runs predating posts.parquet are
 # recomputed once (population and graph artifacts are keyed on their own
 # sub-hashes and survive, so only the dynamics re-run).
-RUN_FORMAT = 2
+RUN_FORMAT = 3
 
 POST_DIM_COLUMNS = (
     "arousal", "valence", "provocativeness", "novelty", "specificity", "quality", "length",
 )
 ENGAGEMENT_COLUMNS = ("t", "user", "post", "action")
+EXPOSURE_SAMPLE_COLUMNS = ("t", "user", "post", "rank", "is_follower", "action")
 
 
 def posts_schema(stance_dims: int) -> pa.Schema:
@@ -59,6 +60,26 @@ def posts_schema(stance_dims: int) -> pa.Schema:
 
 def engagements_schema() -> pa.Schema:
     return pa.schema([("t", pa.int64()), ("user", pa.int64()), ("post", pa.int64()), ("action", pa.string())])
+
+
+def exposures_schema() -> pa.Schema:
+    """spec §3.5: exposures outnumber engagements ~50:1 at N=1e4, so only a
+    fixed random sample (`cfg.dynamics.exposure_sample_rate`) is retained —
+    enough for diagnostics like §5.2's echo-chamber index, which needs
+    per-(user, post) consumed stance and has no other source.
+    """
+    return pa.schema([
+        ("t", pa.int64()), ("user", pa.int64()), ("post", pa.int64()),
+        ("rank", pa.int64()), ("is_follower", pa.bool_()), ("action", pa.string()),
+    ])
+
+
+def traits_schema(n_traits: int) -> pa.Schema:
+    """spec §3.5: "Persist: X snapshots (every k ticks)". One row per user per
+    snapshot, stored traits (unconstrained), flattened like stance is."""
+    return pa.schema(
+        [("t", pa.int64()), ("user", pa.int64())] + [(f"x_{i}", pa.float64()) for i in range(n_traits)]
+    )
 
 
 def posts_batch(posts, stance_dims: int) -> pa.RecordBatch:
@@ -142,6 +163,30 @@ class RunWriter:
         ]
         self.write_table("engagements", schema, pa.RecordBatch.from_arrays(arrays, schema=schema))
 
+    def write_exposure_sample(self, sample: dict[str, np.ndarray] | None) -> None:
+        if not sample or len(sample["user"]) == 0:
+            return
+        schema = exposures_schema()
+        arrays = [
+            pa.array(np.asarray(sample["t"]), type=pa.int64()),
+            pa.array(np.asarray(sample["user"]), type=pa.int64()),
+            pa.array(np.asarray(sample["post"]), type=pa.int64()),
+            pa.array(np.asarray(sample["rank"]), type=pa.int64()),
+            pa.array(np.asarray(sample["is_follower"]), type=pa.bool_()),
+            pa.array([str(a) for a in sample["action"]], type=pa.string()),
+        ]
+        self.write_table("exposures", schema, pa.RecordBatch.from_arrays(arrays, schema=schema))
+
+    def write_traits(self, t: int, x_stored: np.ndarray) -> None:
+        n_users, n_traits = x_stored.shape
+        schema = traits_schema(n_traits)
+        arrays = [
+            pa.array(np.full(n_users, t, dtype=np.int64), type=pa.int64()),
+            pa.array(np.arange(n_users, dtype=np.int64), type=pa.int64()),
+        ] + [pa.array(np.asarray(x_stored[:, i], dtype=np.float64), type=pa.float64())
+             for i in range(n_traits)]
+        self.write_table("traits", schema, pa.RecordBatch.from_arrays(arrays, schema=schema))
+
     def ensure_empty(self, name: str, schema: pa.Schema) -> None:
         """Create the file even if nothing was ever written, so `has_posts`
         distinguishes "persistence was off" from "nothing happened".
@@ -185,6 +230,14 @@ class RunHandle:
     def has_engagements(self) -> bool:
         return (self.path / "engagements.parquet").exists()
 
+    @property
+    def has_exposures(self) -> bool:
+        return (self.path / "exposures.parquet").exists()
+
+    @property
+    def has_traits(self) -> bool:
+        return (self.path / "traits.parquet").exists()
+
     def _require(self, name: str, flag: str) -> Path:
         p = self.path / f"{name}.parquet"
         if not p.exists():
@@ -196,6 +249,13 @@ class RunHandle:
 
     def posts(self) -> pl.DataFrame:
         return pl.read_parquet(self._require("posts", "posts"))
+
+    def exposures(self) -> pl.DataFrame:
+        """The §3.5 1% sample, not every exposure — see `exposures_schema`."""
+        return pl.read_parquet(self._require("exposures", "exposures"))
+
+    def traits(self) -> pl.DataFrame:
+        return pl.read_parquet(self._require("traits", "traits"))
 
     def engagements(self) -> pl.DataFrame:
         return pl.read_parquet(self._require("engagements", "engagements"))

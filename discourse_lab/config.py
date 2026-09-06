@@ -78,27 +78,63 @@ class Hashable:
 class PopulationConfig(Hashable):
     n_users: int = 10_000
     n_topics: int = 8
-    stance_dims: int = -1                     # -1 → derived from scenario axes
+    # spec §1.1: "D ~ 3-5 latent ideological axes"; §4.3's config sketch says
+    # 3. A scenario, when loaded, overrides this with its own axis count.
+    # This was -1, and Config.stance_dims() floors at 1, so every run without
+    # a scenario silently collapsed stance to a single axis — which is not a
+    # smaller version of the model but a different geometry: with D=1 there is
+    # no orientation for homophily to be homophilous *in*, and §7.5's
+    # orthogonal-vs-correlated axes question cannot be posed at all.
+    stance_dims: int = 3
     archetype_weights: tuple[tuple[str, float], ...] = ()   # () → library defaults
     archetype_offsets: tuple[tuple[str, str, float], ...] = ()  # (archetype, trait, offset)
     correlation_pairs: tuple[tuple[str, str, float], ...] = ()  # () → library defaults
-    activity_sigma: float = 1.2
+    # Gini of a lognormal is erf(sigma/2) in closed form, so this parameter
+    # *is* the spec §5.1 posting-volume inequality target. The spec's own
+    # sigma = 1.2 gives 0.604 against its stated target of 0.7-0.9 — the two
+    # clauses are mutually incompatible. 1.8 gives 0.797, mid-band, with the
+    # top 1% of users producing ~30% of posts.
+    activity_sigma: float = 1.8
     pareto_alpha: float = 2.3
     topic_logit_sigma: float = 1.0
 
 
 @dataclass(frozen=True)
 class GraphConfig(Hashable):
-    generator: str = "latent_space"           # latent_space | sbm | configuration | barabasi
+    generator: str = "latent_space"           # latent_space | latent_pa | sbm | configuration | barabasi
     mean_degree: float = 40.0
     homophily_beta: float = 0.35              # β on latent distance
     prominence_gamma: float = 0.6             # γ on log(1 + prominence)
-    reciprocity: float = 0.2
+    # Probability of mirroring each generated edge — NOT the measured
+    # reciprocity of the result, which is what spec §5.1's 0.2-0.4 target
+    # refers to. Mirroring a fraction r yields 2r/(1+r) reciprocated edges,
+    # on top of a ~0.16 baseline the homophilous generator produces by
+    # chance. 0.10 measures ~0.30.
+    mirror_p: float = 0.02
     fanout_cap: int = 400                     # max followers reached per post per tick
-    knn_k: int = 150                          # candidate pool when N is large
+    knn_k: int = 60                           # candidate pool when N is large
     long_tie_fraction: float = 0.1            # uniform random component in kNN graphs
+    # `latent_pa` only: share of edges drawn globally with destination
+    # probability proportional to prominence, rather than from the kNN pool.
+    # The dial between local structure (clustering) and a heavy in-degree
+    # tail (spec §5.1's engagement rows). Ignored by every other generator.
+    pa_fraction: float = 0.35
     sbm_blocks: int = 0                       # 0 → one block per archetype
     sbm_homophily: float = 0.8
+
+    def __post_init__(self) -> None:
+        # The kNN pool is the set of candidates homophily_beta and
+        # prominence_gamma then *weight*. If the pool is no bigger than the
+        # degree being drawn from it, every candidate is taken and both
+        # weights become inert — the generator silently degrades to plain
+        # kNN. Measured: at knn_k=40, mean_degree=40, sweeping beta from
+        # 0.35 to 1.5 changed clustering by exactly nothing.
+        if self.knn_k <= self.mean_degree:
+            raise ValueError(
+                f"knn_k={self.knn_k} <= mean_degree={self.mean_degree}: the candidate pool "
+                "leaves no room for homophily_beta or prominence_gamma to select, so both "
+                "become inert. Raise knn_k above mean_degree."
+            )
 
 
 @dataclass(frozen=True)
@@ -119,13 +155,68 @@ class DynamicsConfig(Hashable):
     hawkes_ratio: float = 0.6                 # alpha/beta, must stay < 1
     hawkes_beta: float = 1.5
     max_thread_age: int = 15                  # ticks a thread stays open for Hawkes
+    # Fraction of its parent's current reply intensity that a new reply post's
+    # own thread opens with. spec §2.3 gives lambda_p per post and leaves mu_p
+    # unspecified, so this is the §7-style open choice made into a dial.
+    #
+    #   0.0  every post opens at hawkes_mu0 — the literal reading. A reply
+    #        inside a raging thread is as cold as a fresh post, so depth
+    #        cannot compound and thread depth sits at ~1.06.
+    #   >0   heat propagates down the chain: replying to a hot reply is
+    #        itself likely, which is what makes threads deep rather than wide.
+    #
+    # Values above 1 are meaningful and are where the useful regime is: a
+    # reply lands in a conversation already hotter than a cold post, so its
+    # own thread starts hotter still. What bounds it is stability, not 1.
+    #
+    # Measured (n_users=1500, 40 ticks; stability over 90 ticks at n=800),
+    # with max_replies_per_tick = 1:
+    #
+    #   inherit   P(branch|root)  P(branch|in-thread)  singleton  depth
+    #   0.6                0.085                0.123      0.915   1.16
+    #   1.8                0.092                0.294      0.908   1.43
+    #   1.0                    -                    -          -   ~1.2   <- default
+    #   1.8                0.092                0.294      0.908   1.43
+    #   2.65               0.080                0.55       0.926   2.30
+    #   3.0                0.080                0.608      0.920   2.54
+    #
+    # The default is 1.0, not the depth-optimal 2.65, because deep threads
+    # dilute the thing Experiment 1 measures. Hawkes replies are not
+    # kernel-driven — a reply carries the replier's own stance — so the more
+    # of the corpus is replies, the less of what a user consumes was selected
+    # by the engagement kernel, and the §5.3 null comparison loses power.
+    # Measured at n_users=800, n_ticks=20, 20 seeds, D=1, the homophily
+    # agreement effect against its matched null:
+    #
+    #   inherit 0.6 -> t=+3.77    1.0 -> t=+2.46    1.8 -> t=+1.93
+    #   inherit 2.65 -> t=+0.74 (indistinguishable from noise)
+    #
+    # spec §5.1's depth row is a description of the model; §5.2/§5.3 are what
+    # the model is for. Depth 1.5-3 is reachable and stable at inherit >= 2.2
+    # and is an experimental condition to select deliberately, not the
+    # default. Setting it costs the null comparison its resolution.
+    #
+    # That separation is what spec §5.1 actually requires: its two cascade
+    # rows (>90% singletons AND depth 1.5-3) can only both hold if roots
+    # branch rarely while threads already started continue often. A flat
+    # branching probability gives depth = 1/(1-p), which is 1.1 at p = 0.09
+    # no matter how the other knobs are set.
+    #
+    # Uncapped (max_replies_per_tick = 0) every depth-productive setting was
+    # supercritical: at inherit 1.8, replies/tick went 6 -> 4453 by tick 30;
+    # at 2.5 the run exhausted memory. The tick warns when replies run away.
+    hawkes_mu_inherit: float = 1.0
+    # Arrivals per post per tick; 0 = uncapped Poisson. At 1 a conversation
+    # extends as a chain rather than a bush, which is what gives depth without
+    # runaway volume — see HawkesThreads.step.
+    max_replies_per_tick: int = 1
 
     trend_eta: float = 0.3                    # topic susceptibility to discourse state
     post_lifetime: int = 5                    # ticks a post stays in candidate inboxes
     rho_s: float = 0.9                        # discourse attention decay
     rho_sigma: float = 0.9                    # dominant stance decay
     cascade_depth_decay: float = 0.7          # rho^depth visibility
-    max_cascade_depth: int = 4
+    max_cascade_depth: int = 25
     max_cascade_size: int = 1000              # warning threshold, per tick
 
     drift: str = "full"                       # none | social | full

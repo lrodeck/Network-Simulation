@@ -159,14 +159,47 @@ def test_outrage_kernel_rewards_disagreement_for_contrarian_users():
     assert reply_or_quote_high > reply_or_quote_low
 
 
-def test_null_kernel_is_uniform_over_actions_and_skip():
-    m = 6000
-    features = {f: np.zeros(m) for f in ("affinity",)}
-    theta = named_kernel("null")
-    actions = apply_kernel(theta, features, np.random.default_rng(2))
+def test_null_kernel_is_intercept_only_and_mostly_skips():
+    """spec §2.6 calls null "intercept only": no feature dependence, but a
+    realistic baseline propensity to do nothing.
+
+    This test previously asserted all six outcomes were *equally* likely,
+    which is what you get when there is no intercept at all — U_a = 0 for
+    every action gives P(skip) = 1/6, i.e. an 83% engagement rate baked in
+    before any feature is read. That was the bug, asserted as a requirement.
+    """
+    from discourse_lab.exposure.kernel import FEATURES
+
+    m = 200_000
+    features = {f: np.zeros(m) for f in FEATURES}
+    features["intercept"] = np.ones(m)
+
+    actions = apply_kernel(named_kernel("null"), features, np.random.default_rng(2))
     counts = collections.Counter(actions)
-    shares = np.array(list(counts.values())) / m
-    assert shares.max() - shares.min() < 0.03  # all 6 outcomes ~equally likely
+
+    engagement_rate = 1 - counts["skip"] / m
+    assert 0.02 < engagement_rate < 0.10  # a few percent, as on a real platform
+
+    # among the actions that *do* fire, the mix follows the intercepts alone —
+    # no feature moves it, which is what makes this the structural baseline
+    assert counts["like"] > counts["repost"] > counts["quote"] > counts["report"]
+
+
+def test_every_named_kernel_leaves_attention_scarce():
+    """A kernel that engages on most exposures makes cascades supercritical
+    and flattens every attention measure — R_eff hit ~16 against the spec's
+    E[R] < 1 before the intercepts existed.
+    """
+    from discourse_lab.exposure.kernel import FEATURES, KERNEL_THETAS
+
+    m = 50_000
+    features = {f: np.zeros(m) for f in FEATURES}
+    features["intercept"] = np.ones(m)
+
+    for name in KERNEL_THETAS:
+        actions = apply_kernel(named_kernel(name), features, np.random.default_rng(0))
+        engagement_rate = (actions != "skip").mean()
+        assert engagement_rate < 0.15, f"{name} engages on {engagement_rate:.0%} of featureless exposures"
 
 
 def test_first_runnable_dynamics_end_to_end():
