@@ -176,6 +176,51 @@ def world_table(cfg, pop=None) -> pl.DataFrame:
     return pl.DataFrame(rows)
 
 
+def _short(value, width: int = 44) -> str:
+    """Config values that are structured data (a scenario's 128-bin densities,
+    an archetype spec) print as a count, not as their repr: the point of this
+    table is the settings a reader can act on, and one axis definition would
+    otherwise be 4000 characters."""
+    if isinstance(value, tuple):
+        if any(isinstance(v, (dict, tuple, list)) for v in value):
+            return f"{len(value)} entr{'y' if len(value) == 1 else 'ies'}"
+        text = ", ".join(map(str, value))
+    else:
+        text = str(value)
+    return text if len(text) <= width else text[: width - 1] + "\u2026"
+
+
+def config_table(cfg) -> pl.DataFrame:
+    """Every config field, grouped by section — the readable form of `repr(cfg)`.
+
+    The dataclass repr is one 900-character line, which in a notebook is the
+    single least useful way to show the most important object in the run. Same
+    information, one row per field, and non-default values flagged so the
+    handful of things this run actually changed are findable.
+    """
+    import dataclasses
+
+    default = type(cfg)()
+    rows = []
+    for section in dataclasses.fields(cfg):
+        value = getattr(cfg, section.name)
+        if not dataclasses.is_dataclass(value):
+            continue
+        base = getattr(default, section.name)
+        for field in dataclasses.fields(value):
+            current = getattr(value, field.name)
+            if dataclasses.is_dataclass(current) or isinstance(current, dict):
+                continue
+            baseline = getattr(base, field.name, None)
+            rows.append({
+                "Section": section.name,
+                "Field": field.name,
+                "Value": _short(current),
+                "": "changed" if current != baseline else "",
+            })
+    return pl.DataFrame(rows)
+
+
 def experiment_effects_table(rows: Iterable[dict], metrics: Sequence[str] = ()) -> pl.DataFrame:
     """T2: kernel x ranker effects against the matched null (spec §5.3)."""
     frame = pl.DataFrame(list(rows))

@@ -16,6 +16,8 @@ _FIGURE_EXPORTS = {
     "fig_lorenz": "discourse_lab.viz.figures.distribution",
     "fig_effect_dots": "discourse_lab.viz.figures.experiment",
     "fig_degree_ccdf": "discourse_lab.viz.figures.network",
+    "fig_user_network": "discourse_lab.viz.figures.users",
+    "fig_feed_mirror": "discourse_lab.viz.figures.users",
     "fig_archetypes": "discourse_lab.viz.figures.world",
     "fig_lever_effects": "discourse_lab.viz.figures.normative",
     "fig_scenario_axes": "discourse_lab.viz.figures.world",
