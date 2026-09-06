@@ -34,7 +34,7 @@ import pyarrow.parquet as pq
 # written at this version or later, so runs predating posts.parquet are
 # recomputed once (population and graph artifacts are keyed on their own
 # sub-hashes and survive, so only the dynamics re-run).
-RUN_FORMAT = 3
+RUN_FORMAT = 4
 
 POST_DIM_COLUMNS = (
     "arousal", "valence", "provocativeness", "novelty", "specificity", "quality", "length",
@@ -80,6 +80,18 @@ def traits_schema(n_traits: int) -> pa.Schema:
     return pa.schema(
         [("t", pa.int64()), ("user", pa.int64())] + [(f"x_{i}", pa.float64()) for i in range(n_traits)]
     )
+
+
+def salient_events_schema() -> pa.Schema:
+    """spec §3.1 step 6's queue, persisted so §2.9's channel 3 can run as the
+    offline pass §2.10 describes. `detail` is JSON — its keys differ by event
+    kind, and inventing a wide null-filled schema for two variants would be
+    worse than a string.
+    """
+    return pa.schema([
+        ("t", pa.int64()), ("post_id", pa.int64()), ("author", pa.int64()),
+        ("kind", pa.string()), ("detail", pa.string()),
+    ])
 
 
 def posts_batch(posts, stance_dims: int) -> pa.RecordBatch:
@@ -177,6 +189,19 @@ class RunWriter:
         ]
         self.write_table("exposures", schema, pa.RecordBatch.from_arrays(arrays, schema=schema))
 
+    def write_salient_events(self, t: int, events) -> None:
+        if not events:
+            return
+        schema = salient_events_schema()
+        arrays = [
+            pa.array([t] * len(events), type=pa.int64()),
+            pa.array([int(e.post_id) for e in events], type=pa.int64()),
+            pa.array([int(e.author) for e in events], type=pa.int64()),
+            pa.array([str(e.kind) for e in events], type=pa.string()),
+            pa.array([json.dumps(e.detail) for e in events], type=pa.string()),
+        ]
+        self.write_table("salient_events", schema, pa.RecordBatch.from_arrays(arrays, schema=schema))
+
     def write_traits(self, t: int, x_stored: np.ndarray) -> None:
         n_users, n_traits = x_stored.shape
         schema = traits_schema(n_traits)
@@ -238,6 +263,10 @@ class RunHandle:
     def has_traits(self) -> bool:
         return (self.path / "traits.parquet").exists()
 
+    @property
+    def has_salient_events(self) -> bool:
+        return (self.path / "salient_events.parquet").exists()
+
     def _require(self, name: str, flag: str) -> Path:
         p = self.path / f"{name}.parquet"
         if not p.exists():
@@ -256,6 +285,10 @@ class RunHandle:
 
     def traits(self) -> pl.DataFrame:
         return pl.read_parquet(self._require("traits", "traits"))
+
+    def salient_events(self) -> pl.DataFrame:
+        """The §3.1 step 6 queue: what channel 3 would adjudicate offline."""
+        return pl.read_parquet(self._require("salient_events", "salient_events"))
 
     def engagements(self) -> pl.DataFrame:
         return pl.read_parquet(self._require("engagements", "engagements"))

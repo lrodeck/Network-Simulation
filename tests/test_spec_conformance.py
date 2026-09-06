@@ -113,11 +113,6 @@ def test_every_config_field_is_read_by_something():
     KNOWN_UNREAD = {
         "llm_model",              # threaded into the client via WorldConfig, not by name
         "label",                  # provenance only, never read by the model
-        # spec §2.9 channel 3's epsilon in `clip(delta_llm, -eps, eps)`.
-        # `parse_adjudication` applies it correctly and `detect_salient_events`
-        # now queues the triggers, but nothing calls `request_adjudication` —
-        # there is no offline adjudication pass, so channel 3 is queue-only.
-        "adjudication_max_delta",
     }
 
     src = Path("discourse_lab/config.py").read_text(encoding="utf-8")

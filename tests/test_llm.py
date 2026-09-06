@@ -9,6 +9,7 @@ ollama.com anyway, so a live-network test wouldn't run here regardless).
 from __future__ import annotations
 
 import dataclasses
+import json
 
 import numpy as np
 import pytest
@@ -18,7 +19,10 @@ from discourse_lab.dynamics import ExpressionMap, generate_posts
 from discourse_lab.llm.adjudication import (
     apply_adjudication,
     build_adjudication_messages,
+    adjudicate_run,
     detect_salient_events,
+    SalientEvent,
+    events_from_run,
     parse_adjudication,
     request_adjudication,
 )
@@ -35,6 +39,7 @@ from discourse_lab.llm.voice_card import (
     voice_card_key,
 )
 from discourse_lab.population import sample_population
+from discourse_lab.runner import cached_run, load_run
 
 
 class FakeLLMClient:
@@ -253,3 +258,92 @@ def test_ollama_cloud_client_fails_fast_without_api_key(monkeypatch):
     client = OllamaCloudClient(api_key=None)
     with pytest.raises(LLMError, match="OLLAMA_API_KEY"):
         client.chat([{"role": "user", "content": "hi"}])
+
+
+# --------------------------------------------------------------------------
+# channel 3 as an offline pass (spec §2.9, §2.10)
+# --------------------------------------------------------------------------
+
+
+def _adjudication_responses(n: int) -> list[str]:
+    """Alternating voice-card and adjudication replies, in call order."""
+    card = json.dumps({"voice": "terse and combative", "tics": ["no capitals"], "topics": ["policy"]})
+    verdict = json.dumps({
+        "trait_deltas": {"contrarianism": 5.0, "neuroticism": -0.02},   # 5.0 must be clipped
+        "justification": "a pile-on hardens their position",
+    })
+    out = []
+    for _ in range(n):
+        out += [card, verdict]
+    return out
+
+
+def test_adjudicate_run_gates_to_one_call_per_user(tmp_path):
+    """spec §2.9 gates channel 3 "to keep both cost and non-determinism
+    bounded". A user in fifty pile-ons must cost one adjudication, not fifty.
+    """
+    cfg, _rng, pop, posts = _setup()
+    events = [
+        SalientEvent(post_id=1, author=3, kind="pile_on", detail={"reply_count": 40}),
+        SalientEvent(post_id=2, author=3, kind="pile_on", detail={"reply_count": 90}),
+        SalientEvent(post_id=3, author=7, kind="top_engagement", detail={"engagement_count": 500}),
+    ]
+    client = FakeLLMClient(_adjudication_responses(2))
+    results = adjudicate_run(client, cfg, events, pop, cache_dir=tmp_path)
+
+    assert set(results) == {3, 7}, "one result per user, not per event"
+    # one adjudication per user; voice cards are cached by (archetype, bands)
+    # so two users of the same archetype share one card
+    assert 3 <= len(client.calls) <= 4, f"{len(client.calls)} calls for 2 users"
+
+
+def test_adjudicate_run_clips_deltas_to_the_configured_bound(tmp_path):
+    """spec §2.9's `clip(Delta_llm, -eps, eps)`. The model returning 5.0 must
+    not move a trait by 5.0 — `adjudication_max_delta` is that epsilon and was
+    a dead config field until this pass existed to thread it through.
+    """
+    cfg, _rng, pop, posts = _setup()
+    bound = cfg.world.adjudication_max_delta
+    events = [SalientEvent(post_id=1, author=2, kind="pile_on", detail={"reply_count": 40})]
+
+    client = FakeLLMClient(_adjudication_responses(1))
+    results = adjudicate_run(client, cfg, events, pop, cache_dir=tmp_path)
+
+    assert results[2].deltas["contrarianism"] == pytest.approx(bound)
+    assert all(abs(v) <= bound + 1e-12 for v in results[2].deltas.values())
+
+
+def test_adjudicate_run_does_not_mutate_unless_asked(tmp_path):
+    """The one non-deterministic channel returns its deltas for inspection by
+    default; applying them is an explicit choice.
+    """
+    cfg, _rng, pop, posts = _setup()
+    events = [SalientEvent(post_id=1, author=4, kind="pile_on", detail={"reply_count": 40})]
+    before = pop.X_stored.copy()
+
+    adjudicate_run(FakeLLMClient(_adjudication_responses(1)), cfg, events, pop, cache_dir=tmp_path / 'a')
+    np.testing.assert_array_equal(pop.X_stored, before)
+
+    adjudicate_run(FakeLLMClient(_adjudication_responses(1)), cfg, events, pop,
+                   cache_dir=tmp_path / 'b', apply=True)
+    assert not np.array_equal(pop.X_stored, before), "apply=True should move stored traits"
+
+
+def test_salient_events_survive_a_run_for_the_offline_pass(tmp_path, monkeypatch):
+    """§3.1 step 6 queues them; §2.10 says the LLM pass runs over a completed
+    run. The queue therefore has to be persisted, not just held per tick.
+    """
+    monkeypatch.setenv("DLAB_HOME", str(tmp_path))
+    cfg = dataclasses.replace(
+        Config(),
+        population=dataclasses.replace(Config().population, n_users=800),
+        dynamics=dataclasses.replace(Config().dynamics, n_ticks=20, drift="none"),
+    )
+    cached_run(cfg, seed=0, persist=("salient_events",))
+    handle = load_run(cfg, seed=0)
+
+    assert handle.has_salient_events
+    events = events_from_run(handle)
+    assert len(events) > 0, "no salient events queued over 20 ticks"
+    assert all(e.kind in ("top_engagement", "pile_on") for e in events)
+    assert all(isinstance(e.detail, dict) for e in events)

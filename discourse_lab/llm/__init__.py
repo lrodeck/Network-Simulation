@@ -8,7 +8,9 @@ from discourse_lab.llm.adjudication import (
     AdjudicationResult,
     SalientEvent,
     apply_adjudication,
+    adjudicate_run,
     detect_salient_events,
+    events_from_run,
     request_adjudication,
 )
 from discourse_lab.llm.client import LLMClient, OllamaCloudClient
@@ -25,7 +27,9 @@ __all__ = [
     "get_voice_card",
     "SalientEvent",
     "AdjudicationResult",
+    "adjudicate_run",
     "detect_salient_events",
+    "events_from_run",
     "request_adjudication",
     "apply_adjudication",
 ]

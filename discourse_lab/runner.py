@@ -23,6 +23,7 @@ from discourse_lab.io.store import (
     engagements_schema,
     exposures_schema,
     posts_schema,
+    salient_events_schema,
     traits_schema,
 )
 from discourse_lab.io.workspace import runs_dir
@@ -131,11 +132,11 @@ def run(cfg: Config, seed: int, persist: Sequence[str] = ()) -> Path:
     `cfg.hash()` and invalidate every cached artifact.
     """
     persist = tuple(persist)
-    unknown = set(persist) - {"posts", "engagements", "exposures", "traits"}
+    unknown = set(persist) - {"posts", "engagements", "exposures", "traits", "salient_events"}
     if unknown:
         raise ValueError(
             f"unknown persist target(s): {sorted(unknown)}; "
-            "expected any of 'posts', 'engagements', 'exposures', 'traits'"
+            "expected any of 'posts', 'engagements', 'exposures', 'traits', 'salient_events'"
         )
 
     path = run_dir(cfg, seed)
@@ -149,6 +150,8 @@ def run(cfg: Config, seed: int, persist: Sequence[str] = ()) -> Path:
             writer.ensure_empty("engagements", engagements_schema())
         if "exposures" in persist:
             writer.ensure_empty("exposures", exposures_schema())
+        if "salient_events" in persist:
+            writer.ensure_empty("salient_events", salient_events_schema())
 
         for state in run_iter(cfg, seed):
             writer.write_tick(state.t, state.metrics)
@@ -158,6 +161,8 @@ def run(cfg: Config, seed: int, persist: Sequence[str] = ()) -> Path:
                 writer.write_engagements(state.engagement_events)
             if "exposures" in persist:
                 writer.write_exposure_sample(state.exposure_sample)
+            if "salient_events" in persist:
+                writer.write_salient_events(state.t, state.salient_events)
             if "traits" in persist and state.traits_snapshot is not None:
                 # created on first snapshot rather than up front: the trait
                 # count is only known once the population is sampled
