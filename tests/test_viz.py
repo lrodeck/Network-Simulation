@@ -261,3 +261,99 @@ def test_contact_vs_hostility_merges_coincident_points():
     assert len(ax.texts) == 1, "one label block for one point"
     assert "ranker=chronological" in ax.texts[0].get_text()
     assert "inject_k=0" in ax.texts[0].get_text()
+
+
+# --------------------------------------------------------------------------
+# the world a run was conducted in
+# --------------------------------------------------------------------------
+
+
+def _world():
+    import numpy as np
+
+    from discourse_lab.data import scenario_config
+    from discourse_lab.population import sample_population
+
+    cfg = scenario_config(
+        dataclasses.replace(Config(), population=dataclasses.replace(Config().population, n_users=1500))
+    )
+    return cfg, sample_population(cfg, np.random.default_rng(0))
+
+
+def test_scenario_axes_figure_names_both_poles_of_every_axis():
+    """A 128-bin density in JSON says nothing about whether the population is
+    bimodal; the shape is the modelling claim, and the poles name it."""
+    from discourse_lab.viz import fig_scenario_axes
+
+    cfg, _ = _world()
+    fig = fig_scenario_axes(cfg)
+    assert len(fig.axes) == cfg.stance_dims()
+
+    labels = {t.get_text() for ax in fig.axes for t in ax.get_xticklabels()}
+    for neg, pos in cfg.scenario.poles():
+        assert neg in labels and pos in labels
+
+
+def test_scenario_axes_figure_refuses_without_a_scenario():
+    """Drawing unnamed axes would defeat the purpose."""
+    from discourse_lab.viz import fig_scenario_axes
+
+    with pytest.raises(ValueError, match="scenario_config"):
+        fig_scenario_axes(Config())
+
+
+def test_trait_correlations_shows_what_the_config_does_not_say():
+    """`correlation_pairs` defaults to empty, so the requested matrix is the
+    identity and a reader of the config concludes the traits are independent.
+    The archetype mixture induces real correlation — measured, activity x
+    reply_prop = +0.30 at N=8000 — because an archetype that shifts two traits
+    together correlates them.
+    """
+    import numpy as np
+
+    from discourse_lab.viz import fig_trait_correlations
+
+    cfg, pop = _world()
+    assert cfg.population.correlation_pairs == (), "this test is about the identity default"
+
+    fig = fig_trait_correlations(pop)
+    image = fig.axes[0].images[0]
+    data = image.get_array()
+
+    assert np.allclose(np.diag(data), 0.0), "the diagonal should be removed, not plotted as 1"
+    assert np.abs(data).max() > 0.15, "no induced correlation visible at all"
+    # diverging ramp on a symmetric norm, so grey lands exactly on zero
+    assert image.norm.vmin == -image.norm.vmax
+
+
+def test_archetype_figure_contrasts_requested_and_realised_weights():
+    from discourse_lab.viz import fig_archetypes
+
+    cfg, pop = _world()
+    fig = fig_archetypes(cfg, pop)
+    legend_labels = {t.get_text() for t in fig.axes[0].get_legend().get_texts()}
+    assert legend_labels == {"requested", "realised"}
+
+
+def test_world_table_reports_realised_correlation_against_the_requested_none():
+    """The row that carries the finding: Requested "none (identity)" beside a
+    Realised strongest pair."""
+    cfg, pop = _world()
+    frame = tables.world_table(cfg, pop)
+    row = frame.filter(pl.col("Property") == "trait correlations")
+
+    assert "identity" in row["Requested"][0]
+    assert "activity" in row["Realised"][0] and "reply_prop" in row["Realised"][0]
+
+    names = frame["Realised"].to_list()
+    assert any("provision" in n for n in names), "axis names missing"
+    assert any("immigration" in n for n in names), "topic names missing"
+
+
+def test_world_table_works_without_a_population():
+    """A config alone should still describe its world — the realised column
+    just goes quiet."""
+    cfg, _ = _world()
+    frame = tables.world_table(cfg)
+    assert len(frame) > 0
+    assert frame.filter(pl.col("Property") == "trait correlations")["Realised"][0] == ""
