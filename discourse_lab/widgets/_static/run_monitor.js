@@ -75,6 +75,29 @@ function render({ model, el: root }) {
   header.appendChild(tickLabel);
   root.appendChild(header);
 
+  // Narrative panel — deterministic prose from semantics/describe_state, only
+  // populated when the run is driven with narrate=True and the widget was
+  // given a cfg. Sits above the charts because it is the thing you read first.
+  const narrativeBox = el("div", {
+    style: {
+      background: C.panel, border: `1px solid ${C.grid}`, borderRadius: "3px",
+      padding: "10px 12px", marginBottom: "10px", display: "none",
+    },
+  });
+  const narrativeNow = el("div", {
+    style: { font: `400 13px/1.5 ${FONT}`, color: C.ink, marginBottom: "6px" },
+  });
+  const narrativeLog = el("pre", {
+    style: {
+      font: `11px/1.45 ${MONO}`, color: C.muted, margin: 0, maxHeight: "96px",
+      overflowY: "auto", whiteSpace: "pre-wrap", borderTop: `1px solid ${C.grid}`,
+      paddingTop: "6px", display: "none",
+    },
+  });
+  narrativeBox.appendChild(narrativeNow);
+  narrativeBox.appendChild(narrativeLog);
+  root.appendChild(narrativeBox);
+
   const grid = el("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "10px" } });
   root.appendChild(grid);
 
@@ -96,13 +119,21 @@ function render({ model, el: root }) {
     const series = model.get("series") || {};
     const ticks = model.get("ticks") || [];
     tickLabel.textContent = ticks.length ? `tick ${model.get("current_tick")} (${ticks.length} logged)` : "waiting for ticks...";
+
+    const narrative = model.get("narrative") || "";
+    const log = model.get("narrative_log") || [];
+    narrativeBox.style.display = narrative ? "block" : "none";
+    narrativeNow.textContent = narrative;
+    // the log repeats the current line, so only show history once there is any
+    narrativeLog.style.display = log.length > 1 ? "block" : "none";
+    narrativeLog.textContent = log.slice(0, -1).reverse().join("\n");
     for (const panel of PANELS) {
       drawSeries(canvases[panel.key], series[panel.key] || [], panel.range, panel.warnAbove);
     }
   };
 
   redraw();
-  model.on("change:series change:ticks change:current_tick", redraw);
+  model.on("change:series change:ticks change:current_tick change:narrative change:narrative_log", redraw);
   new ResizeObserver(redraw).observe(grid);
 }
 
