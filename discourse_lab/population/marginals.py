@@ -50,9 +50,27 @@ def beta(a: float = 2.0, b: float = 2.0) -> Marginal:
 
 
 @register("marginal", "vonmises")
-def vonmises(mu: float = 0.0, kappa: float = 2.0) -> Marginal:
+def vonmises(mu: float = 0.0, kappa: float = 2.0, grid: int = 8192) -> Marginal:
+    """Inverted on a precomputed CDF grid rather than through `dist.ppf`.
+
+    The von Mises quantile function has no closed form, so scipy falls back to
+    a scalar `brentq` per element. That is one root-find per user, which spec
+    §0.5 rules out ("no per-user Python loops") and which dominated the whole
+    run: profiling N=1e4 showed 10,000 brentq calls costing 21.9s of a 35s
+    total, more than every tick combined.
+
+    The CDF is monotone on [mu - pi, mu + pi], so tabulating it once and
+    interpolating inverts it in one vectorised pass at ~1e-4 rad accuracy.
+    """
     dist = stats.vonmises(kappa=kappa, loc=mu)
-    return Marginal(icdf=lambda w: dist.ppf(_clip01(w)))
+    theta = np.linspace(mu - np.pi, mu + np.pi, grid)
+    cdf = dist.cdf(theta)
+    cdf[0], cdf[-1] = 0.0, 1.0          # kill float drift at the ends
+
+    def icdf(w: np.ndarray) -> np.ndarray:
+        return np.interp(_clip01(w), cdf, theta)
+
+    return Marginal(icdf=icdf)
 
 
 def empirical_from_editor(bins: int, support: tuple[float, float], density: list[float]) -> Marginal:

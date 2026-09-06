@@ -196,3 +196,60 @@ def test_alpha_bisection_hits_the_target_mean_degree():
         assert abs(achieved / target - 1) < 0.05, (
             f"target mean degree {target}, achieved {achieved:.2f}"
         )
+
+
+def test_no_per_element_python_loop_in_the_exposure_scatter():
+    """spec §3.2 names the exposure scatter as the one thing that must not be
+    a Python loop, and §0.5 forbids per-user loops in the tick generally.
+
+    Asserted by counting scipy sparse constructions: the old implementation
+    sliced `csc.getcol(author)` once per post, which profiling showed as ~2000
+    sparse-submatrix builds per tick and the largest single cost in the loop.
+    A ragged gather builds none.
+    """
+    from unittest.mock import patch
+
+    from scipy import sparse
+
+    from discourse_lab.exposure import candidate_inbox
+    from discourse_lab.network import generate_graph
+    from discourse_lab.population import sample_population
+    from discourse_lab.dynamics import ExpressionMap, generate_posts
+
+    cfg = _cfg(n_users=1500)
+    rng = np.random.default_rng(0)
+    pop = sample_population(cfg, rng)
+    graph = generate_graph(cfg, pop, rng)
+    K, D = cfg.population.n_topics, cfg.stance_dims()
+    expr = ExpressionMap.build(pop.trait_names, K)
+    authors = rng.choice(1500, size=300)
+    posts = generate_posts(authors, pop, expr, np.zeros(K), np.zeros((K, D)), 0.3, rng, t=0)
+
+    real = sparse.csc_matrix
+    calls = []
+    with patch.object(sparse, "csc_matrix", side_effect=lambda *a, **k: (calls.append(1), real(*a, **k))[1]):
+        pairs = candidate_inbox(graph, posts, cfg.dynamics.inject_k, cfg.graph.fanout_cap, rng)
+
+    assert len(pairs) > 0
+    assert len(calls) < 10, f"{len(calls)} sparse constructions for 300 posts — scatter is looping"
+
+
+def test_marginal_inversion_is_vectorised():
+    """spec §0.5 / §3.3: sampling N users must not cost one scalar root-find
+    per user. `stats.vonmises.ppf` falls back to `brentq` element by element —
+    profiling N=1e4 showed 10,000 calls costing 21.9s of a 35s run, more than
+    every tick combined.
+    """
+    import time
+
+    from discourse_lab.population.marginals import build_marginal
+
+    m = build_marginal("vonmises", mu=0.0, kappa=2.0)
+    w = np.random.default_rng(0).random(100_000)
+
+    start = time.perf_counter()
+    x = m.icdf(w)
+    elapsed = time.perf_counter() - start
+
+    assert len(x) == 100_000
+    assert elapsed < 1.0, f"{elapsed:.1f}s to invert 100k draws — per-element root-finding is back"

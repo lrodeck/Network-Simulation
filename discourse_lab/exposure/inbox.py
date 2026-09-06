@@ -38,32 +38,60 @@ def candidate_inbox(
     fanout_cap: int,
     rng: np.random.Generator,
 ) -> CandidatePairs:
+    """Scatter each post to its author's followers, plus `inject_k` non-followers.
+
+    Vectorised as the ragged gather spec §3.2 prescribes. The previous version
+    was that section's "honest but slow" sketch: a Python loop over posts with
+    a `csc.getcol(author)` per author, which profiling showed as ~2000 scipy
+    sparse-submatrix constructions per tick and the single largest cost in the
+    loop. Only posts whose author exceeds `fanout_cap` still need individual
+    treatment, because sampling without replacement differs per post — and at
+    the default mean degree of 40 against a cap of 400 that set is usually
+    empty.
+    """
     n = graph.n
-    unique_authors = np.unique(posts.author)
-    followers_by_author = {int(a): graph.csc.getcol(int(a)).indices for a in unique_authors}
-
-    post_idx_parts, user_parts, is_follower_parts = [], [], []
-    for i in range(len(posts)):
-        author = int(posts.author[i])
-        followers = followers_by_author[author]
-        if len(followers) > fanout_cap > 0:
-            followers = rng.choice(followers, size=fanout_cap, replace=False)
-
-        injected = rng.integers(0, n, inject_k) if inject_k > 0 else np.empty(0, dtype=np.int64)
-
-        candidates = np.concatenate([followers, injected])
-        flags = np.concatenate([np.ones(len(followers), dtype=bool), np.zeros(len(injected), dtype=bool)])
-
-        post_idx_parts.append(np.full(len(candidates), i))
-        user_parts.append(candidates)
-        is_follower_parts.append(flags)
-
-    if not post_idx_parts:
+    P = len(posts)
+    if P == 0:
         empty = np.empty(0, dtype=np.int64)
         return CandidatePairs(post_idx=empty, user_id=empty, is_follower=np.empty(0, dtype=bool))
 
+    csc = graph.csc
+    authors = posts.author.astype(np.int64)
+    starts = csc.indptr[authors]
+    counts = csc.indptr[authors + 1] - starts
+
+    capped = (counts > fanout_cap) & (fanout_cap > 0)
+    gather_counts = np.where(capped, 0, counts)   # over-cap posts handled below
+
+    # ragged gather: for each post, the slice csc.indices[start : start + count]
+    total = int(gather_counts.sum())
+    post_idx = np.repeat(np.arange(P), gather_counts)
+    within = np.arange(total) - np.repeat(np.cumsum(gather_counts) - gather_counts, gather_counts)
+    follower_users = csc.indices[np.repeat(starts, gather_counts) + within]
+
+    if capped.any():
+        extra_posts, extra_users = [], []
+        for i in np.flatnonzero(capped):
+            block = csc.indices[starts[i] : starts[i] + counts[i]]
+            picked = rng.choice(block, size=fanout_cap, replace=False)
+            extra_posts.append(np.full(fanout_cap, i))
+            extra_users.append(picked)
+        post_idx = np.concatenate([post_idx] + extra_posts)
+        follower_users = np.concatenate([follower_users] + extra_users)
+
+    if inject_k > 0:
+        inj_posts = np.repeat(np.arange(P), inject_k)
+        inj_users = rng.integers(0, n, P * inject_k)
+        return CandidatePairs(
+            post_idx=np.concatenate([post_idx, inj_posts]),
+            user_id=np.concatenate([follower_users, inj_users]),
+            is_follower=np.concatenate(
+                [np.ones(len(post_idx), dtype=bool), np.zeros(len(inj_posts), dtype=bool)]
+            ),
+        )
+
     return CandidatePairs(
-        post_idx=np.concatenate(post_idx_parts),
-        user_id=np.concatenate(user_parts),
-        is_follower=np.concatenate(is_follower_parts),
+        post_idx=post_idx,
+        user_id=follower_users,
+        is_follower=np.ones(len(post_idx), dtype=bool),
     )

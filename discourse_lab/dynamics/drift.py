@@ -149,6 +149,17 @@ def reinforcement_delta(
     return delta
 
 
+_WEIGHT_KEYS = np.array(sorted(ACTION_WEIGHTS))
+_WEIGHT_VALS = np.array([ACTION_WEIGHTS[k] for k in _WEIGHT_KEYS])
+
+
+def _action_weights(actions: np.ndarray) -> np.ndarray:
+    idx = np.searchsorted(_WEIGHT_KEYS, actions)
+    idx = np.clip(idx, 0, len(_WEIGHT_KEYS) - 1)
+    hit = _WEIGHT_KEYS[idx] == actions
+    return np.where(hit, _WEIGHT_VALS[idx], 0.0)
+
+
 def social_influence_delta(
     exposures: Exposures,
     actions: np.ndarray,
@@ -170,7 +181,9 @@ def social_influence_delta(
     if len(exposures) == 0:
         return delta
 
-    weights = np.array([ACTION_WEIGHTS.get(a, 0.0) for a in actions])
+    # vectorised lookup: a list comprehension here is a per-exposure Python
+    # loop over tens of thousands of actions each tick (spec §0.5)
+    weights = _action_weights(actions)
     user_stance = pop.X_used[exposures.user_id][:, stance_cols]
     post_stance = posts.stance[exposures.post_idx]
     contribution = weights[:, None] * (post_stance - user_stance)
