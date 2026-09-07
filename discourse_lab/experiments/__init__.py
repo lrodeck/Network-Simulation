@@ -1,3 +1,9 @@
+from discourse_lab.experiments.designs import NAMED_DESIGNS, Design, design_names
+from discourse_lab.experiments.gate import (
+    GateReport,
+    calibrated_gate_config,
+    stylized_gate,
+)
 from discourse_lab.experiments.intervention import (
     DEFAULT_LEVERS,
     InterventionCell,
@@ -32,4 +38,10 @@ __all__ = [
     "interaction_table",
     "run_interventions",
     "summarize_interventions",
+    "Design",
+    "NAMED_DESIGNS",
+    "design_names",
+    "stylized_gate",
+    "calibrated_gate_config",
+    "GateReport",
 ]

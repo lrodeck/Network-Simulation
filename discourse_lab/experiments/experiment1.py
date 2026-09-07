@@ -62,12 +62,27 @@ def build_experiment1(
     return cells
 
 
-def run_experiment1(cells: list[Experiment1Cell], seeds: Sequence[int]) -> list[dict]:
+def run_experiment1(
+    cells: list[Experiment1Cell], seeds: Sequence[int], gate_check: bool = True
+) -> list[dict]:
     """Run every cell across every seed (a flat, seed-major, resumable sweep
     by construction: `cached_run` skips anything already on disk). Returns
     one row per (cell, seed) with each tracked metric's mean over the run and
     its null-comparison delta.
+
+    `gate_check` runs the C9 stylized gate on the first cell's base config
+    first (two cheap seeds, a pre-flight at reduced length) and warns if it
+    fails — Experiment 1's headline row IS the attention Gini, so a sweep
+    whose base config is off-gate would otherwise quote numbers the §5.1
+    table no longer covers. Pass `gate_check=False` after having gated the
+    config yourself (`experiments.gate.stylized_gate`).
     """
+    if gate_check and cells:
+        from discourse_lab.experiments.gate import stylized_gate
+
+        stylized_gate(cells[0].cfg, seeds=(0, 1), n_ticks=min(60, cells[0].cfg.dynamics.n_ticks),
+                      warn=True)
+
     rows: list[dict] = []
     for cell in cells:
         for seed in seeds:

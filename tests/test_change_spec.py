@@ -127,6 +127,82 @@ def test_c4_quality_attention_lift_requires_a_null_run():
         quality_attention_lift(_Fake(), None)
 
 
+def test_c4_lift_rejects_an_unmatched_null():
+    """C1/C2 made the naive null dangerous: differencing against a bare
+    default-config null also differences out selection and affect, not just
+    the kernel. The lift asserts its two runs' configs differ in
+    `dynamics.kernel` alone and refuses anything else — cheap, and the kind
+    of thing that silently produces a plausible wrong number."""
+    import json
+    import os
+    import tempfile
+    from pathlib import Path
+
+    from discourse_lab.io.store import RunHandle, RunWriter
+    from discourse_lab.outcomes import quality_attention_lift
+
+    old = dict(os.environ)
+    os.environ["DLAB_HOME"] = tempfile.mkdtemp()
+    try:
+        cfg_model = _cfg(n_users=200, n_ticks=2, kernel="bandwagon",
+                         selection="homophilous")
+        # the trap: a "null" that also switched selection off — plausible
+        # looking, and it differences out the selection mechanism
+        cfg_bad_null = _cfg(n_users=200, n_ticks=2, kernel="null")
+
+        def _fake_run(cfg, name):
+            p = Path(tempfile.mkdtemp()) / name
+            w = RunWriter(p, cfg, 0)
+            w.close()
+            return RunHandle(p)
+
+        model = _fake_run(cfg_model, "m")
+        bad_null = _fake_run(cfg_bad_null, "n")
+        with pytest.raises(ValueError, match="dynamics.kernel alone"):
+            quality_attention_lift(model, bad_null)
+
+        # the honest pairing clears the config check (it then fails later
+        # only because these fake runs have no posts — which proves the
+        # assertion is what stopped the first call)
+        cfg_good_null = dataclasses.replace(
+            cfg_model, dynamics=dataclasses.replace(cfg_model.dynamics, kernel="null"))
+        good_null = _fake_run(cfg_good_null, "g")
+        with pytest.raises(FileNotFoundError):
+            quality_attention_lift(model, good_null)
+    finally:
+        os.environ.clear()
+        os.environ.update(old)
+
+
+def test_theta_scale_is_a_population_level_group_lever():
+    """C3b's group declarations, second consumer: `theta_scale` scales a
+    whole named group at the population level — the lever D3's social_proof
+    ladder needs. Swapping whole kernels cannot express a ladder (epistemic
+    has no social_proof to weaken; bandwagon has no quality to crowd out),
+    so this must not degrade into kernel swaps. Two properties pinned:
+    scale=1 is exactly the unscaled kernel, and overrides land before the
+    group scale multiplies them."""
+    from discourse_lab.exposure.kernel import kernel_with_scales, named_kernel
+
+    base = {(a, f): w for a, f, w in named_kernel("bandwagon")}
+    scaled = {(a, f): w for a, f, w in kernel_with_scales(
+        "bandwagon", scales=(("social_proof", 2.0),))}
+    for key, w in base.items():
+        action, feature = key
+        in_group = feature in ("social_proof", "prominence", "tie_strength")
+        expected = w * 2.0 if in_group else w
+        assert scaled[key] == pytest.approx(expected), key
+
+    # override then scale: the override sets the coefficient, the group
+    # scale multiplies whatever it now is
+    both = {(a, f): w for a, f, w in kernel_with_scales(
+        "bandwagon",
+        overrides=(("like", "social_proof", 0.5),),
+        scales=(("social_proof", 2.0),))}
+    assert both[("like", "social_proof")] == pytest.approx(1.0)
+    assert both[("like", "intercept")] == base[("like", "intercept")]
+
+
 def test_c5_outgroup_feature_is_unconditional_and_camp_signed():
     """The `outgroup` feature fires on camp difference alone — the Rathje et
     al. (2021) effect is general, not a contrarian-minority phenomenon. The
@@ -163,23 +239,56 @@ def test_c5_outgroup_feature_is_unconditional_and_camp_signed():
 
 
 def test_c9_attention_gini_and_reciprocity_hold_simultaneously():
-    """Change spec C9: the fix has to satisfy BOTH stylized rows at once —
-    attention Gini in [0.8, 0.95] AND reciprocity in [0.2, 0.4]. Trading one
-    miss for another is not a fix. Reduced-scale integration: N=1200,
-    engagement_optimized + bandwagon (the combination the latent_pa module
-    records as reaching the Gini band), 2 seeds; raise seeds via
-    DLAB_GATE_SEEDS for the full 20-seed gate."""
+    """Change spec C9's gate, post-C1-C10: attention Gini in [0.8, 0.95] AND
+    reciprocity in [0.2, 0.4] **simultaneously**, across 20 seeds.
+
+    C9 changed the graph generator and C1/C2/C3 changed the tick; every
+    stylized-fact number previously calibrated was fitted under the old
+    ones. This gate runs the calibrated combination under the CURRENT code
+    at the calibration convention (`drift="none"`, like every other
+    stylized-fact test — feed dynamics isolated from trait feedback), with
+    the C1-C10 mechanisms at their identity settings: affect/learning/
+    selection/rewiring off, quality_trait_coupling 0, C5's outgroup feature
+    live as a feature.
+
+    Known interaction, deliberately NOT tuned away: with the shipped
+    `drift="full"` the Gini overshoots the band (~0.97 at this scale) —
+    C3a's behavior reinforcement compounds attention concentration under
+    bandwagon, which is the mechanism working exactly as Brady et al.
+    describe and landing outside §5.1's range. Recorded in FINDINGS.md;
+    experiments quoting stylized-anchored results WITH drift on must re-run
+    this gate at their settings.
+
+    Reduced scale (N=1200, 60 ticks) keeps the 20-seed gate inside a few
+    minutes; the full eight-fact table at production scale is
+    `stylized_facts_from_run` over the N=1e4 x 500 config and should be re-
+    run before quoting any experiment result. Seeds overridable via
+    DLAB_GATE_SEEDS for smoke runs."""
     import os
 
     from discourse_lab.analysis import set_param
     from discourse_lab.metrics import stylized_facts_from_run
     from discourse_lab.runner import cached_run, load_run
 
-    seeds = int(os.environ.get("DLAB_GATE_SEEDS", "2"))
+    seeds = int(os.environ.get("DLAB_GATE_SEEDS", "20"))
     base = _cfg(n_users=1200, n_ticks=60, drift="none")
     base = set_param(base, "dynamics.ranker", "engagement_optimized")
     base = set_param(base, "dynamics.kernel", "bandwagon")
     base = set_param(base, "graph.generator", "latent_pa")
+    # Recalibrated post-C1-C10. Measured at 4 seeds each, then verified at
+    # 20 (the 4-seed ranges understate the right tail — seed 9 at scale 0.75
+    # hit 0.956, which is why the gate is 20 seeds and not 4):
+    #   mirror_p 0.02, scale 1.00 -> Gini 0.939-0.964+ (over the top),
+    #                              reciprocity 0.211-0.220 (skimming the floor)
+    #   mirror_p 0.05, scale 0.75 -> Gini up to 0.956 at 20 seeds
+    #   mirror_p 0.05, scale 0.60 -> Gini 0.82-0.93, reciprocity 0.252-0.268
+    # The dials are the legitimate ones for each row: mirror_p is the graph's
+    # reciprocity input (the PA overlay depresses it), theta_scale's
+    # social_proof group is the popularity-force strength — the population-
+    # level lever C3b's groups exist for. Calibration, not gate-fitting:
+    # each dial moves its own row and both sit mid-band with margin.
+    base = set_param(base, "graph.mirror_p", 0.05)
+    base = set_param(base, "dynamics.theta_scale", (("social_proof", 0.6),))
 
     from discourse_lab.network import cached_graph
     from discourse_lab.population import cached_population
@@ -190,16 +299,13 @@ def test_c9_attention_gini_and_reciprocity_hold_simultaneously():
         rngs = phase_rngs(seed)
         graph = cached_graph(base, seed, cached_population(base, seed, rngs["population"]), rngs["graph"])
         report = stylized_facts_from_run(handle, graph=graph, pop=None)
-        gini_ok = report.get("attention_gini", {})
-        assert gini_ok.get("in_range") is True, (
-            f"seed {seed}: attention Gini {gini_ok.get('value')} outside "
-            f"{gini_ok.get('target')} — the C9 gate trades a miss for a miss"
-        )
-        recip_ok = report.get("reciprocity", {})
-        assert recip_ok.get("in_range") is True, (
-            f"seed {seed}: reciprocity {recip_ok.get('value')} outside "
-            f"{recip_ok.get('target')} — the heavy tail broke the reciprocity row"
-        )
+        for row in ("attention_gini", "reciprocity"):
+            entry = report.get(row, {})
+            assert entry.get("in_range") is True, (
+                f"seed {seed}: {row} = {entry.get('value')} outside {entry.get('target')} — "
+                f"the C9 gate half-succeeded (full report: "
+                f"{ {k: v.get('value') for k, v in report.items()} })"
+            )
 
 
 # --------------------------------------------------------------------------
@@ -607,6 +713,31 @@ def test_c8_threshold_model_requires_distinct_engaged_neighbours():
 # --------------------------------------------------------------------------
 # Wave 5: C10 machinery
 # --------------------------------------------------------------------------
+
+
+def test_gate_passes_on_the_calibration_of_record_and_warns_off_gate():
+    """The C9 gate as a runnable check: `stylized_gate` must pass on the
+    recalibrated combination and warn on an off-gate config, so a
+    Gini-quoting result carries its gate status instead of inheriting one
+    from settings that no longer pass. The off-gate probe is the
+    `chronological` ranker — attention spreads evenly under a time-ordered
+    feed, which lands the Gini far BELOW the band (the other half-success)."""
+    import warnings as w
+
+    from discourse_lab.analysis import set_param
+    from discourse_lab.experiments import calibrated_gate_config, stylized_gate
+
+    report = stylized_gate(calibrated_gate_config(), seeds=(0, 1), n_ticks=60)
+    assert report.passed, report.summary()
+
+    off_gate = set_param(calibrated_gate_config(), "dynamics.ranker", "chronological")
+    with w.catch_warnings(record=True) as caught:
+        w.simplefilter("always")
+        bad = stylized_gate(off_gate, seeds=(0, 1), n_ticks=60, warn=True)
+    assert not bad.passed, f"chronological unexpectedly passed: {bad.summary()}"
+    assert any("stylized gate FAILED" in str(c.message) for c in caught), (
+        "an off-gate sweep ran silently - the warning is the point"
+    )
 
 
 def test_c10_design_requires_a_falsifier():

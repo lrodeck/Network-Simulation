@@ -337,3 +337,29 @@ def kernel_with_overrides(name: str, overrides) -> tuple[tuple[str, str, float],
     for action, feature, weight in overrides:
         table[(action, feature)] = float(weight)
     return tuple((a, f, w) for (a, f), w in table.items())
+
+
+def kernel_with_scales(name: str, overrides=(), scales=()) -> tuple[tuple[str, str, float], ...]:
+    """`cfg.dynamics.theta_scale` — the second consumer of FEATURE_GROUPS
+    (change spec D3's minimal fix). Scales a whole coefficient group at the
+    population level: `theta *= scale[group]` for every entry whose feature
+    belongs to a scaled group. Per-user gains (kernel_learning) vary the
+    theory across people; this varies the theory itself — a ladder over
+    `("social_proof", s)` is a popularity-pressure dial without swapping
+    kernels, which is what preserves the crossing point D3 looks for.
+
+    Order matters and is fixed here: overrides SET a coefficient, then the
+    group scale multiplies the result. Features outside FEATURE_GROUPS
+    (quality, novelty, specificity…) are unscaleable by design — there is no
+    named group for them to belong to."""
+    entries = kernel_with_overrides(name, overrides)
+    if not scales:
+        return entries
+    scale = {group: float(v) for group, v in scales}
+    out = []
+    for action, feature, weight in entries:
+        group = group_of(feature)
+        if group is not None and group in scale:
+            weight = weight * scale[group]
+        out.append((action, feature, weight))
+    return tuple(out)

@@ -59,7 +59,7 @@ from discourse_lab.dynamics.timing import (
 )
 from discourse_lab.exposure import apply_kernel, candidate_inbox, compute_features, named_kernel, rank_candidates
 from discourse_lab.exposure.attention import Exposures, select_exposures
-from discourse_lab.exposure.kernel import apply_kernel_learned, kernel_with_overrides
+from discourse_lab.exposure.kernel import apply_kernel_learned, kernel_with_scales
 from discourse_lab.exposure.selection import apply_selection
 from discourse_lab.llm.adjudication import detect_salient_events
 from discourse_lab.measures import attention_gini, bubble_index, salience_stance_agreement
@@ -347,7 +347,7 @@ class TickEngine:
                     features_att = {k: v[attended] for k, v in features.items()}
 
                     if n_attended > 0:
-                        theta = kernel_with_overrides(cfg.kernel, cfg.kernel_theta)
+                        theta = kernel_with_scales(cfg.kernel, cfg.kernel_theta, cfg.theta_scale)
                         if self.learner is not None:
                             # C3b: per-user gains modulate the named kernel;
                             # g == 1 reproduces it exactly

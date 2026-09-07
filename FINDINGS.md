@@ -156,3 +156,39 @@ without touching the cached initial graph (C2.2).
 latent_pa + engagement_optimized + andwagon at N=1200 lands attention
 Gini inside [0.8, 0.95] AND reciprocity inside [0.2, 0.4] simultaneously -
 both stylized rows at once, which the old configuration could not do.
+
+**The C9 combination was recalibrated post-C1-C10, and the 20-seed gate
+caught two things a 2-seed check had missed.** First, seed variance: at
+	heta_scale social_proof = 1.0 the Gini straddles the 0.95 band top across
+seeds (0.939-0.964+ at N=1200, 60 ticks) - a 2-seed check passed on seed
+luck, which is exactly the quietly-half-succeeding fit the change spec
+warns about. Second, an interaction worth having on the record: with the
+shipped drift="full", C3a's behaviour reinforcement compounds attention
+concentration under bandwagon and the Gini overshoots to ~0.97 - the
+mechanism working as Brady et al. describe and landing outside the band.
+The stylized-fact calibration convention is drift="none" (feed dynamics
+isolated from trait feedback, like every other stylized test); experiments
+quoting stylized-anchored results WITH drift on must re-run the gate at
+their settings (	est_c9_*, DLAB_GATE_SEEDS to widen it).
+
+Recalibrated combination: latent_pa + engagement_optimized + andwagon,
+mirror_p 0.02 -> 0.05 (reciprocity headroom; the PA overlay depresses it),
+	heta_scale social_proof 1.0 -> 0.6 (popularity-force strength; the
+population-level group lever C3b introduced). At 20 seeds: Gini 0.82-0.93,
+reciprocity 0.252-0.268 - both rows mid-band with margin on both sides.
+
+**D3 was redesigned around the group lever and the budget was measured.**
+Sweeping whole kernels cannot find the quality-vs-popularity crossing point
+(epistemic has no social_proof to weaken; bandwagon has no quality to crowd
+out), so D3 now ladders 	heta_scale social_proof (0 / 0.5 / 1 / 2) on a
+bandwagon kernel with quality weighted in via override. Budget, measured at
+17 us/user-tick (~1.4 min per run at N=1e4 x 500): 4 ladder levels x
+(model + matched null) x 20 seeds = 160 runs ~ 3.8 h sequential, ~30 min at
+8 workers. The homophily arm was dropped - it made no competing prediction
+there.
+
+**quality_attention_lift now asserts its null is matched** - the two runs'
+configs must differ in dynamics.kernel alone, or it raises. With C1 affect
+and C2 selection live, differencing against a bare default-config null
+also differences those mechanisms out while the number still reads as
+being about the kernel.

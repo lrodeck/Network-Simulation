@@ -186,6 +186,16 @@ class DynamicsConfig(Hashable):
     ranker: str = "chronological"
     kernel: str = "homophily"
     kernel_theta: tuple[tuple[str, str, float], ...] = ()   # (feature, action, value)
+    # C3b's named coefficient groups, second consumer: a POPULATION-level
+    # multiplier on a group's coefficients — theta_u = theta_base * g_u *
+    # theta_scale[group]. Per-user *gains* (kernel_learning) vary the theory
+    # across people; this varies the theory itself, which is what makes a
+    # ladder like "social_proof strength 0 → 4" expressible without swapping
+    # whole kernels (and so without losing the crossing point D3 exists to
+    # find). (group, value) pairs; groups are those in exposure/kernel.py's
+    # FEATURE_GROUPS — features outside any group (quality, novelty…) cannot
+    # be scaled this way.
+    theta_scale: tuple[tuple[str, float], ...] = ()
     # How stance disagreement is measured in the engagement kernel (spec §2.6
     # `phi`), and therefore whether a theta authored at one stance
     # dimensionality means the same thing at another. spec §7.5 leaves the

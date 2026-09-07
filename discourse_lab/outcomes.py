@@ -267,7 +267,39 @@ def quality_attention_lift(run_handle, null_run_handle) -> float:
     `quality_trait_coupling == 0` closed that backdoor at generation. The
     lift is the structural form of §5.3's "difference against a matched
     null" for exactly this quantity.
+
+    **Matched means matched.** The two runs' configs must differ in
+    `dynamics.kernel` alone, and this is asserted, not documented: once C1
+    affect and C2 selection are live, differencing against a bare null
+    config also differences out selection and affect — a plausible-looking
+    number that is not about the kernel. The assertion is what turns "the
+    null is whatever I compared against" into a contract.
     """
+    import json
+
+    if null_run_handle is None:
+        raise ValueError(
+            "quality_attention_lift needs the matched null run; §5.3 makes "
+            "the comparison mandatory, so there is no single-run form"
+        )
+
+    def _config_without_kernel(handle):
+        cfg = json.loads(handle.config_json)
+        cfg["dynamics"].pop("kernel", None)
+        return json.dumps(cfg, sort_keys=True)
+
+    model_cfg = _config_without_kernel(run_handle)
+    null_cfg = _config_without_kernel(null_run_handle)
+    if model_cfg != null_cfg:
+        raise ValueError(
+            "matched null must differ in dynamics.kernel alone. The two runs' "
+            "configs differ elsewhere (affect, selection, ranker, population…), "
+            "so the difference would attribute those mechanisms' effects to the "
+            "kernel. Re-run the null from the model's own config with only the "
+            "kernel swapped: dataclasses.replace(cfg, dynamics=replace(cfg.dynamics, "
+            "kernel='null'))."
+        )
+
     from discourse_lab.metrics import quality_attention_correlation
 
     def _rho(handle):
