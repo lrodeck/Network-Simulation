@@ -192,3 +192,51 @@ configs must differ in dynamics.kernel alone, or it raises. With C1 affect
 and C2 selection live, differencing against a bare default-config null
 also differences those mechanisms out while the number still reads as
 being about the kernel.
+
+## Experiment 01 — Sorting vs. selective exposure: affect channel under-powered at small scale
+
+Törnberg's partisan-sorting world (outrage kernel, engagement ranker,
+position-only selection, `inject_k=20`, rewiring on) vs. Bakshy et al.'s
+selective-exposure world (homophily kernel, chronological ranker,
+homophilous selection, `inject_k=2`, no rewiring), each against its own
+matched `kernel="null"` twin. Notebook:
+`notebooks/experiment_01_sorting_vs_selective_exposure.ipynb`; script:
+`discourse_lab/experiments/experiment01_sorting_vs_selective_exposure.py`.
+Scaled down from the source spec's 10,000 users / 500 ticks / 20 seeds to
+1,500 users / 150 ticks / 8 seeds (main grid) and 4 seeds (`inject_k`
+ladder [0,2,5,10,20]) — see the notebook's "Deviations from the spec"
+section for the full list of what did not run (World C, D2
+identifiability, `selection_beta` calibration, the θ-ratio bracket, the §8
+ablation ladder, the C10 Sobol sweep).
+
+**The packaged default scenario's stance marginal fails the affect
+metrics' own camp-bimodality gate** (`camps_and_bimodality` needs
+bimodality ≥5/9≈0.556; the default measures 0.297), so
+`ident_animus_coupling`, `affective_distance`, `animus_asymmetry` and
+`stance_centroid_distance` read identical to six decimal places across
+both worlds and both nulls when run against it — not a subtle null result,
+a sign the affect channel never engaged. Fixed for this run only by
+substituting an explicit bimodal one-axis scenario (bimodality ≈0.75, the
+same construction as the demo notebook's C1 cell) into the shared
+substrate; this is a substrate-level gap the change-spec's affect metrics
+have and worth closing generally, not just for this experiment.
+
+**Even with camps defined, the affect channel did not separate a world
+from its own null at this scale.** `affective_distance`: World A 0.0520 vs.
+null 0.0522 (Δ=-0.0002), World B 0.0523 vs. the same null (Δ=+0.0001) — two
+orders of magnitude below the metric's cross-seed spread. Per the source
+spec's own decision rule for this case: `lr_affect` (0.015, default,
+unchanged) and/or `n_ticks` (150 vs. the spec's 500) need to move before
+the decisive-cell test (high animus at low echo-chamber index) means
+anything here. The 2x2 placement nominally came out backwards from both
+theories' predictions (World A: low animus/high echo; World B: high
+animus/low echo) but the differences driving that placement are noise, not
+signal.
+
+**The structural (selection + `inject_k`) dimension separated cleanly and
+in the expected direction, independent of the affect question.**
+`echo_chamber_index` (attended): World A 0.499, World B 0.475. Cross-camp
+exposure share: World A 0.277, World B 0.331. Present equally in the
+worlds and their nulls, since kernel is the only axis that differs between
+a world and its null — expected, and not itself evidence for either
+kernel's mechanism.
