@@ -125,3 +125,63 @@ def fig_contact_vs_hostility(summary, title="Contact and hostility"):
                      x=0.01, ha="left", fontsize=6.5, color=CHROME["muted"])
         ax.margins(x=0.30, y=0.22)
     return fig
+
+
+def fig_interaction(table, outcome_label="", top=8,
+                    title="Does this lever do the same thing everywhere?"):
+    """One row per (lever, value), one marker per background, joined by a line.
+
+    Takes the frame `experiments.interaction_table` returns. A row whose
+    markers sit on top of each other is a lever whose screen result was the
+    whole story; a row whose markers are far apart is a lever whose main effect
+    is an average over settings in which it does different things — and the
+    line makes that length, which is `swing`, the thing the eye reads first.
+
+    Sorted by swing and truncated to `top` rows, because the interesting claim
+    is which levers interact, not an exhaustive listing of the ones that do not.
+    """
+    require_matplotlib()
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    background_cols = [c for c in table.columns if c not in ("lever", "value", "swing")]
+    if len(background_cols) < 2:
+        raise ValueError(
+            "an interaction needs at least two backgrounds; build the cells "
+            "with build_interventions(..., across=...)"
+        )
+
+    frame = table.head(top)
+    labels = [f"{lever.split('.')[-1]} = {value}"
+              for lever, value in zip(frame["lever"], frame["value"])]
+    y = np.arange(len(frame))[::-1]
+    colours = series_colors(len(background_cols))
+
+    with styled():
+        fig, ax = plt.subplots(figsize=(FIG_DOUBLE_COL, 0.42 * len(frame) + 1.7))
+        ax.axvline(0, color=CHROME["ink"], lw=0.8, zorder=0)
+
+        values = np.column_stack([frame[c].to_numpy() for c in background_cols])
+        for row, yi in zip(values, y):
+            finite = row[np.isfinite(row)]
+            if len(finite) > 1:
+                ax.plot([finite.min(), finite.max()], [yi, yi],
+                        color=CHROME["muted"], lw=1.0, zorder=1)
+        # shrinking marker sizes so a lever with *no* interaction — markers at
+        # the same x — reads as concentric rings rather than as one series
+        # silently hidden under another, which looks like missing data
+        for k, (name, colour) in enumerate(zip(background_cols, colours)):
+            ax.scatter(values[:, k], y, s=52 - 16 * k, c=colour, edgecolors="white",
+                       linewidths=0.6, zorder=2 + k,
+                       label=name.split("=", 1)[-1] if "=" in name else name)
+
+        ax.set_yticks(y)
+        ax.set_yticklabels(labels)
+        ax.set_xlabel(f"effect on {outcome_label}" if outcome_label else "lever effect")
+        ax.set_title(title)
+        legend_title = (background_cols[0].split("=")[0].split(".")[-1]
+                        if "=" in background_cols[0] else "background")
+        ax.legend(frameon=False, fontsize="small", title=legend_title,
+                  title_fontsize="small", loc="best")
+        ax.margins(x=0.18)
+    return fig

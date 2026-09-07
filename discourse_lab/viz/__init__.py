@@ -20,6 +20,7 @@ _FIGURE_EXPORTS = {
     "fig_feed_mirror": "discourse_lab.viz.figures.users",
     "fig_archetypes": "discourse_lab.viz.figures.world",
     "fig_lever_effects": "discourse_lab.viz.figures.normative",
+    "fig_interaction": "discourse_lab.viz.figures.normative",
     "fig_scenario_axes": "discourse_lab.viz.figures.world",
     "fig_trait_correlations": "discourse_lab.viz.figures.world",
     "fig_contact_vs_hostility": "discourse_lab.viz.figures.normative",

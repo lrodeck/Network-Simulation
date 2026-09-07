@@ -97,8 +97,11 @@ def test_summary_reports_resolution_rather_than_filtering_on_it(tmp_path, monkey
 def test_rows_are_tidy_long_form(tmp_path, monkeypatch):
     rows, _ = _sweep(tmp_path, monkeypatch, {"dynamics.inject_k": (0, 20)}, seeds=2)
     assert set(rows.columns) == {
-        "lever", "value", "seed", "outcome", "model", "null", "kernel_delta"
+        "lever", "background", "value", "seed", "outcome", "model", "null",
+        "kernel_delta",
     }
+    # empty for an uncrossed screen; see tests/test_intervention_factorial.py
+    assert rows["background"].unique().to_list() == [""]
     # bookkeeping fields are not outcomes
     assert not any(o.endswith(".n") for o in rows["outcome"].unique())
 

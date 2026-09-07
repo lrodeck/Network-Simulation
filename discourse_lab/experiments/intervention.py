@@ -84,33 +84,107 @@ DEFAULT_LEVERS: dict[str, tuple] = {
 }
 
 
+# The background factor a screened lever is most likely to interact with, and
+# the one that has been measured to do so. See `across=` below.
+RANKER_BACKGROUND: dict[str, tuple] = {
+    "dynamics.ranker": ("chronological", "affinity"),
+}
+
+
 @dataclass(frozen=True)
 class InterventionCell:
     lever: str
     value: object
     cfg: Config
     null_cfg: Config
+    background: tuple[tuple[str, object], ...] = ()
+
+    @property
+    def background_label(self) -> str:
+        """Canonical name for this cell's background, `""` when there is none.
+
+        A string and not the tuple, because it becomes a group-by key in the
+        tidy frame and a facet label in the figures.
+        """
+        return ", ".join(f"{k}={v}" for k, v in self.background)
+
+
+def _background_grid(across: Mapping[str, Sequence] | None) -> list[tuple[tuple[str, object], ...]]:
+    if not across:
+        return [()]
+    grid: list[tuple[tuple[str, object], ...]] = [()]
+    for factor, levels in across.items():
+        grid = [combo + ((factor, level),) for combo in grid for level in levels]
+    return grid
 
 
 def build_interventions(
-    base_cfg: Config, levers: Mapping[str, Sequence] = DEFAULT_LEVERS
+    base_cfg: Config,
+    levers: Mapping[str, Sequence] = DEFAULT_LEVERS,
+    across: Mapping[str, Sequence] | None = None,
 ) -> list[InterventionCell]:
-    """One cell per (lever, value), each with a matched `kernel="null"` twin.
+    """One cell per (background, lever, value), each with a matched
+    `kernel="null"` twin.
 
-    One-at-a-time, not a full factorial: with four levers this is 13 cells
-    rather than 108, and spec §5.4 asks for one-at-a-time sensitivity anyway.
-    Interactions are a follow-up, not the first result.
+    With `across=None` this is the one-at-a-time screen: five levers become 16
+    cells rather than a 432-cell full factorial, and spec §5.4 asks for
+    one-at-a-time sensitivity. **Read it as a screen.** A lever that comes out
+    flat has been shown flat *at the base configuration*, which is a weaker
+    claim than "this does not matter", and the difference is not academic —
+    `tau_position` reads flat in the screen and moves cross-camp exposure by
+    +0.088 under `affinity` against -0.004 under `chronological`.
+
+    `across` re-runs every lever value inside each level of a background
+    factor, so that interaction is visible instead of averaged away. Pass
+    `RANKER_BACKGROUND` for the crossing that has been measured to matter:
+
+        cells = build_interventions(cfg, across=RANKER_BACKGROUND)
+
+    Cost is multiplicative and worth stating before you launch it: `across`
+    with two levels doubles the cells, and each cell is a model run plus a null
+    run per seed. The 16-cell screen at N=1500, 30 ticks, 10 seeds took ~180s;
+    crossed against two rankers it is ~2x that.
+
+    A lever that is *also* a background factor is not crossed with itself — its
+    values already vary across the background, so it contributes one cell per
+    value with no extra crossing, and `lever_effect` for it is the main effect.
     """
     cells = []
-    for lever, values in levers.items():
-        for value in values:
-            cfg = set_param(base_cfg, lever, value)
-            cfg = dataclasses.replace(cfg, label=f"intv-{lever}={value}")
+    for background in _background_grid(across):
+        applied = base_cfg
+        for factor, level in background:
+            applied = set_param(applied, factor, level)
+        crossed = {factor for factor, _ in background}
+        prefix = "".join(f"{k}={v}|" for k, v in background)
+
+        for lever, values in levers.items():
+            if lever in crossed:
+                # already varied by the background; crossing it with itself
+                # would silently overwrite the background level
+                continue
+            for value in values:
+                cfg = set_param(applied, lever, value)
+                cfg = dataclasses.replace(cfg, label=f"intv-{prefix}{lever}={value}")
+                null_cfg = dataclasses.replace(
+                    set_param(cfg, "dynamics.kernel", "null"),
+                    label=f"intv-null-{prefix}{lever}={value}",
+                )
+                cells.append(InterventionCell(lever=lever, value=value, cfg=cfg,
+                                              null_cfg=null_cfg, background=background))
+
+        for factor, levels in levers.items():
+            if factor not in crossed:
+                continue
+            value = dict(background)[factor]
+            if value not in levels:
+                continue
+            cfg = dataclasses.replace(applied, label=f"intv-{prefix}{factor}")
             null_cfg = dataclasses.replace(
                 set_param(cfg, "dynamics.kernel", "null"),
-                label=f"intv-null-{lever}={value}",
+                label=f"intv-null-{prefix}{factor}",
             )
-            cells.append(InterventionCell(lever=lever, value=value, cfg=cfg, null_cfg=null_cfg))
+            cells.append(InterventionCell(lever=factor, value=value, cfg=cfg,
+                                          null_cfg=null_cfg, background=()))
     return cells
 
 
@@ -160,6 +234,7 @@ def run_interventions(
                     continue    # bookkeeping, not an outcome
                 rows.append({
                     "lever": cell.lever,
+                    "background": cell.background_label,
                     "value": str(cell.value),
                     "seed": seed,
                     "outcome": name,
@@ -190,8 +265,11 @@ def summarize_interventions(
     paper needs to be able to state.
     """
     reference = dict(reference or {})
+    if "background" not in rows.columns:
+        rows = rows.with_columns(pl.lit("").alias("background"))
+
     grouped = (
-        rows.group_by(["lever", "value", "outcome"])
+        rows.group_by(["lever", "background", "value", "outcome"])
         .agg(
             pl.col("model").mean().alias("model_mean"),
             pl.col("model").std().alias("model_sd"),
@@ -199,10 +277,14 @@ def summarize_interventions(
             pl.col("kernel_delta").mean().alias("kernel_delta"),
             pl.len().alias("n_seeds"),
         )
-        .sort(["outcome", "lever", "value"])
+        .sort(["outcome", "lever", "background", "value"])
     )
 
-    # the reference value per lever: caller's choice, else the first value seen
+    # the reference value per lever: caller's choice, else the first value seen.
+    # Per lever and not per (lever, background): the reference is a property of
+    # the dial, and a background-specific reference would make lever_effect
+    # incomparable across backgrounds, which is the one comparison `across=`
+    # exists to support.
     first_seen = {}
     for lever, value in rows.select(["lever", "value"]).unique(maintain_order=True).iter_rows():
         first_seen.setdefault(lever, value)
@@ -213,12 +295,13 @@ def summarize_interventions(
             pl.col("lever").replace_strict(refs, default=None).alias("_ref")
         )
         .filter(pl.col("value") == pl.col("_ref"))
-        .select(["lever", "outcome", pl.col("model_mean").alias("_base"),
+        .select(["lever", "background", "outcome",
+                 pl.col("model_mean").alias("_base"),
                  pl.col("model_sd").alias("_base_sd")])
     )
 
     return (
-        grouped.join(baseline, on=["lever", "outcome"], how="left")
+        grouped.join(baseline, on=["lever", "background", "outcome"], how="left")
         .with_columns(
             (pl.col("model_mean") - pl.col("_base")).alias("lever_effect"),
             pl.col("lever").replace_strict(refs, default=None).alias("reference"),
@@ -231,5 +314,42 @@ def summarize_interventions(
             ).alias("resolves")
         )
         .drop(["_base", "_base_sd"])
-        .sort(["outcome", "lever", "value"])
+        .sort(["outcome", "lever", "background", "value"])
     )
+
+
+def interaction_table(summary: pl.DataFrame, outcome: str) -> pl.DataFrame:
+    """`lever_effect` for one outcome, one row per (lever, value), one column
+    per background — plus `swing`, the spread across backgrounds.
+
+    `swing` is the interaction, and it is the number to sort on. A lever whose
+    effect is the same under every background has swing ~0 and its screen row
+    was telling the truth; a lever with a large swing does something different
+    depending on the setting it is embedded in, and reporting its main effect
+    alone is reporting an average over a factor it interacts with.
+
+    Requires a summary built from `across=`-crossed cells; with a single
+    background there is nothing to compare and `swing` is 0 by construction.
+    A lever that is itself the background factor is omitted: it defines the
+    facets rather than varying within them, and its main effect is in
+    `summary` already.
+    """
+    frame = summary.filter(pl.col("outcome") == outcome)
+    if frame.height == 0:
+        raise ValueError(
+            f"no rows for outcome {outcome!r}; available: "
+            f"{sorted(summary['outcome'].unique())}"
+        )
+
+    backgrounds = set(frame["background"].unique())
+    if len(backgrounds - {""}) > 1:
+        # Cells with no background are the background factor's own values —
+        # they define the facets, so they have no effect *within* one and
+        # would pivot to a column of nulls. Their main effect is in `summary`.
+        frame = frame.filter(pl.col("background") != "")
+
+    wide = frame.pivot(on="background", index=["lever", "value"], values="lever_effect")
+    background_cols = [c for c in wide.columns if c not in ("lever", "value")]
+    return wide.with_columns(
+        (pl.max_horizontal(background_cols) - pl.min_horizontal(background_cols)).alias("swing")
+    ).sort("swing", descending=True, nulls_last=True)

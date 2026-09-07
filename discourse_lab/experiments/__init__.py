@@ -1,7 +1,9 @@
 from discourse_lab.experiments.intervention import (
     DEFAULT_LEVERS,
     InterventionCell,
+    RANKER_BACKGROUND,
     build_interventions,
+    interaction_table,
     run_interventions,
     summarize_interventions,
 )
@@ -25,7 +27,9 @@ __all__ = [
     "TRACKED_METRICS",
     "DEFAULT_LEVERS",
     "InterventionCell",
+    "RANKER_BACKGROUND",
     "build_interventions",
+    "interaction_table",
     "run_interventions",
     "summarize_interventions",
 ]
