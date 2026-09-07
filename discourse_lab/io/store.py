@@ -34,13 +34,16 @@ import pyarrow.parquet as pq
 # written at this version or later, so runs predating posts.parquet are
 # recomputed once (population and graph artifacts are keyed on their own
 # sub-hashes and survive, so only the dynamics re-run).
-RUN_FORMAT = 4
+# 5: C2.1 — the exposure sample gained `attended` (exposed vs attended are
+#    different quantities and the echo-chamber index must say which it
+#    measured); C3b gained kernel_state.parquet; C2.2 gained rewire_log.
+RUN_FORMAT = 5
 
 POST_DIM_COLUMNS = (
     "arousal", "valence", "provocativeness", "novelty", "specificity", "quality", "length",
 )
 ENGAGEMENT_COLUMNS = ("t", "user", "post", "action")
-EXPOSURE_SAMPLE_COLUMNS = ("t", "user", "post", "rank", "is_follower", "action")
+EXPOSURE_SAMPLE_COLUMNS = ("t", "user", "post", "rank", "is_follower", "attended", "action")
 
 
 def posts_schema(stance_dims: int) -> pa.Schema:
@@ -67,10 +70,18 @@ def exposures_schema() -> pa.Schema:
     fixed random sample (`cfg.dynamics.exposure_sample_rate`) is retained —
     enough for diagnostics like §5.2's echo-chamber index, which needs
     per-(user, post) consumed stance and has no other source.
+
+    C2.1: the sample spans the EXPOSED set with an `attended` flag. Exposure
+    and attention are different quantities (Bakshy et al. 2015's whole
+    point), and the echo-chamber index computed on the wrong one reads as a
+    finding about the wrong mechanism. Unattended rows carry
+    action="unattended": they were never offered to the kernel, so they are
+    neither skips nor engagements.
     """
     return pa.schema([
         ("t", pa.int64()), ("user", pa.int64()), ("post", pa.int64()),
-        ("rank", pa.int64()), ("is_follower", pa.bool_()), ("action", pa.string()),
+        ("rank", pa.int64()), ("is_follower", pa.bool_()), ("attended", pa.bool_()),
+        ("action", pa.string()),
     ])
 
 
@@ -91,6 +102,25 @@ def salient_events_schema() -> pa.Schema:
     return pa.schema([
         ("t", pa.int64()), ("post_id", pa.int64()), ("author", pa.int64()),
         ("kind", pa.string()), ("detail", pa.string()),
+    ])
+
+
+def kernel_state_schema(groups: list[str]) -> pa.Schema:
+    """C3b: per-user kernel gains, snapshotted on the same cadence as traits.
+    One wide column per learned coefficient group; g == 1 is the named
+    fixed-theta kernel the run is anchored to."""
+    return pa.schema(
+        [("t", pa.int64()), ("user", pa.int64())]
+        + [(f"g_{g}", pa.float64()) for g in groups]
+    )
+
+
+def rewire_log_schema() -> pa.Schema:
+    """C2.2: the edge-change log. The initial graph stays a content-addressed
+    artifact; this log plus the final-state graph snapshot in the run
+    directory are the rewired truth."""
+    return pa.schema([
+        ("t", pa.int64()), ("user", pa.int64()), ("target", pa.int64()), ("added", pa.bool_()),
     ])
 
 
@@ -124,6 +154,7 @@ class RunWriter:
             "config_hash": cfg.hash(),
             "seed": int(seed),
             "sub_hashes": cfg.sub_hashes(),
+            "schema_version": cfg.schema_version,
             "format": RUN_FORMAT,
         }
         (self.path / "meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
@@ -185,9 +216,42 @@ class RunWriter:
             pa.array(np.asarray(sample["post"]), type=pa.int64()),
             pa.array(np.asarray(sample["rank"]), type=pa.int64()),
             pa.array(np.asarray(sample["is_follower"]), type=pa.bool_()),
+            pa.array(np.asarray(sample["attended"]), type=pa.bool_()),
             pa.array([str(a) for a in sample["action"]], type=pa.string()),
         ]
         self.write_table("exposures", schema, pa.RecordBatch.from_arrays(arrays, schema=schema))
+
+    def write_kernel_state(self, t: int, gains: np.ndarray, groups: list[str]) -> None:
+        """C3b snapshot: one row per user, one column per learned group."""
+        n = gains.shape[0]
+        schema = kernel_state_schema(groups)
+        arrays = [
+            pa.array(np.full(n, t, dtype=np.int64), type=pa.int64()),
+            pa.array(np.arange(n, dtype=np.int64), type=pa.int64()),
+        ] + [pa.array(np.asarray(gains[:, i], dtype=np.float64), type=pa.float64())
+             for i in range(len(groups))]
+        self.write_table("kernel_state", schema, pa.RecordBatch.from_arrays(arrays, schema=schema))
+
+    def write_rewire_log(self, events: list) -> None:
+        """C2.2: edge changes made this tick, as (t, user, target, added)."""
+        if not events:
+            return
+        schema = rewire_log_schema()
+        arrays = [
+            pa.array([int(e[0]) for e in events], type=pa.int64()),
+            pa.array([int(e[1]) for e in events], type=pa.int64()),
+            pa.array([int(e[2]) for e in events], type=pa.int64()),
+            pa.array([bool(e[3]) for e in events], type=pa.bool_()),
+        ]
+        self.write_table("rewire_log", schema, pa.RecordBatch.from_arrays(arrays, schema=schema))
+
+    def write_graph_snapshot(self, csr) -> None:
+        """C2.2: the final graph state for a rewired run, alongside the
+        edge-change log. The INITIAL graph remains the cached artifact —
+        this file is the run's own truth."""
+        from scipy import sparse
+
+        sparse.save_npz(self.path / "graph.npz", csr)
 
     def write_salient_events(self, t: int, events) -> None:
         if not events:
@@ -267,6 +331,14 @@ class RunHandle:
     def has_salient_events(self) -> bool:
         return (self.path / "salient_events.parquet").exists()
 
+    @property
+    def has_kernel_state(self) -> bool:
+        return (self.path / "kernel_state.parquet").exists()
+
+    @property
+    def has_rewire_log(self) -> bool:
+        return (self.path / "rewire_log.parquet").exists()
+
     def _require(self, name: str, flag: str) -> Path:
         p = self.path / f"{name}.parquet"
         if not p.exists():
@@ -292,3 +364,22 @@ class RunHandle:
 
     def engagements(self) -> pl.DataFrame:
         return pl.read_parquet(self._require("engagements", "engagements"))
+
+    def kernel_state(self) -> pl.DataFrame:
+        """C3b: per-user kernel gain snapshots (g == 1 is the anchored kernel)."""
+        return pl.read_parquet(self._require("kernel_state", "kernel_state"))
+
+    def rewire_log(self) -> pl.DataFrame:
+        """C2.2: the (t, user, target, added) edge-change log."""
+        return pl.read_parquet(self._require("rewire_log", "rewire_log"))
+
+    def final_graph(self):
+        """C2.2: the run's final graph state, if it was snapshotted."""
+        from scipy import sparse
+
+        p = self.path / "graph.npz"
+        if not p.exists():
+            raise FileNotFoundError(
+                f"{p} does not exist — no graph snapshot was written with this run."
+            )
+        return sparse.load_npz(p).tocsr()

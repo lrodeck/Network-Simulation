@@ -26,6 +26,18 @@ ACTIONS = ("like", "reply", "repost", "quote", "report")
 # `agreement` alone. `disagree_x_con = -agreement * contrarianism_u` is that
 # term: a plain positive theta on it reproduces "disagreement raises
 # engagement, more so the more contrarian the user".
+#
+# C1.2/C5 (change spec): the camp-conditional trio. `outgroup` is the
+# UNCONDITIONAL out-group contact indicator — Rathje et al. (2021) find
+# out-group animosity the strongest single engagement predictor measured, a
+# general-and-large effect, not a minority-trait phenomenon; expressing it
+# only as `disagree_x_con` (a contrarianism interaction) made the model
+# unable to represent "most people engage more with out-group content".
+# `outgroup_x_animus` (C1) lets animus amplify the out-group reaction;
+# `ingroup_x_ident` carries in-group solidarity — Marks & Kyrychenko (2025)
+# show it also drives engagement, so omitting it would bias toward a
+# pure-animosity story. All three need `camps` from the caller; the latter
+# two additionally need the affect block.
 FEATURES = (
     "intercept",
     "affinity",
@@ -34,6 +46,9 @@ FEATURES = (
     "arousal_x_neu",
     "provoc_x_con",
     "disagree_x_con",
+    "outgroup",
+    "outgroup_x_animus",
+    "ingroup_x_ident",
     "prominence",
     "social_proof",
     "tie_strength",
@@ -43,6 +58,11 @@ FEATURES = (
     "recency",
     "credulity_x_q",
 )
+
+# Features that only exist when their preconditions hold (camps defined /
+# affect block on). A theta entry referencing one is skipped, not an error,
+# so a single kernel table works across `affect` on and off.
+CONDITIONAL_FEATURES = {"outgroup", "outgroup_x_animus", "ingroup_x_ident"}
 
 # Per-action intercepts — the baseline propensity to do anything at all.
 #
@@ -86,16 +106,26 @@ def _with_intercepts(entries: tuple[tuple[str, str, float], ...]) -> tuple[tuple
 
 # theta entries: (action, feature, weight). Dominant terms per dev §6 step 6
 # table; unlisted (action, feature) pairs are zero.
+#
+# C5 retune (change spec): `outrage` now carries out-group attraction on the
+# UNCONDITIONAL `outgroup` term (Rathje et al.'s general-and-large effect),
+# with `disagree_x_con` demoted to a modifier — the reverse of the old
+# authoring, which made out-group engagement a minority-trait phenomenon.
+# `homophily` gains a small negative `outgroup` weight, since its claim is
+# engagement concentrated within camp. This retune changes every existing
+# `outrage` result; recorded in FINDINGS.md, and old numbers must not be
+# silently compared against new ones.
 KERNEL_THETAS: dict[str, tuple[tuple[str, str, float], ...]] = {
     "homophily": _with_intercepts((
-        ("like", "affinity", 1.0), ("like", "agreement", 1.0),
+        ("like", "affinity", 1.0), ("like", "agreement", 1.0), ("like", "outgroup", -0.3),
         ("repost", "affinity", 0.8), ("repost", "agreement", 0.8),
-        ("reply", "affinity", 0.5), ("reply", "agreement", 0.5),
+        ("reply", "affinity", 0.5), ("reply", "agreement", 0.5), ("reply", "outgroup", -0.3),
     )),
     "outrage": _with_intercepts((
-        ("reply", "disagree_x_con", 1.5), ("reply", "arousal", 1.0),
-        ("quote", "disagree_x_con", 1.3), ("quote", "arousal", 0.8),
-        ("report", "disagree_x_con", 1.0),
+        ("like", "outgroup", 0.5),
+        ("reply", "outgroup", 0.9), ("reply", "disagree_x_con", 0.6), ("reply", "arousal", 1.0),
+        ("quote", "outgroup", 0.7), ("quote", "disagree_x_con", 0.4), ("quote", "arousal", 0.8),
+        ("report", "outgroup", 0.6), ("report", "disagree_x_con", 0.5),
     )),
     "bandwagon": _with_intercepts((
         ("like", "social_proof", 1.0), ("like", "prominence", 0.6),
@@ -116,10 +146,11 @@ for _name, _entries in KERNEL_THETAS.items():
 def compute_features(
     exposures: Exposures,
     posts: PostBatch,
-    pop: Population,
+    pop,
     is_follower: np.ndarray,
     t_current: int,
     agreement_metric: str = "rms",
+    camps: np.ndarray | None = None,
 ) -> dict[str, np.ndarray]:
     names_ = pop.trait_names
     topic_cols = [i for i, n in enumerate(names_) if n.startswith("topic_affinity_")]
@@ -151,7 +182,7 @@ def compute_features(
     prominence_author = pop.X_used[author, names_.index("prominence")]
 
     arousal = posts.arousal[p]
-    return {
+    features = {
         "intercept": np.ones(len(u)),
         "affinity": affinity,
         "agreement": agreement,
@@ -169,9 +200,90 @@ def compute_features(
         "credulity_x_q": credulity * (1 - posts.specificity[p]),
     }
 
+    # C1.2/C5: camp features, all vectorised over the exposure array. The
+    # author's camp joins on `posts.author[p]` — the same join
+    # `runner._authors_of` does for the narrator, but here the post index is
+    # direct so no searchsorted is needed.
+    if camps is not None:
+        camp_u = camps[u]
+        camp_author = camps[author]
+        outgroup = (camp_u != camp_author).astype(float)
+        features["outgroup"] = outgroup
+        if pop.has_affect:
+            animus_u = pop.animus[u]
+            identification_u = pop.identification[u]
+            features["outgroup_x_animus"] = outgroup * animus_u
+            features["ingroup_x_ident"] = (1.0 - outgroup) * identification_u
+    return features
+
 
 def kernel_names() -> list[str]:
     return names("kernel_theta")
+
+
+# C3b (change spec): named coefficient groups, declared next to the feature
+# vocabulary so a kernel that adds a feature declares which group it joins.
+# The `group_gain` learning tier learns one multiplicative gain per user per
+# group (theta_u = theta_base * g_u); features outside any group (quality,
+# novelty, specificity, provoc_x_con, credulity_x_q) are fixed in that tier
+# — they are content judgements, not reaction propensities, and there is no
+# behavioural signal that would identify their per-user weights.
+FEATURE_GROUPS: dict[str, tuple[str, ...]] = {
+    "agreement": ("agreement", "disagree_x_con"),
+    "outgroup": ("outgroup", "outgroup_x_animus", "ingroup_x_ident"),
+    "arousal": ("arousal", "arousal_x_neu"),
+    "social_proof": ("social_proof", "prominence", "tie_strength"),
+    "recency": ("recency",),
+    "affinity": ("affinity",),
+}
+LEARNED_GROUPS: tuple[str, ...] = tuple(sorted(FEATURE_GROUPS))
+
+
+def group_of(feature: str) -> str | None:
+    for group, members in FEATURE_GROUPS.items():
+        if feature in members:
+            return group
+    return None
+
+
+def apply_kernel_learned(
+    theta_entries: tuple[tuple[str, str, float], ...],
+    features: dict[str, np.ndarray],
+    gains: np.ndarray,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """C3b `group_gain` reaction: like `apply_kernel`, but each theta entry's
+    weight is scaled by the acting user's gain for that coefficient's group.
+
+    `gains` is (m, G) — one row per exposure, aligned with the feature
+    arrays, columns in LEARNED_GROUPS order. Anchoring discipline (change
+    spec C3b constraint 1): a learned kernel never stands alone —
+    `kernel` names the fixed-theta theory, and the learned part is reported
+    as drift away from it.
+    """
+    m = len(next(iter(features.values())))
+    group_idx = {g: i for i, g in enumerate(LEARNED_GROUPS)}
+    utility = {a: np.zeros(m) for a in ACTIONS}
+    for action, feature, weight in theta_entries:
+        if feature in CONDITIONAL_FEATURES and feature not in features:
+            continue
+        group = group_of(feature)
+        if group is None:
+            utility[action] += weight * features[feature]
+        else:
+            # g == 1 exactly reproduces the fixed-theta kernel
+            utility[action] += weight * gains[:, group_idx[group]] * features[feature]
+
+    exp_u = np.stack([np.exp(utility[a]) for a in ACTIONS], axis=1)  # (m, |ACTIONS|)
+    denom = 1.0 + exp_u.sum(axis=1)
+    probs = np.concatenate([(1.0 / denom)[:, None], exp_u / denom[:, None]], axis=1)  # skip first
+
+    cdf = np.cumsum(probs, axis=1)
+    u = rng.random((m, 1))
+    choice = (u < cdf).argmax(axis=1)
+
+    labels = np.array(("skip",) + ACTIONS)
+    return labels[choice]
 
 
 def apply_kernel(
@@ -179,10 +291,20 @@ def apply_kernel(
     features: dict[str, np.ndarray],
     rng: np.random.Generator,
 ) -> np.ndarray:
-    """Sample one action per exposure (one of ACTIONS, or "skip")."""
+    """Sample one action per exposure (one of ACTIONS, or "skip").
+
+    Theta entries referencing a CONDITIONAL_FEATURE the caller could not
+    supply (camps undefined under a unimodal population, or the affect block
+    off) are skipped rather than fatal: one kernel table must work across
+    `affect` on and off, and the change spec's C5 ship rule is "ship
+    `outgroup` alone if C1 slips". A *typo'd* feature name still raises —
+    only declared conditional features can be absent.
+    """
     m = len(next(iter(features.values())))
     utility = {a: np.zeros(m) for a in ACTIONS}
     for action, feature, weight in theta_entries:
+        if feature in CONDITIONAL_FEATURES and feature not in features:
+            continue
         utility[action] += weight * features[feature]
 
     exp_u = np.stack([np.exp(utility[a]) for a in ACTIONS], axis=1)  # (m, |ACTIONS|)
@@ -199,3 +321,19 @@ def apply_kernel(
 
 def named_kernel(name: str) -> tuple[tuple[str, str, float], ...]:
     return get("kernel_theta", name)
+
+
+def kernel_with_overrides(name: str, overrides) -> tuple[tuple[str, str, float], ...]:
+    """Apply `cfg.dynamics.kernel_theta` — (action, feature, value) SET
+    overrides on the named kernel's table, last-wins per (action, feature)
+    pair. Sweeps over theories stay sweeps over strings; a sweep over a
+    coefficient is an override on top of a readable base table, so the run
+    is still describable as "outrage, with the reply intercept at X"."""
+    if not overrides:
+        return named_kernel(name)
+    table: dict[tuple[str, str], float] = {}
+    for action, feature, weight in named_kernel(name):
+        table[(action, feature)] = weight
+    for action, feature, weight in overrides:
+        table[(action, feature)] = float(weight)
+    return tuple((a, f, w) for (a, f), w in table.items())

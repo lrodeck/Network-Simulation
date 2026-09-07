@@ -119,6 +119,17 @@ class PopulationConfig(Hashable):
     activity_sigma: float = 1.8
     pareto_alpha: float = 2.3
     topic_logit_sigma: float = 1.0
+    # C1 (change spec): the affect block — `identification` (attachment to
+    # own camp, logit) and `animus` (hostility toward the opposing camp,
+    # log). Affective polarization is the outcome variable half the relevant
+    # literature measures (Iyengar, Sood & Lelkes 2012; Iyengar & Westwood
+    # 2015; Törnberg, PNAS 2022; Rathje et al. 2021), and ideological
+    # position alone cannot represent it. This is a *population-structural*
+    # switch rather than a dynamics knob on purpose: it changes the trait
+    # layout, so it must fork the population artifact key — a cached
+    # population with a different column count silently reused would be the
+    # worst kind of bug a content-addressed cache can hide.
+    affect: bool = False
 
 
 @dataclass(frozen=True)
@@ -262,10 +273,125 @@ class DynamicsConfig(Hashable):
     drift: str = "full"                       # none | social | full
     drift_lr: float = 0.02                    # reinforcement channel
     drift_lr_social: float = 0.01             # social influence channel
+    # C3a (change spec): extends channel 1's gradient to the behavior block
+    # (activity, reply_prop, repost_prop — the columns with a generation-map
+    # path). Brady, McLoughlin, Doan & Crockett (Science Advances 2021) show
+    # outrage expression is socially *learned*: positive feedback raises
+    # future outrage. A kernel that encodes outrage as a fixed disposition
+    # cannot produce norm convergence.
+    drift_lr_behavior: float = 0.01
     drift_ramp_ticks: int = 50                # gains ramp linearly from 0 over this many ticks
     ou_k: tuple[tuple[str, float], ...] = ()  # (block, rate) overrides
     noise_sigma: float = 0.002
     llm_adjudication: bool = False            # queued only; offline pass in v1
+
+    # -- C1: affect dynamics -------------------------------------------------
+    # Step size of the affect_update drift op. Affect is a *state*, not a
+    # fixed trait: it updates from interaction outcomes (C1.3), which is why
+    # it is a drift channel and not just two new columns.
+    lr_affect: float = 0.015
+    # Mean-reversion for the affect block. 0.02 sits between expression's
+    # 0.05 (style is fashion) and stance's 0.005 (position is sticky):
+    # affect is stickier than style, less sticky than position. This is a
+    # guess, not a calibrated value — flagged in MODEL.md §15 and carried in
+    # the C10 sensitivity sweep.
+    affect_ou_k: float = 0.02
+    # C1.3's weight tables, config-side for the same reason C6 moved channel
+    # 2's: the claim "out-group engagement raises animus, scaled by how
+    # confrontational the action is" (Rathje et al. 2021's hate-engagement
+    # reading) is a theory, and the contact-hypothesis alternative (likes as
+    # positive contact) is a different theory that a sweep should be able to
+    # express without editing the loop. `skip` is structurally 0 and not a
+    # dial. (action, weight) pairs; unlisted actions are 0.
+    affect_weights_hostility: tuple[tuple[str, float], ...] = (
+        ("like", 0.25), ("repost", 0.25), ("quote", 0.5),
+        ("reply", 0.5), ("report", 2.0),
+    )
+    affect_weights_support: tuple[tuple[str, float], ...] = (
+        ("like", 1.0), ("repost", 1.5), ("quote", 0.5),
+        ("reply", 0.5), ("report", -1.0),
+    )
+
+    # -- C2: selection layer and tie rewiring ---------------------------------
+    # Bakshy, Messing & Adamic (2015) found individual choice filtered
+    # cross-cutting content more than the algorithm did. The selection stage
+    # sits between exposure and reaction; `position_only` preserves current
+    # behaviour exactly.
+    selection: str = "position_only"          # position_only | homophilous | arousal_seeking
+    # (name, value) overrides for the selection logits' betas: beta_pos,
+    # beta_agree, beta_arousal.
+    selection_beta: tuple[tuple[str, float], ...] = ()
+    # Slow follow/unfollow process (C2.2): unfollow on accumulated hostile
+    # interaction, follow on accumulated positive engagement. Runs every
+    # `rewire_every` ticks — a per-tick sparse rebuild at N=1e4 is the one
+    # thing here that could plausibly dominate runtime.
+    rewire: bool = False
+    rewire_every: int = 25
+    rewire_rate: float = 0.01
+
+    # -- C3b: learnable kernels ------------------------------------------------
+    # Three tiers (change spec C3b): "none" keeps theta a readable table;
+    # "group_gain" learns a per-user gain over named coefficient groups
+    # (theta_u = theta_base * g_u); "full" is unrestricted per-user theta,
+    # shipped for honesty and expected to be rarely used. Learning modulates
+    # a named kernel, never replaces it — a run must stay describable as
+    # "outrage, plus this much learned deviation". The learning rule is named
+    # in the config, never implied: conformity (Brady's norm convergence),
+    # bandit (own-reinforcement), habituation (mere exposure; the control).
+    kernel_learning: str = "none"             # none | group_gain | full
+    kernel_learning_rule: str = "conformity"  # conformity | bandit | habituation
+    lr_kernel: float = 0.01
+    kernel_gain_ou_k: float = 0.02            # gain reversion toward g = 1
+
+    # -- C4: the quality backdoor ----------------------------------------------
+    # quality is generated from author traits, and those same traits drive
+    # prominence and activity — so Spearman(quality, engagement) is nonzero
+    # even under the null kernel and measures author-trait alignment, not
+    # merit. 0.0 draws quality author-trait-independent (the Salganik/
+    # Muchnik condition Experiment 3 needs); 1.0 is the old behaviour.
+    quality_trait_coupling: float = 0.0
+
+    # -- C6: repulsion as an ablatable switch -----------------------------------
+    # Channel 2's negative weights (reply -0.5, report -2.0) are exactly the
+    # repulsive-influence assumption Mas & Flache (2013) and Takacs et al.
+    # (2016) show has mixed, hard-to-identify support. Splitting the table
+    # and switchable-zeroing the negative half makes that assumption
+    # ablatable instead of load-bearing-and-invisible. `repulsion=False`
+    # zeroes the negative weights outright — it does NOT clamp deltas, which
+    # would introduce a rectification nonlinearity (a different model).
+    social_weights_positive: tuple[tuple[str, float], ...] = (
+        ("like", 1.0), ("repost", 1.5), ("quote", 0.5),
+    )
+    social_weights_negative: tuple[tuple[str, float], ...] = (
+        ("reply", -0.5), ("report", -2.0),
+    )
+    repulsion: bool = True
+
+    # -- C7: expression gate (spiral of silence) ---------------------------------
+    # Hampton et al. (Pew 2014): perceived network disagreement predicts
+    # self-censorship; Matthes et al. (2018) confirm a small-but-robust
+    # opinion-support -> expression effect. 0 disables. Users respond to
+    # *perceived* climate (their feed's composition, via perception.py's
+    # blend), not the global sigma(t) — gating on the global state when a
+    # local perception module exists would be the modelling error the
+    # codebase is already structured to avoid.
+    silence_gate: float = 0.0
+    silence_conviction_moderation: float = 1.0
+
+    # -- C8: reply contagion model -------------------------------------------------
+    # The Hawkes process is a self-exciting SIMPLE contagion: intensity
+    # depends on accumulated events, not distinct sources. Centola & Macy
+    # (2007) and Centola (2010) show behaviours often need reinforcing
+    # exposures from DISTINCT neighbours, and that long ties slow complex
+    # contagion — inverting Granovetter. "hawkes" is current behaviour;
+    # "threshold" makes reply propensity rise in the count of distinct
+    # already-engaged in-neighbours.
+    reply_model: str = "hawkes"               # hawkes | threshold
+    # The threshold response curve: propensity ~ reply_prop * count^2 /
+    # threshold_scale, clipped. Needs its own calibration to the §5.1
+    # stylized facts before any D5 crossover result is reported — a config
+    # field so that calibration is a sweep, not a code edit.
+    threshold_scale: float = 16.0
 
     snapshot_every: int = 1
     exposure_sample_rate: float = 0.01
@@ -354,6 +480,10 @@ class WorldConfig(Hashable):
 
 @dataclass(frozen=True)
 class Config(Hashable):
+    # Bumped with every change that forks the run cache. All C1-C10 config
+    # surface landed in one commit (change spec §0.1) so the cache forks
+    # once, legibly, rather than ten times.
+    schema_version: int = 2
     population: PopulationConfig = field(default_factory=PopulationConfig)
     graph: GraphConfig = field(default_factory=GraphConfig)
     dynamics: DynamicsConfig = field(default_factory=DynamicsConfig)

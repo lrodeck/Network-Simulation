@@ -23,7 +23,11 @@ from discourse_lab.population.copula import (
     sparse_pairs_to_matrix,
 )
 from discourse_lab.population.links import to_stored
-from discourse_lab.population.traits import TraitSpec, trait_table
+from discourse_lab.population.traits import (
+    DEFAULT_AFFECT_CORRELATIONS,
+    TraitSpec,
+    trait_table,
+)
 
 
 @dataclass
@@ -35,6 +39,37 @@ class Population:
                             # drift (dynamics/drift.py) can recompute X_used from X_stored
     archetype_labels: np.ndarray
     archetype_names: list[str]
+
+    # -- named views (dev §3.2): X[:, 14] is fast and unreadable ------------
+
+    def _used_view(self, name: str) -> np.ndarray:
+        return self.X_used[:, self.trait_names.index(name)]
+
+    def _has(self, name: str) -> bool:
+        return name in self.trait_names
+
+    # C1.1 accessors. Views, not copies, per dev §3.2 — but they raise a
+    # clear error when the affect block is off rather than an index panic,
+    # because camp/affect code is only meaningful under `affect=True`.
+    def _affect_view(self, name: str) -> np.ndarray:
+        if not self.has_affect:
+            raise AttributeError(
+                "the affect block is off; enable population.affect to read "
+                f"`{name}` (change spec C1)"
+            )
+        return self._used_view(name)
+
+    @property
+    def identification(self) -> np.ndarray:
+        return self._affect_view("identification")
+
+    @property
+    def animus(self) -> np.ndarray:
+        return self._affect_view("animus")
+
+    @property
+    def has_affect(self) -> bool:
+        return self._has("animus") and self._has("identification")
 
 
 def _warn_on_composed_correlation(pairs, archetypes) -> None:
@@ -82,7 +117,19 @@ def sample_population(cfg: Config, rng: np.random.Generator) -> Population:
     n_traits = len(names)
     n_users = cfg.population.n_users
 
-    corr = sparse_pairs_to_matrix(names, cfg.population.correlation_pairs)
+    # C1.1: when the affect block is on, its default correlations (with
+    # conviction and contrarianism) join whatever the user asked for. Listed
+    # pairs win: the user's explicit value overrides the default for the
+    # same pair rather than duplicating it.
+    pairs = tuple(cfg.population.correlation_pairs)
+    if cfg.population.affect:
+        asked = {(a, b) for a, b, _ in pairs}
+        pairs = pairs + tuple(
+            (a, b, rho)
+            for a, b, rho in DEFAULT_AFFECT_CORRELATIONS
+            if (a, b) not in asked and (b, a) not in asked
+        )
+    corr = sparse_pairs_to_matrix(names, pairs)
     corr = nearest_psd_correlation(corr)
 
     archetypes = resolve_archetypes(cfg.population.archetype_weights, cfg.population.archetype_offsets)

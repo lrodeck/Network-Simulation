@@ -75,7 +75,19 @@ class ExpressionMap:
         entries_a: tuple[tuple[str, str, float], ...] = DEFAULT_A,
         entries_b: tuple[tuple[str, float], ...] = DEFAULT_B,
         entries_c: tuple[tuple[str, int, float], ...] = DEFAULT_C,
+        quality_trait_coupling: float = 1.0,
     ) -> "ExpressionMap":
+        """`quality_trait_coupling` (change spec C4): scales the quality row
+        of A. quality is generated from author traits, and those same traits
+        drive prominence and activity — so Spearman(quality, engagement) is
+        nonzero even under the null kernel and measures author-trait
+        *alignment*, not merit. At 0.0 quality is an author-trait-independent
+        draw (the Salganik/Muchnik condition: quality that exists
+        independently of the artist's popularity); at 1.0 it is the old
+        behaviour. `DynamicsConfig.quality_trait_coupling` defaults to 0.0;
+        this parameter defaults to 1.0 only so direct callers of
+        `ExpressionMap.build` keep the historical map.
+        """
         p = len(POST_DIMS)
         dim_idx = {d: i for i, d in enumerate(POST_DIMS)}
         trait_idx = {t: i for i, t in enumerate(trait_names)}
@@ -85,6 +97,7 @@ class ExpressionMap:
             j = trait_idx.get(trait)
             if j is not None:
                 A[dim_idx[dim], j] = w
+        A[dim_idx["quality"], :] *= float(quality_trait_coupling)
 
         B = np.zeros(p)
         for dim, w in entries_b:

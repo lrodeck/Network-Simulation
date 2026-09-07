@@ -34,6 +34,12 @@ from discourse_lab.population import cached_population
 # versions, or resuming an old seed produces different streams than it did
 # originally. Append new phases at the end; never reorder or remove existing
 # ones.
+#
+# C1-C10 (change spec §0.2) append `selection`, `rewire` and `affect` at the
+# end in one commit, in that order, even though they execute mid-tick: stream
+# identity and execution order are unrelated, and only tuple position matters.
+# Inserting rather than appending would shift every subsequent stream and
+# silently change every existing seed's results.
 PHASES: tuple[str, ...] = (
     "population",
     "graph",
@@ -44,6 +50,9 @@ PHASES: tuple[str, ...] = (
     "perception",
     "cascade",
     "drift",
+    "selection",   # C2.1: content-conditional attention, drawn after ranking
+    "rewire",      # C2.2: slow follow/unfollow process
+    "affect",      # C1.3: affect block updates (animus / identification)
 )
 
 
@@ -81,6 +90,15 @@ class State:
     # channel-3 pass and never executed inside the tick. Replaced every tick, like
     # the other raw records — a consumer that wants the whole run accumulates.
     salient_events: list = field(default_factory=list)
+    # C2.2: THIS TICK's edge changes (t, user, target, added). Empty unless
+    # the rewire cadence fired.
+    rewire_events: list = field(default_factory=list)
+    # C3b: kernel gains on snapshot ticks (g == 1 is the anchored kernel),
+    # None otherwise. Carried like traits_snapshot so persistence streams.
+    kernel_gains: "np.ndarray | None" = None
+    # C2.2: live reference to the engine's (possibly rewired) graph, so the
+    # persisting layer can snapshot the final state without a replay
+    engine_graph: "object | None" = None
     # Deterministic per-tick narration (semantics/narrate.py), None unless
     # `run_iter(..., narrate=True)`. Numbers only — the sentence is formatted
     # on demand by `describe_state`, so a run never pays for text nobody reads.
@@ -151,6 +169,14 @@ def run_iter(cfg: Config, seed: int, *, narrate: bool = False) -> Iterator[State
                 else None
             ),
             salient_events=engine.salient_events,
+            rewire_events=engine.rewire_events,
+            kernel_gains=(
+                engine.learner.g.copy()
+                if engine.learner is not None
+                and cfg.dynamics.snapshot_every > 0 and t % cfg.dynamics.snapshot_every == 0
+                else None
+            ),
+            engine_graph=engine.graph,
             summary=(
                 narrator.observe(
                     t, engine.s, engine.sigma, pop.X_used[:, stance_cols],
@@ -180,9 +206,15 @@ def run(cfg: Config, seed: int, persist: Sequence[str] = ()) -> Path:
             f"unknown persist target(s): {sorted(unknown)}; "
             "expected any of 'posts', 'engagements', 'exposures', 'traits', 'salient_events'"
         )
+    # C2.2 rewiring is structural, not optional output: a run that rewires
+    # its graph must persist the edge-change log and the final state, or the
+    # run directory claims a graph it no longer has.
+    persist_rewire_log = cfg.dynamics.rewire
+    persist_kernel_state = cfg.dynamics.kernel_learning != "none"
 
     path = run_dir(cfg, seed)
     writer = RunWriter(path, cfg, seed)
+    last_engine_graph = None
     try:
         # create the files up front so an empty run is distinguishable from
         # persistence having been switched off
@@ -209,6 +241,20 @@ def run(cfg: Config, seed: int, persist: Sequence[str] = ()) -> Path:
                 # created on first snapshot rather than up front: the trait
                 # count is only known once the population is sampled
                 writer.write_traits(state.t, state.traits_snapshot)
+            if persist_rewire_log:
+                writer.write_rewire_log(state.rewire_events)
+            if persist_kernel_state and state.kernel_gains is not None:
+                from discourse_lab.exposure.kernel import LEARNED_GROUPS
+
+                writer.write_kernel_state(state.t, state.kernel_gains, list(LEARNED_GROUPS))
+            last_engine_graph = state.engine_graph
+        if persist_rewire_log:
+            # C2.2: the final graph state lives in the run directory; the
+            # initial graph remains the cached artifact and is never mutated.
+            # The engine object is shared with run_iter via State.graph.
+            if last_engine_graph is None:
+                raise RuntimeError("rewire run produced no engine graph to persist")
+            writer.write_graph_snapshot(last_engine_graph.csr)
     finally:
         writer.close()
     return path

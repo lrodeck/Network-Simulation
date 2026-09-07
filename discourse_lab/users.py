@@ -81,11 +81,18 @@ def user_table(handle, pop, graph=None, lex: Lexicon | None = None) -> pl.DataFr
 
     if handle.has_exposures:
         exposures = handle.exposures()
+        # C2.1: engagement is measured on ATTENDED exposures. Pre-selection
+        # rows carry action="unattended" (never offered to the kernel), so
+        # the old `action != "skip"` test would have counted them as engaged.
+        if "attended" in exposures.columns:
+            engaged_expr = (pl.col("attended")) & (pl.col("action") != "skip")
+        else:
+            engaged_expr = pl.col("action") != "skip"
         frame = frame.join(
             exposures.group_by("user").agg(
                 pl.len().alias("seen"),
                 pl.col("is_follower").mean().alias("follower_share"),
-                (pl.col("action") != "skip").mean().alias("engaged_share"),
+                engaged_expr.mean().alias("engaged_share"),
             ), on="user", how="left")
 
     return frame.sort("user")

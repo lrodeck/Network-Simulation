@@ -59,6 +59,7 @@ class HawkesThreads:
         max_age: int,
         dt: float = 1.0,
         max_replies_per_tick: int = 0,
+        draw: bool = True,
     ) -> dict[int, int]:
         """Advance one tick: decay, draw replies, excite, age out. Returns
         {post_id: n_replies} for threads that got at least one reply.
@@ -76,6 +77,11 @@ class HawkesThreads:
         replied to at most once per tick, so a conversation extends as a chain
         — which is what a real reply thread is, and what produces depth
         without runaway volume.
+
+        `draw=False` (C8) runs the bookkeeping — decay and ageing — without
+        drawing from the intensity: the threshold reply model replaces the
+        intensity draw with its own distinct-engaged-neighbour rule but still
+        needs the Hawkes state to age.
         """
         if len(self.post_id) == 0:
             return {}
@@ -83,7 +89,9 @@ class HawkesThreads:
         self.excitation *= np.exp(-beta * dt)
         intensity = self.mu + alpha * self.excitation
         rate = np.clip(intensity * dt, 0, None)
-        if max_replies_per_tick == 1:
+        if not draw:
+            n_replies = np.zeros(len(rate), dtype=np.int64)
+        elif max_replies_per_tick == 1:
             n_replies = (rng.random(len(rate)) < -np.expm1(-rate)).astype(np.int64)
         else:
             n_replies = rng.poisson(rate)
@@ -152,19 +160,24 @@ def generate_reply_posts(
     start_id: int,
     t: int,
     max_depth: int,
+    authors_for_target: dict[int, np.ndarray] | None = None,
 ) -> tuple[object | None, list[str]]:
-    """Turn a Hawkes draw `{post_id: n_replies}` into a `PostBatch` of replies.
+    """Turn a reply draw `{post_id: n_replies}` into a `PostBatch` of replies.
 
     This is spec §3.1 step 2's `replies = hawkes_draw(open_threads, t)`: reply
-    posts are *generated*, scheduled by thread intensity, not derived from
-    whatever the exposure pass happened to surface. The `reply` action in the
+    posts are *generated*, scheduled by the reply model (§2.3's Hawkes
+    intensity under the default `hawkes` model), not derived from whatever
+    the exposure pass happened to surface. The `reply` action in the
     engagement kernel (§2.6) is a separate thing — an engagement event that
     feeds the discourse-state update and drift channel 2 — and §2.7 keeps
     cascades to repost/quote alone.
 
     Repliers are sampled in proportion to `reply_prop`, the §1.1 behaviour
     trait that exists for exactly this and was otherwise only shaping the
-    lurker archetype's offsets.
+    lurker archetype's offsets. Under the C8 `threshold` reply model the
+    caller supplies `authors_for_target` instead: the contagion rule picks
+    the users the distinct-engaged-neighbour count reached, and this function
+    writes their replies.
     """
     from discourse_lab.dynamics.posts import PostBatch, filter_post_batch
 
@@ -173,12 +186,16 @@ def generate_reply_posts(
         return None, warnings_out
 
     id_to_idx = {int(pid): i for i, pid in enumerate(active_posts.id)}
-    parent_idx, counts = [], []
+    parent_idx, counts, override_authors = [], [], []
     for pid, n in targets.items():
         idx = id_to_idx.get(int(pid))
         if idx is not None:
             parent_idx.append(idx)
             counts.append(n)
+            if authors_for_target and int(pid) in authors_for_target:
+                override_authors.append(np.asarray(authors_for_target[int(pid)], dtype=np.int64))
+            else:
+                override_authors.append(None)
     if not parent_idx:
         return None, warnings_out
 
@@ -198,7 +215,24 @@ def generate_reply_posts(
     names = pop.trait_names
     reply_prop = pop.X_used[:, names.index("reply_prop")]
     weights = np.clip(reply_prop, 1e-9, None)
-    author = rng.choice(len(reply_prop), size=m, p=weights / weights.sum())
+
+    # C8: under the threshold model the reply model already chose the authors
+    # (the users the distinct-engaged-neighbour count reached), one array of
+    # length n per target; expand to the repeated order, apply the same depth
+    # filter, and fall back to reply_prop sampling for any slot it left
+    # unassigned (-1).
+    if any(a is not None for a in override_authors):
+        rep = np.concatenate(
+            [ov if ov is not None else np.full(n, -1, dtype=np.int64)
+             for ov, n in zip(override_authors, counts)]
+        )
+        rep = rep[within]
+        author = np.where(
+            rep >= 0, rep,
+            rng.choice(len(reply_prop), size=m, p=weights / weights.sum()),
+        )
+    else:
+        author = rng.choice(len(reply_prop), size=m, p=weights / weights.sum())
 
     topic_p = active_posts.topic[parent_idx]
     stance_cols = [i for i, n in enumerate(names) if n.startswith("stance_")]

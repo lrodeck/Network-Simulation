@@ -139,13 +139,10 @@ def test_no_runaway_over_1000_ticks_with_all_channels_live():
     rng = np.random.default_rng(0)
     pop = sample_population(cfg, rng)
     graph = generate_graph(cfg, pop, rng)
-    rngs = {
-        name: np.random.default_rng(s)
-        for name, s in zip(
-            ("population", "graph", "timing", "generation", "exposure", "reaction", "perception", "cascade", "drift"),
-            np.random.default_rng(1).spawn(9),
-        )
-    }
+    # C1-C10 appended three phases to PHASES; the engine consumes all of them
+    from discourse_lab.runner import phase_rngs
+
+    rngs = phase_rngs(1)
     engine = TickEngine(cfg=cfg, pop=pop, graph=graph, rngs=rngs)
 
     initial_std = pop.X_stored.std(axis=0) + 1e-9

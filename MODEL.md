@@ -641,13 +641,23 @@ Users are not fixed. Two channels move them, plus a spring that pulls them back.
 1. **Reinforcement** — you drift toward whatever style got you *more engagement
    than you expected*. Not more engagement in absolute terms: more than your own
    running baseline, so a big account is not permanently reinforced for being
-   big. This channel moves expression traits only.
+   big. This channel moves expression traits, and — at its own rate,
+   `drift_lr_behavior` — the behaviour propensities with a generation-map path
+   (`activity`, `reply_prop`, `repost_prop`), because outrage expression is
+   socially *learned* (Brady et al. 2021), not a fixed disposition. Engagement
+   *choice* traits (`contrarianism`, `credulity`) have no residual to learn
+   from and are left to the learnable kernel ([§16](#16-change-spec-mechanisms)).
 2. **Social influence** — your stance drifts toward the content you consumed and
    did not reject. Liking and reposting pull you toward a post; replying pulls
-   slightly away; reporting pushes away hard.
+   slightly away; reporting pushes away hard. The weight table is ablatable:
+   `repulsion=False` zeroes the negative half, which is Mäs & Flache (2013)'s
+   open question, not a settled assumption ([§16](#16-change-spec-mechanisms)).
 3. **Mean reversion** — every trait is pulled back toward a slow-moving personal
    baseline, at a rate that differs by block: style is fashion and reverts fast;
    stance reverts slowly; personality effectively not at all.
+4. **Affect** — a separate state block (identification with your camp, animus
+   toward the other) that updates from interaction outcomes
+   ([§16](#16-change-spec-mechanisms)); off unless `population.affect` is set.
 
 Drift gains **ramp linearly from zero** over the first 50 ticks, so switching it
 on does not jolt the population.
@@ -685,9 +695,9 @@ someone happened to post.
 **Mean reversion** — Ornstein–Uhlenbeck toward a slow baseline `Bs`, itself
 initialised to the population's own starting traits (not zero):
 
-| block | personality | expression | topic_affinity | behavior | meta | stance |
-|---|---|---|---|---|---|---|
-| rate *k* | 0.00 | 0.05 | 0.02 | 0.01 | 0.01 | 0.005 |
+| block | personality | expression | topic_affinity | behavior | meta | stance | affect *(C1)* |
+|---|---|---|---|---|---|---|---|
+| rate *k* | 0.00 | 0.05 | 0.02 | 0.01 | 0.01 | 0.005 | 0.02 |
 
 Plus Gaussian noise at `noise_sigma = 0.002`.
 
@@ -749,7 +759,7 @@ Two are currently missed, for a reason that is understood and documented rather
 than tuned around: attention concentration is capped by the graph generator, not
 by the kernel ([§3](#3-the-network)).
 
-### The result: five normative outcomes
+### The result: six normative outcomes
 
 | Outcome | The question |
 |---|---|
@@ -758,6 +768,7 @@ by the kernel ([§3](#3-the-network)).
 | `epistemic_alignment` | does merit predict attention? |
 | `hostility_given_contact` | when camps do meet, how badly does it go? |
 | `feed_narrowing` | how much narrower was the feed than the world it was drawn from? |
+| `selection_filtering` | what did *choice* filter that the algorithm did not? (C2: the echo-chamber index computed on attended exposures minus the same index on everything exposed — the Bakshy decomposition's choice component) |
 
 `hostility_given_contact` deliberately returns the **contact rate and the
 hostility rate together**, because a platform that eliminates cross-camp contact
@@ -876,9 +887,29 @@ different run; change none and `cached_run` returns the existing one.
 | `rho_s` / `rho_sigma` | 0.9 | memory of the agenda / dominant stance |
 | `drift` | `full` | `none` \| `social` \| `full` |
 | `drift_lr` / `drift_lr_social` | 0.02 / 0.01 | step sizes for the two channels |
+| `drift_lr_behavior` | 0.01 | reinforcement rate for behavior propensities (C3a) |
 | `drift_ramp_ticks` | 50 | linear ramp-in |
 | `ou_k` | () | per-block mean-reversion overrides |
 | `noise_sigma` | 0.002 | random walk on traits |
+
+### Dynamics — change-spec mechanisms (§16)
+
+| Field | Default | What it does |
+|---|---|---|
+| `affect` *(population)* | False | the affect block: `identification` + `animus`, updating from interaction outcomes (C1) |
+| `lr_affect` / `affect_ou_k` | 0.015 / 0.02 | affect step size / reversion — **the reversion rate is a guess** |
+| `affect_weights_hostility` / `_support` | see `drift.py` | C1.3's weight tables — the hate-engagement reading is a theory, the contact-hypothesis alternative is a different one |
+| `selection` | `position_only` | content-conditional attention: `homophilous` \| `arousal_seeking` (C2) |
+| `selection_beta` | () | overrides for the selection logit's betas |
+| `rewire` / `rewire_every` / `rewire_rate` | False / 25 / 0.01 | slow follow/unfollow on accumulated interaction valence (C2) |
+| `kernel_learning` / `_rule` | `none` / `conformity` | learnable kernel gains: `group_gain` \| `full`; rule `conformity` \| `bandit` \| `habituation` (C3b) |
+| `lr_kernel` / `kernel_gain_ou_k` | 0.01 / 0.02 | gain step size / reversion toward the anchored kernel |
+| `quality_trait_coupling` | 0.0 | 0 = quality independent of author traits (C4); 1 = the old confounded map |
+| `social_weights_positive` / `_negative` | see §11 | channel-2 weight halves |
+| `repulsion` | True | False zeroes the negative weights — the ablation, not a clamp (C6) |
+| `silence_gate` / `_conviction_moderation` | 0.0 / 1.0 | spiral-of-silence expression gate on perceived climate (C7) |
+| `reply_model` | `hawkes` | `hawkes` (simple contagion) \| `threshold` (distinct engaged neighbours, C8) |
+| `threshold_scale` | 16.0 | threshold response curve — needs its own §5.1 calibration before D5 |
 
 ### Recording
 
@@ -903,19 +934,123 @@ Stated plainly, because a model's limits are part of its specification.
   is exposed to whom, who is heard — **not** to deliberative quality.
 - **`quality` is generated, not evaluated.** It comes from author traits, so
   `epistemic_alignment` is interpretable only as a difference from the null.
+  *(C4 closed the worst part of this: `quality_trait_coupling=0` — now the
+  default — draws quality independently of author traits, and
+  `quality_attention_lift` refuses to compute without a matched null run.)*
 - **Camps are a statistical split, not groups.** "Camp" is the sign of a user's
   position on the dominant axis of stance variation. It is defined even when the
   population is a single unimodal blob, where it is noise. The narrator gates
   camp language on a bimodality test (Sarle's coefficient > 5/9); analyses using
-  camps should say whether the population is actually bimodal.
+  camps should say whether the population is actually bimodal. *(C1's affect
+  machinery inherits this gate: where camps are undefined, animus comparisons
+  are reported as undefined, not zero.)*
 - **Attention concentration is capped by the graph generator.** Two of the eight
   stylized facts are missed for this reason. It is a known, located limitation,
-  not a mystery.
+  not a mystery. *(Partially addressed by the C9 gate: with `latent_pa` +
+  `engagement_optimized` + `bandwagon`, attention Gini and reciprocity hold
+  their spec ranges simultaneously — see `tests/test_change_spec.py::test_c9_*`.
+  The screen's base configuration does not use that combination, so its own
+  rows still read as before.)*
+- **The affect block's reversion rate is a guess.** `affect_ou_k = 0.02`
+  ("stickier than style, less sticky than position") has no empirical anchor;
+  it is carried in the C10 sensitivity sweep (`experiments/sensitivity_sobol.py`)
+  and any affect result should be reported with its Sobol indices attached.
 - **The screen is not the study.** A lever that reads flat has been shown flat
   *at the base configuration*. See [§13](#13-measuring-it).
 - **It is not calibrated to any specific platform.** The targets come from
   general empirical literature. Absolute numbers are not predictions; the
   *comparisons between configurations* are the output.
+
+---
+
+## 16. Change-spec mechanisms
+
+Ten literature-informed mechanisms (discourse-lab-changes.md, C1–C10), all
+**defaulted off** so nothing below this point moves unless asked. Each is a
+registered component or a named config field, and each is covered by a
+conformance test that observes its *effect* rather than its definition
+(`tests/test_change_spec.py`).
+
+| Mechanism | Warrant | Dial | Default |
+|---|---|---|---|
+| **C1 affect block** | Affective polarization — animus toward the other camp, attachment to one's own — rose while ideological positions moved little (Iyengar, Sood & Lelkes 2012; Iyengar & Westwood 2015); out-group animus is the strongest single engagement predictor measured (Rathje et al. 2021) | `population.affect`, `lr_affect`, `affect_ou_k` | off |
+| **C2 selection** | Individual choice filtered cross-cutting content *more than the algorithm* (Bakshy, Messing & Adamic 2015) — a stage the model lacked entirely | `dynamics.selection`, `selection_beta` | `position_only` |
+| **C2 rewiring** | Sorting into echo chambers through follow/unfollow (Törnberg, PNAS 2022) | `rewire`, `rewire_every`, `rewire_rate` | off |
+| **C3 reinforcement** | Outrage expression is socially learned (Brady, McLoughlin, Doan & Crockett 2021) — fixed-disposition kernels cannot produce norm convergence | `drift_lr_behavior`, `kernel_learning`, `kernel_learning_rule` | off |
+| **C4 quality backdoor** | `quality` was generated from author traits, confounding Spearman(quality, engagement) (Salganik & Muchnik's condition: merit independent of the artist) | `quality_trait_coupling` | **0.0** (independent draws) |
+| **C5 out-group attraction** | Out-group content raised sharing odds 67% — general and large, not a minority-trait effect (Rathje et al. 2021) | `outgroup` feature in the kernel | on (feature) |
+| **C6 repulsion ablation** | The repulsive-influence assumption has mixed, hard-to-identify support (Mäs & Flache 2013; Takács et al. 2016) | `repulsion=False` zeroes the negative channel-2 weights | on |
+| **C7 spiral of silence** | Perceived network disagreement predicts self-censorship (Hampton et al., Pew 2014; Matthes et al. 2018) | `silence_gate`, `silence_conviction_moderation` | 0 (off) |
+| **C8 complex contagion** | Behaviours spread through reinforcing exposures from *distinct* neighbours; long ties slow complex contagion, inverting Granovetter (Centola & Macy 2007; Centola 2010) | `dynamics.reply_model` | `hawkes` |
+| **C9 attention cap** | 10% of users produced 97% of political tweets (Pew 2019); the gate demands Gini **and** reciprocity in range at once | `latent_pa` generator + the stylized gate test | generator opt-in |
+| **C10 harness** | Equifinality: many mechanisms produce the same macro pattern (Grimm et al.) | `experiments/identify.py`, `sensitivity_sobol.py`, `designs.py` | — |
+
+### The affect block, in one equation
+
+Two new trait columns — `identification` (attachment to own camp, logit) and
+`animus` (hostility toward the other, log) — sampled correlated with
+`conviction` and `contrarianism` respectively. **Camp** is the sign on the
+dominant axis of stance variation, gated on Sarle's bimodality > 5/9: where
+the population is unimodal, camps are noise and every affect number is
+reported as undefined, not zero. Affect is a *state* — it updates from
+interaction outcomes, with weight tables deliberately separate from social
+influence's (replying to out-group content is *engagement* with it, so it
+raises animus while being stance-repulsive):
+
+```
+Δanimus_u         = lr_affect · mean_over_exposures( outgroup · hostility_weight(action) )
+Δidentification_u = lr_affect · mean_over_exposures( ingroup  · support_weight(action) )
+```
+
+### Learnable kernels, three tiers
+
+`kernel_learning` modulates a named kernel and never replaces it — a run must
+stay describable as "outrage, plus this much learned deviation".
+
+| Tier | State per user | Reading |
+|---|---|---|
+| `none` | — | theta is a table you can read |
+| `group_gain` | one gain per named coefficient group (agreement, outgroup, arousal, social_proof, recency, affinity) | "this user weights the out-group group 1.4× the norm" |
+| `full` | coefficient-granular gains | unrestricted θ_u; honesty about the toolbox claim |
+
+The learning rule is **named in the config, never implied**:
+`conformity` (gains drift toward in-neighbours' *revealed engagement
+behaviour* — Brady's norm convergence),
+`bandit` (own posts' above-baseline engagement), and `habituation` (use-driven,
+no social channel — the control, standing to conformity as `null` stands to
+the kernels). Gains revert OU-style toward 1, so a learned kernel cannot
+wander off and quietly stop being the theory it names.
+
+### Selection, silence, contagion
+
+**Selection** sits between ranking and the kernel:
+`P(attend | exposed) = σ(β_pos·pos_decay + β_agree·agreement + β_arousal·arousal)`.
+The exposure log persists both `exposed` and `attended`, so
+`selection_filtering.selection_shift` measures the choice component of the
+Bakshy decomposition without conflating it with the ranker's.
+
+**The silence gate** multiplies posting probability by a perceived-climate
+factor — perceived through the feed blend of [§12](#12-one-tick-start-to-finish),
+not the global state, and moderated by conviction. It gates *whether one
+posts*, never what a post says, which is what makes false consensus
+(`expressed_vs_latent_bimodality` < 0) reachable.
+
+**The threshold reply model** replaces the Hawkes intensity draw with
+propensity rising super-linearly in the count of *distinct* engaged
+in-neighbours. The separating experiment is the crossover with graph
+structure (`d5_contagion_crossover` in `experiments/designs.py`): hawkes
+spreads faster across long ties, threshold inside high clustering. If both
+respond identically to clustering, `threshold` is not actually complex.
+
+### The C10 harness
+
+`experiments/identify.py` reports whether two theories are separable **on the
+metrics the model reports** — AUC plus which metric carries the signal. AUC ≈
+0.5 is a reportable result, not a failure. `experiments/designs.py` holds the
+discriminating experiments as runnable designs, each required to state its
+falsifier; `experiments/sensitivity_sobol.py` attaches Sobol indices to every
+result driven by a parameter with no empirical anchor (`lr_affect`,
+`affect_ou_k`, `silence_gate`, …).
 
 ---
 

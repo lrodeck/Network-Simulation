@@ -63,6 +63,53 @@ def sample_post_counts(
     circ: np.ndarray,
     fatigue: np.ndarray,
     dt: float = 1.0,
+    gate: np.ndarray | None = None,
 ) -> np.ndarray:
+    """`gate` (C7, spiral of silence) multiplies the posting rate by a
+    climate factor in [0, 1] before the Poisson draw — 1.0 (the default)
+    preserves current behaviour exactly."""
     rate = np.clip(activity * circ * fatigue * dt, 0, None)
+    if gate is not None:
+        rate = rate * gate
     return rng.poisson(rate)
+
+
+def silence_gate_factor(
+    stance_u: np.ndarray,
+    perceived: object,
+    conviction: np.ndarray,
+    silence_gate: float,
+    moderation: float = 1.0,
+) -> np.ndarray:
+    """C7 (spiral of silence): users who perceive their feed's dominant
+    climate as disagreeing with them post less; the effect is moderated by
+    conviction — Hampton et al. (Pew 2014) found perceived network
+    disagreement predicts self-censorship, and Matthes et al. (2018)
+    confirm opinion-support -> expression with conviction the standard
+    moderator.
+
+    Users respond to their PERCEIVED climate (the F_local/F_global blend in
+    dynamics/perception.py), not the global sigma(t): gating on the global
+    state when a local perception module exists would be the modelling error
+    the codebase is structured to avoid.
+
+        gate_u = exp( -silence_gate * disagreement_u * (1 - conviction_u**moderation) )
+
+    conviction 1 -> gate 1 (never silenced); conviction 0 -> full gating
+    scaled by disagreement. The gate multiplies the Poisson rate, so it
+    suppresses *whether one posts at all* — the mechanism that can produce
+    false consensus (expressed stance != latent stance) — and never edits
+    what a post says.
+    """
+    n = stance_u.shape[0]
+    if silence_gate <= 0:
+        return np.ones(n)
+    # each user's most salient perceived topic, and the perceived dominant
+    # stance there
+    k_star = perceived.s_perceived.argmax(axis=1)
+    dominant = perceived.sigma_perceived[np.arange(n), k_star]        # (N, D)
+    d = stance_u.shape[1]
+    disagreement = np.linalg.norm(stance_u - dominant, axis=1) / np.sqrt(max(d, 1))
+    return np.exp(
+        -silence_gate * disagreement * (1.0 - np.clip(conviction, 0.0, 1.0) ** moderation)
+    )

@@ -20,6 +20,23 @@ PERSONALITY = ("openness", "conscientiousness", "extraversion", "agreeableness",
 EXPRESSION = ("verbosity", "formality", "irony", "humor", "profanity", "emoji")
 BEHAVIOR = ("activity", "reply_prop", "repost_prop", "contrarianism", "credulity", "prominence")
 META = ("plasticity", "conviction", "circadian_phase")
+# C1.1 (change spec): the affect block. Affective polarization — animus toward
+# the opposing camp, attachment to one's own — is the outcome variable half
+# the political-communication literature measures (Iyengar, Sood & Lelkes
+# 2012; Iyengar & Westwood 2015; Törnberg PNAS 2022), and `contrarianism` is
+# a stable disposition, not a group-directed, endogenously-updated affect.
+AFFECT = ("identification", "animus")
+
+# C1.1: affect enters the copula correlated with the traits it should sit
+# with — identification with conviction (attachment to a camp and attachment
+# to a position are related but distinct), animus with contrarianism (the
+# disposition to engage the other side negatively). Higham projection in
+# nearest_psd_correlation already repairs the matrix if these push it
+# non-PSD; that is the mechanism the change spec asks for, not a hazard.
+DEFAULT_AFFECT_CORRELATIONS: tuple[tuple[str, str, float], ...] = (
+    ("identification", "conviction", 0.40),
+    ("animus", "contrarianism", 0.35),
+)
 
 
 @dataclass(frozen=True)
@@ -50,6 +67,20 @@ def _meta_marginal(name: str) -> tuple[Marginal, str]:
         return build_marginal("beta", a=5.0, b=2.0), "logit"
     if name == "circadian_phase":
         return build_marginal("vonmises", mu=0.0, kappa=2.0), "identity"
+    raise KeyError(name)
+
+
+def _affect_marginal(name: str) -> tuple[Marginal, str]:
+    """C1.1 initial draws. `identification`: moderate by default, correlated
+    with conviction at the copula level. `animus`: low mean, heavy right tail
+    — most people hold little out-group hostility, some hold a lot, which is
+    the shape the affective-polarization surveys report; log-link keeps it
+    positive and lets drift multiply it multiplicatively in used space.
+    """
+    if name == "identification":
+        return build_marginal("beta", a=2.0, b=3.0), "logit"
+    if name == "animus":
+        return build_marginal("lognormal", mu=-2.2, sigma=1.0), "log"
     raise KeyError(name)
 
 
@@ -90,6 +121,14 @@ def trait_table(cfg: Config) -> list[TraitSpec]:
     for name in META:
         marginal, link = _meta_marginal(name)
         specs.append(TraitSpec(name, "meta", marginal, link))
+
+    # C1.1: the affect block is appended last so existing column order is
+    # untouched when `affect=False` — the off switch preserves both behaviour
+    # and layout exactly.
+    if cfg.population.affect:
+        for name in AFFECT:
+            marginal, link = _affect_marginal(name)
+            specs.append(TraitSpec(name, "affect", marginal, link))
 
     return specs
 

@@ -254,6 +254,84 @@ def outcome_names() -> list[str]:
     return names("outcome")
 
 
+# --------------------------------------------------------------------------
+# change-spec metrics that span runs or decompose the exposure sample
+# --------------------------------------------------------------------------
+
+def quality_attention_lift(run_handle, null_run_handle) -> float:
+    """C4: `Spearman(quality, engagement)` of a run MINUS its matched null.
+
+    Deliberately requires the null run as an argument — a metric that can be
+    computed from one run *will* be computed from one run, and the raw
+    Spearman is confounded by author-trait alignment unless
+    `quality_trait_coupling == 0` closed that backdoor at generation. The
+    lift is the structural form of §5.3's "difference against a matched
+    null" for exactly this quantity.
+    """
+    from discourse_lab.metrics import quality_attention_correlation
+
+    def _rho(handle):
+        posts = handle.posts()
+        return quality_attention_correlation(
+            posts["quality"].to_numpy(), posts["engagement_count"].to_numpy()
+        )
+
+    return float(_rho(run_handle) - _rho(null_run_handle))
+
+
+@register("outcome", "selection_filtering")
+def selection_filtering(handle, pop, lex, delta: float | None = None) -> dict:
+    """C2.1's Bakshy decomposition, observed rather than asserted.
+
+    Computes the §5.2 echo-chamber index twice on the same exposure sample —
+    once over everything EXPOSED, once over only what was ATTENDED (the
+    `attended` flag persisted since RUN_FORMAT 5). If the two are equal, the
+    selection stage is decorative: choice filtered nothing. Under
+    `selection="homophilous"` the attended index must exceed the exposed
+    one — that difference IS the choice component of the choice-vs-algorithm
+    decomposition, and the ranker's contribution is measured separately by
+    `cross_cutting_exposure.rank_penalty`.
+    """
+    from discourse_lab.metrics import echo_chamber_index
+
+    exposures, posts = handle.exposures(), handle.posts()
+    if "attended" not in exposures.columns:
+        return {"echo_exposed": float("nan"), "echo_attended": float("nan"),
+                "selection_shift": float("nan"), "n": 0}
+
+    stance_cols = [lex.post_column(d) for d in range(lex.n_axes)]
+    consumed = exposures.join(
+        posts.select(["id", *stance_cols]), left_on="post", right_on="id", how="inner"
+    )
+    if len(consumed) == 0:
+        return {"echo_exposed": float("nan"), "echo_attended": float("nan"),
+                "selection_shift": float("nan"), "n": 0}
+
+    own = pop.X_used[:, lex.stance_columns(pop.trait_names)]
+    if delta is None:
+        rng = np.random.default_rng(0)
+        n = own.shape[0]
+        sample = min(20_000, n * 4)
+        a, b = rng.integers(0, n, sample), rng.integers(0, n, sample)
+        delta = 0.5 * float(np.median(np.linalg.norm(own[a] - own[b], axis=1)))
+
+    consumed_stance = consumed.select(stance_cols).to_numpy()
+    users = consumed["user"].to_numpy()
+    idx_exposed = echo_chamber_index(own, consumed_stance, users, delta=delta)
+    att = consumed["attended"].to_numpy()
+    idx_attended = echo_chamber_index(own, consumed_stance[att], users[att], delta=delta)
+
+    mean_exposed = float(np.nanmean(idx_exposed)) if np.isfinite(idx_exposed).any() else float("nan")
+    mean_attended = float(np.nanmean(idx_attended)) if np.isfinite(idx_attended).any() else float("nan")
+    return {
+        "echo_exposed": mean_exposed,
+        "echo_attended": mean_attended,
+        "selection_shift": mean_attended - mean_exposed,
+        "delta": float(delta),
+        "n": int(len(consumed)),
+    }
+
+
 def normative_outcomes(handle, pop=None, lex=None) -> dict[str, float]:
     """Every outcome the run has the data for, flattened to `name.field`.
 
@@ -272,6 +350,7 @@ def normative_outcomes(handle, pop=None, lex=None) -> dict[str, float]:
         "epistemic_alignment": ("posts",),
         "hostility_given_contact": ("posts", "engagements"),
         "feed_narrowing": ("posts", "exposures"),
+        "selection_filtering": ("posts", "exposures"),
     }
     for name in outcome_names():
         if not all(getattr(handle, f"has_{table}") for table in needs[name]):

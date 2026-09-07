@@ -139,6 +139,7 @@ def test_every_outcome_is_registered_and_reachable_by_name():
     assert set(outcome_names()) == {
         "cross_cutting_exposure", "epistemic_alignment", "feed_narrowing",
         "hostility_given_contact", "voice_inequality",
+        "selection_filtering",  # C2: the choice-vs-algorithm decomposition
     }
 
 

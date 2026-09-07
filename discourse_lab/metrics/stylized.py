@@ -118,6 +118,22 @@ def lorenz_curve(x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 # --------------------------------------------------------------------------
 
 
+def _dominant_projection(stance: np.ndarray) -> np.ndarray:
+    """Centred projection onto the first principal component of stance —
+    the axis `stance_clusters` splits on. Extracted so the bimodality gate
+    in metrics/polarization.py tests the *same* projection the labels come
+    from, rather than a second one that can quietly disagree.
+    """
+    stance = np.atleast_2d(np.asarray(stance, dtype=float))
+    if stance.shape[0] == 1 and stance.shape[1] > 1:
+        stance = stance.T
+    centred = stance - stance.mean(axis=0)
+    if centred.shape[1] == 1:
+        return centred[:, 0]
+    _, _, vt = np.linalg.svd(centred, full_matrices=False)
+    return centred @ vt[0]
+
+
 def stance_clusters(stance: np.ndarray) -> np.ndarray:
     """Two ideological camps: the sign of each user's position on the dominant
     axis of stance variation (the first principal component).
@@ -139,15 +155,7 @@ def stance_clusters(stance: np.ndarray) -> np.ndarray:
     matches spec §7.5's expectation that correlated axes collapse toward a
     single dominant dimension.
     """
-    stance = np.atleast_2d(np.asarray(stance, dtype=float))
-    if stance.shape[0] == 1 and stance.shape[1] > 1:
-        stance = stance.T
-    centred = stance - stance.mean(axis=0)
-    if centred.shape[1] == 1:
-        projection = centred[:, 0]
-    else:
-        _, _, vt = np.linalg.svd(centred, full_matrices=False)
-        projection = centred @ vt[0]
+    projection = _dominant_projection(stance)
     return (projection > np.median(projection)).astype(np.int64)
 
 

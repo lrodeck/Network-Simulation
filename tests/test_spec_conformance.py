@@ -105,7 +105,6 @@ def test_every_config_field_is_read_by_something():
     offline LLM pass, not the tick loop.
     """
     import re
-    import subprocess
     from pathlib import Path
 
     # Each entry is a gap, not an exemption. Delete the entry when the gap
@@ -118,13 +117,20 @@ def test_every_config_field_is_read_by_something():
     src = Path("discourse_lab/config.py").read_text(encoding="utf-8")
     fields = set(re.findall(r"^\s{4}(\w+):\s*[\w\[\]\.\| ]+\s*=", src, re.M))
 
+    # pure-Python scan rather than a grep subprocess: the subprocess version
+    # only worked where grep.exe is on PATH, which is not true on Windows
+    # dev boxes, and the guarantee is the scan, not the tool
+    sources = [
+        p
+        for p in Path("discourse_lab").rglob("*.py")
+        if p.name != "config.py"
+    ]
+    texts = {p: p.read_text(encoding="utf-8") for p in sources}
+
     unread = []
     for name in sorted(fields - KNOWN_UNREAD):
-        hits = subprocess.run(
-            ["grep", "-rn", rf"\b{name}\b", "discourse_lab", "--include=*.py"],
-            capture_output=True, text=True,
-        ).stdout.splitlines()
-        if not [h for h in hits if not h.startswith("discourse_lab/config.py")]:
+        pattern = re.compile(rf"\b{name}\b")
+        if not any(pattern.search(text) for text in texts.values()):
             unread.append(name)
 
     assert not unread, f"config fields declared but never read: {unread}"
