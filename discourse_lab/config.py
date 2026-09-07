@@ -152,7 +152,8 @@ class GraphConfig(Hashable):
     # The dial between local structure (clustering) and a heavy in-degree
     # tail (spec §5.1's engagement rows). Ignored by every other generator.
     pa_fraction: float = 0.35
-    sbm_blocks: int = 0                       # 0 → one block per archetype
+    sbm_blocks: int = 0                       # 0 → derive from sbm_block_source instead
+    sbm_block_source: str = "archetype"       # archetype | topic_affinity (used when sbm_blocks == 0)
     sbm_homophily: float = 0.8
 
     def __post_init__(self) -> None:
