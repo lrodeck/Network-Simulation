@@ -356,7 +356,41 @@ class RunHandle:
         return pl.read_parquet(self._require("exposures", "exposures"))
 
     def traits(self) -> pl.DataFrame:
+        """Raw trait snapshots as persisted: `x_0..x_{n-1}` in **stored**
+        (unconstrained link) space — e.g. a log-link trait like `animus`
+        comes back as `log(animus)`, not animus. This is what `dynamics.drift`
+        operates on internally; it is not the physical-unit value most
+        analysis code wants. Use `traits_used()` for that.
+        """
         return pl.read_parquet(self._require("traits", "traits"))
+
+    def traits_used(self, cfg: Any) -> pl.DataFrame:
+        """`traits()` with columns renamed to their trait names (per
+        `population.traits.trait_names(cfg)`) and each column mapped back
+        through its link into real (\"used\") units via
+        `population.links.to_used` — e.g. `animus`'s log-link is inverted so
+        the column is animus itself, not `log(animus)`.
+
+        Persisting stored-space (`X_stored`, see `runner.run_iter`) is
+        correct for drift, which operates there; reading it as if it were the
+        physical quantity silently gives wrong-scale numbers to anything
+        downstream (e.g. a log-link trait centered near a negative stored
+        mean can trip a `population mean <= 0` guard in a metric that never
+        sees the real, positive values).
+        """
+        from discourse_lab.population.links import to_used
+        from discourse_lab.population.traits import trait_table
+
+        tr = self.traits()
+        specs = trait_table(cfg)
+        name_map = {f"x_{i}": spec.name for i, spec in enumerate(specs)}
+        tr = tr.rename({c: name_map[c] for c in tr.columns if c in name_map})
+        for spec in specs:
+            if spec.name in tr.columns and spec.link != "identity":
+                tr = tr.with_columns(
+                    pl.Series(spec.name, to_used(tr[spec.name].to_numpy(), spec.link))
+                )
+        return tr
 
     def salient_events(self) -> pl.DataFrame:
         """The §3.1 step 6 queue: what channel 3 would adjudicate offline."""
