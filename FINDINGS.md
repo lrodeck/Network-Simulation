@@ -1,0 +1,106 @@
+# Findings
+
+Measured results and the negative results behind them. Kept out of the demo
+notebook so that notebook stays a tour of the API; kept out of the module
+docstrings' way by pointing at them rather than repeating them.
+
+Unless stated otherwise: N=1500, 30 ticks, `exposure_sample_rate=0.10`,
+10 seeds, each cell against its own matched `kernel="null"` twin.
+Bold = resolves against seed-to-seed spread.
+
+## The screen: one lever at a time
+
+16 cells x 10 seeds x 2.
+
+| lever | cross-camp | rank_penalty | feed bubble | top-1% share |
+|---|---|---|---|---|
+| affinity ranking | **-0.078** | **-0.148** | **-0.099** | -0.002 |
+| engagement_optimized | **-0.040** | **-0.068** | **-0.051** | **+0.014** |
+| popularity ranking | -0.001 | -0.003 | -0.003 | **+0.026** |
+| inject_k 0 -> 20 | **+0.048** | **-0.018** | **+0.039** | **-0.005** |
+| long_tie 0.05 -> 0.4 | **+0.042** | +0.002 | **+0.037** | **-0.003** |
+| tau_position 6 -> 2 | -0.001 | +0.002 | -0.002 | **+0.012** |
+| attention_budget 30 -> 3 | +0.002 | +0.005 | -0.001 | **+0.006** |
+
+Injection and long ties buy cross-cutting exposure; personalised ranking costs
+it; popularity ranking is neutral on exposure and the worst lever for
+concentrating attention. `epistemic_alignment` is a null result everywhere —
+every cell within +/-0.013 at sd ~0.03.
+
+## The crossing: levers against the ranker
+
+26 cells x 10 seeds x 2, `across=RANKER_BACKGROUND`. Effect on cross-camp
+exposure, and `swing` = the spread across backgrounds.
+
+| lever | under `affinity` | under `chronological` | swing |
+|---|---|---|---|
+| tau_position = 2 | **-0.055** | -0.001 | 0.054 |
+| inject_k = 20 | +0.011 | **+0.048** | 0.037 |
+| tau_position = 15 | **+0.033** | -0.000 | 0.033 |
+| attention_budget = 3 | **-0.019** | +0.002 | 0.021 |
+| long_tie_fraction = 0.4 | **+0.037** | **+0.042** | **0.005** |
+
+1. **The attention levers are pure interaction.** `tau_position` and
+   `attention_budget` do essentially nothing under a chronological feed and are
+   substantial under a personalised one. Rank order under `chronological` is
+   recency, independent of stance, so truncating the feed removes a random
+   slice; under `affinity` rank order *is* stance order, so truncating removes
+   precisely the disagreement. **How far people scroll only matters once the
+   feed is sorted by agreement.**
+2. **Injection is swamped by the ranker it is meant to correct.** `inject_k=20`
+   buys +0.048 under chronological and +0.011 under affinity: the personalising
+   ranker demotes the injected cross-cutting items back down. "Add diverse
+   content to the feed" is weakest exactly where it is most needed.
+3. **Network structure is the robust lever.** `long_tie_fraction` is the only
+   one with swing ~0. It is the one recommendation here that does not depend on
+   what the platform does next.
+
+Attention concentration (`voice_inequality.top1_share`) shows no interaction at
+all — every swing <= 0.002 — so those screen rows can be read as-is.
+
+## Negative results worth keeping
+
+**`attention_budget` at 15/30/60 was a dead-zone sweep, not an inert lever.**
+Visibility decays as `exp(-r/tau_position)`, which passes ~6 items on its own,
+so the budget cap removes 10% of survivors at b=15, 1.2% at b=30 and **0.0% at
+b=60** — the last two are the same platform. Re-ranged to 30/10/3 it resolves.
+Pinned by `tests/test_attention_budget_binds.py`.
+
+**`algorithmic_share` cannot be rescued, and that is a property of the feed.**
+Spec 2.5a makes the candidate set `followers(author) u inject(p, k)`, so
+injection is the only source of non-follower candidates and the column is NaN
+at `inject_k=0` for every ranker. `rank_penalty` replaces it: the pool is fixed
+by the graph and by injection, so all a ranker does is order it. Reads +0.001
+for `chronological` and -0.002 for `popularity` (neither can see the viewer),
+-0.147 for `affinity`.
+
+**Attention concentration is capped by the graph, not the kernel.** The
+population's `prominence` is Pareto(2.30) with a max/mean of 303x, but the
+latent-space generator flattens in-degree to alpha ~4.7: a user can only be
+followed by the ~`knn_k` users whose neighbourhood contains them. Engagement
+per post cannot be more skewed than the audience sizes it is drawn over, which
+is why attention Gini reads ~0.67-0.72 against the spec's 0.8-0.95 target.
+Marked xfail rather than deleted.
+
+**`homophily_beta` does not control homophily.** 0.35 -> 1.5 moves cross-camp
+exposure 0.288 -> 0.280, and does about as little for clustering.
+
+**Trait correlations compose additively and neither mechanism knows about the
+other.** Asking for `activity x reply_prop = 0.30` with the shipped archetypes
+on yields 0.49, because archetypes that shift two traits together already
+correlate them. The library warns; `fig_trait_correlations` shows the realised
+matrix rather than the requested one.
+
+**The filter-bubble effect is uniform across archetypes.** Per-user `bubble`
+sits at ~-0.19 for lurkers, firebrands and institutions alike under affinity
+ranking: it is a property of the ranker, not of who you are.
+
+## Scope
+
+The model has no deliberation and no persuasion-by-reason — drift is social
+influence only. It speaks to structural preconditions for democratic discourse,
+not to deliberative quality.
+
+The screen is a **screen, not the study**: a flat row means flat *at the base
+configuration*. Anything that survives it deserves a crossing against
+`dynamics.ranker` before it goes in a paper.
