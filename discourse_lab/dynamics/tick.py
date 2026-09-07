@@ -11,11 +11,12 @@ a single exposure/reaction pass; visibility still decays with `rho ** depth`
 regardless of which tick a derived post is exposed in.
 
 Replies spawn posts as of calibration: `derive_posts` handles repost, quote
-and reply alike, differing in how far the derived post's stance moves toward
-the deriving user (see `dynamics/cascade.py`). Reply *timing* follows
-`cfg.dynamics.reply_model` (change spec C8): the Hawkes self-exciting draw
-(simple contagion, the default) or the distinct-engaged-neighbour threshold
-(complex contagion).
+and cascade position, while REPLY posts are scheduled by the reply model
+(`dynamics/hawkes.py` HawkesThreads + `generate_reply_posts` — the single
+reply path; C13 pre-work confirmed the docstring here was stale about this).
+Reply *timing* follows `cfg.dynamics.reply_model` (change spec C8): the
+Hawkes self-exciting draw (simple contagion, the default) or the
+distinct-engaged-neighbour threshold (complex contagion).
 
 Change-spec stages wired here, executed in this order each tick:
 
@@ -45,7 +46,12 @@ from discourse_lab.dynamics.cascade import BRANCHING_ACTIONS, CascadeState, deri
 from discourse_lab.dynamics.discourse_state import update_discourse
 from discourse_lab.dynamics.drift import DriftState, apply_drift
 from discourse_lab.dynamics.expression import ExpressionMap
-from discourse_lab.dynamics.hawkes import HawkesThreads, generate_reply_posts
+from discourse_lab.dynamics.hawkes import (
+    HawkesThreads,
+    content_mu_multiplier,
+    generate_reply_posts,
+    thread_sigma_local,
+)
 from discourse_lab.dynamics.kernel_learning import KernelLearningState, apply_learning
 from discourse_lab.dynamics.perception import PerceivedState, compute_perception
 from discourse_lab.dynamics.posts import PostBatch, concat_post_batches, filter_post_batch, generate_posts
@@ -96,6 +102,13 @@ class TickEngine:
     # C1.2: camp labels + the shared bimodality gate; None when unimodal
     camps: np.ndarray | None = field(default=None, init=False)
     camp_bimodality: float = field(default=float("nan"), init=False)
+    # C13a: kernel reply candidates from the PREVIOUS tick's reaction pass —
+    # the Hawkes draw fires before this tick's exposure exists, so an intent
+    # lands its post one tick after it was formed
+    _reply_candidates: dict = field(default_factory=dict, init=False)
+    # C13c: (unique_root_ids, sigma_local) over the pool as of this tick's
+    # start; refreshed before reply generation
+    thread_sigma_local: tuple = field(default=(), init=False)
     active_posts: PostBatch | None = field(default=None, init=False)
     next_post_id: int = field(default=0, init=False)
     global_stance_var: float = field(init=False)
@@ -216,7 +229,16 @@ class TickEngine:
                 start_id=self.next_post_id, t=t,
             )
             self.next_post_id += len(new_posts)
-            self.threads.open_threads(new_posts.id, cfg.hawkes_mu0)
+            # C13b: mu is content-conditioned — a hotter, more provocative
+            # root is intrinsically more reply-generative. Roots sit at
+            # stance distance 0 from their own arena, so the disagree term
+            # is inert here.
+            mu_roots = cfg.hawkes_mu0 * content_mu_multiplier(
+                new_posts,
+                self.active_posts if self.active_posts is not None else new_posts,
+                cfg.reply_mu_gamma,
+            )
+            self.threads.open_threads(new_posts.id, mu_roots)
         self.fatigue.step(n_posts, cfg.fatigue_decay)
 
         if self.active_posts is None:
@@ -225,6 +247,8 @@ class TickEngine:
             self.active_posts = concat_post_batches([self.active_posts, new_posts])
 
         n_replies = 0
+        n_reply_fallback = 0
+        n_reply_kernel = 0
         # spec §3.1 step 2: replies are drawn from the self-exciting thread
         # intensity (§2.3), not derived from the exposure pass. alpha = ratio
         # * beta keeps the branching ratio alpha/beta = hawkes_ratio < 1.
@@ -250,15 +274,82 @@ class TickEngine:
             # replaced by the threshold rule
             self.threads.step(rngs["timing"], 0.0, cfg.hawkes_beta, cfg.max_thread_age, draw=False)
         else:
+            # C13a, completion: with kernel selection, a thread with no
+            # candidate has NO ONE who chose to reply to it — its baseline
+            # mu is 0 and the Hawkes draw cannot land there. Only threads
+            # with accumulated kernel-reply candidates draw on their
+            # baseline (scaled by pool size); any thread can still draw
+            # through its own excitation term, which is untouched — a hot
+            # thread keeps drawing even after its candidate pool empties,
+            # and those draws fall back to the lottery, counted. This is
+            # what makes reply_fallback_rate meaningful: the lottery is the
+            # rare safety net, not the main supply line. (Measured without
+            # this: the flat-mu draw sent 70-97% of replies to threads with
+            # no candidates, all lottery — the content-blind artefact C13a
+            # exists to remove.)
+            mu_weights = None
+            if cfg.reply_selection == "kernel" and len(self.threads.post_id) > 0:
+                pool_sizes = np.array(
+                    [len(self._reply_candidates.get(int(pid), ()))
+                     for pid in self.threads.post_id],
+                    dtype=np.float64,
+                )
+                mu_weights = np.where(pool_sizes > 0, 1.0 + pool_sizes, 0.0)
             reply_targets = self.threads.step(
                 rngs["timing"], cfg.hawkes_ratio * cfg.hawkes_beta, cfg.hawkes_beta,
                 cfg.max_thread_age, max_replies_per_tick=cfg.max_replies_per_tick,
+                mu_weights=mu_weights,
             )
+
+        # C13a: WHO replies. With reply_selection="kernel" the candidates for
+        # a post are the users whose engagement action was a reply on it —
+        # they saw it and chose the reply action (content-sensitive: phi
+        # carries agreement, provoc_x_con, arousal_x_neu). Candidates
+        # ACCUMULATE over the post's exposed life and are pruned with the
+        # thread's age (a thread stays reply-able for max_thread_age ticks,
+        # longer than its posts stay exposed, so the pool outlives the
+        # exposure window). The candidate pool is one tick stale at draw
+        # time by necessity: the Hawkes draw fires before this tick's
+        # exposure pass exists, so an intent lands its post one tick after
+        # it was formed. The Hawkes draw still owns when and how many.
+        # Posts that drew replies but have no kernel candidate fall back to
+        # the reply_prop lottery, COUNTED via reply_fallback_rate: a high
+        # rate means the coupling is decorative. (The threshold reply model
+        # keeps its own candidate selection — that selection IS its
+        # mechanism.)
+        kernel_reply_cands: dict[int, np.ndarray] = {}
+        if (
+            cfg.reply_model == "hawkes"
+            and cfg.reply_selection == "kernel"
+            and self._reply_candidates
+        ):
+            kernel_reply_cands = self._reply_candidates
+
         if reply_targets:
+            if cfg.reply_model == "hawkes" and cfg.reply_selection == "kernel":
+                chosen: dict[int, np.ndarray] = {}
+                for pid, n_rep in reply_targets.items():
+                    cands = kernel_reply_cands.get(int(pid))
+                    if cands is None or len(cands) == 0:
+                        n_reply_fallback += int(n_rep)
+                        continue
+                    if len(cands) >= n_rep:
+                        take = rngs["timing"].choice(len(cands), size=n_rep, replace=False)
+                    else:
+                        take = rngs["timing"].choice(len(cands), size=n_rep, replace=True)
+                    chosen[int(pid)] = np.asarray(cands)[take]
+                    n_reply_kernel += int(n_rep)
+                reply_authors = chosen
+            else:
+                reply_authors = {}
+
             reply_posts, reply_warnings = generate_reply_posts(
                 reply_targets, self.active_posts, self.pop, self.expr, self.s, self.sigma,
                 rngs["generation"], self.next_post_id, t, cfg.max_cascade_depth,
                 authors_for_target=reply_authors or None,
+                reply_conformity=cfg.reply_conformity,
+                reply_conformity_mix=cfg.reply_conformity_mix,
+                sigma_local_root=self.thread_sigma_local,
             )
             for w in reply_warnings:
                 warnings.warn(w, stacklevel=2)
@@ -271,7 +362,16 @@ class TickEngine:
                 inherited = 0.0
                 if cfg.hawkes_mu_inherit > 0:
                     inherited = cfg.hawkes_mu_inherit * self.threads.excitation_of(reply_posts.parent)
-                self.threads.open_threads(reply_posts.id, cfg.hawkes_mu0, inherited)
+                # C13b: a reply's own thread opens warm in proportion to the
+                # thread it landed in (inherit -> excitation, which decays;
+                # never mu) AND with its own content-conditioned baseline.
+                inherited = 0.0
+                if cfg.hawkes_mu_inherit > 0:
+                    inherited = cfg.hawkes_mu_inherit * self.threads.excitation_of(reply_posts.parent)
+                mu_replies = cfg.hawkes_mu0 * content_mu_multiplier(
+                    reply_posts, self.active_posts, cfg.reply_mu_gamma
+                )
+                self.threads.open_threads(reply_posts.id, mu_replies, inherited)
                 self.active_posts = concat_post_batches([self.active_posts, reply_posts])
                 n_replies = len(reply_posts)
 
@@ -295,6 +395,14 @@ class TickEngine:
         metrics: dict[str, float] = {
             "n_posts": float(len(new_posts) if new_posts is not None else 0),
             "n_replies": float(n_replies),
+            # C13a's health dial: share of reply posts that had NO kernel
+            # reply candidate and fell back to the reply_prop lottery. High
+            # = the kernel coupling is decorative (C13 dev notes §1.2: treat
+            # as a calibration failure, not a curiosity).
+            "reply_fallback_rate": (
+                n_reply_fallback / (n_reply_fallback + n_reply_kernel)
+                if (n_reply_fallback + n_reply_kernel) > 0 else float("nan")
+            ),
             "open_threads": 0.0,
             "n_exposures": 0.0,
             "n_attended": 0.0,
@@ -308,6 +416,15 @@ class TickEngine:
         }
 
         self._refresh_camps()
+        # C13c: the room a reply conforms to is the thread as it stood when
+        # the draw fired — pool up to and including this tick's fresh roots,
+        # excluding nothing (the replies being generated do not exist yet)
+        if self.active_posts is not None and len(self.active_posts) > 0:
+            self.thread_sigma_local = thread_sigma_local(
+                self.active_posts, self.stance_cols
+            )
+        else:
+            self.thread_sigma_local = ()
 
         if self.active_posts is not None and len(self.active_posts) > 0:
             posts = self.active_posts
@@ -396,7 +513,12 @@ class TickEngine:
                             # understated thread depth and silently made the
                             # branching probability depth-dependent in the wrong
                             # direction.
-                            self.threads.open_threads(cascade_posts.id, cfg.hawkes_mu0)
+                            self.threads.open_threads(
+                            cascade_posts.id,
+                            cfg.hawkes_mu0 * content_mu_multiplier(
+                                cascade_posts, self.active_posts, cfg.reply_mu_gamma
+                            ),
+                        )
                             self.active_posts = concat_post_batches([self.active_posts, cascade_posts])
 
                         engaged_this_tick = (posts, engagement_delta, exposures_att, actions, features_att)
@@ -512,5 +634,22 @@ class TickEngine:
         if self.rewire_state.maybe_rewire(t, self.graph, self.cfg, rngs["rewire"]):
             self.rewire_events = list(self.rewire_state.events)
             self.rewire_state.events = []
+
+        # C13a: this tick's kernel reply actions join the per-post candidate
+        # pools (accumulated over each post's reply-able life), and pools for
+        # threads past max_thread_age are dropped — a thread that can no
+        # longer draw replies needs no candidates.
+        if self.engagement_events is not None and len(self.engagement_events["user"]) > 0:
+            ev_user = self.engagement_events["user"]
+            ev_post = self.engagement_events["post"]
+            is_reply_ev = self.engagement_events["action"] == "reply"
+            if is_reply_ev.any():
+                for u, p in zip(ev_user[is_reply_ev], ev_post[is_reply_ev]):
+                    self._reply_candidates.setdefault(int(p), []).append(int(u))
+        if self._reply_candidates:
+            live = set(int(x) for x in self.threads.post_id)
+            self._reply_candidates = {
+                pid: users for pid, users in self._reply_candidates.items() if pid in live
+            }
 
         return metrics

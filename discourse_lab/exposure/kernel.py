@@ -88,7 +88,13 @@ CONDITIONAL_FEATURES = {"outgroup", "outgroup_x_animus", "ingroup_x_ident"}
 DEFAULT_INTERCEPTS: dict[str, float] = {
     "like": -3.5,
     "repost": -7.0,
-    "reply": -8.5,
+    # C13a: the reply action is now the SOURCE of reply posts (with
+    # reply_selection="kernel"), so it must fire often enough to cover the
+    # Hawkes draw's targets — at -8.5 the reply_fallback_rate sat at ~1.0
+    # and the coupling was decorative. -4.0 keeps the overall engagement
+    # rate in the calibrated range while covering ~85% of drawn targets
+    # (aggregate fallback ~0.12 at the gate config).
+    "reply": -4.0,
     "quote": -8.0,
     "report": -8.0,
 }

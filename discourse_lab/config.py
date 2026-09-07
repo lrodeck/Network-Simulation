@@ -212,7 +212,13 @@ class DynamicsConfig(Hashable):
     #                and a kernel theta transfers across dimensionalities.
     agreement_metric: str = "rms"
 
-    hawkes_mu0: float = 0.004                 # baseline reply intensity per tick
+    # C13 recalibration: with reply_selection="kernel" the Hawkes draw is
+    # gated on candidate availability (a thread with no kernel-reply
+    # candidates draws on excitation alone), and the higher reply-action
+    # rate spreads attention more evenly — mu0 0.004 -> 0.01 and the C9
+    # theta_scale recalibrated together to recenter both §5.1 rows. 20-seed
+    # gates in test_change_spec (C9 and C13) pin the combination.
+    hawkes_mu0: float = 0.01                  # baseline reply intensity per tick
     hawkes_ratio: float = 0.6                 # alpha/beta, must stay < 1
     hawkes_beta: float = 1.5
     max_thread_age: int = 15                  # ticks a thread stays open for Hawkes
@@ -403,6 +409,35 @@ class DynamicsConfig(Hashable):
     # field so that calibration is a sweep, not a code edit.
     threshold_scale: float = 16.0
 
+    # -- C13: threads as digital micro publics --------------------------------
+    # WHO replies. "kernel" sources reply candidates from the engagement
+    # kernel's reply actions (users who saw the post and chose to reply —
+    # content-sensitive), with the reply_prop lottery as a counted fallback
+    # for posts that drew replies but no kernel candidate. "lottery" is the
+    # old behaviour: authors drawn from the whole population, blind to
+    # content. The Hawkes draw keeps owning WHEN and HOW MANY either way —
+    # kernel replies firing on exposure would collapse reply timing onto the
+    # exposure pass and lose the burstiness the Hawkes model exists to
+    # produce. Applies to the hawkes path; the threshold reply model's
+    # contagion candidate selection IS its mechanism and is not overridden.
+    reply_selection: str = "kernel"           # kernel | lottery
+    # C13b: reply intensity conditioned on the post's own dimensions (the
+    # DMP claim: friction generates the discussion, not noise). mu_p =
+    # mu_base * exp(gamma_prov*provocativeness + gamma_arousal*arousal +
+    # gamma_disagree*||stance_p - stance_root||) — distance to the ROOT:
+    # what makes a reply generative is that it contests what the arena
+    # formed around. Empty tuple = flat mu (current behaviour).
+    reply_mu_gamma: tuple[tuple[str, float], ...] = ()   # prov | arousal | disagree
+    # C13c: which room low-conviction repliers conform to. "global" blends
+    # toward sigma(t) (the platform-wide dominant stance, same weighting as
+    # the root-post conformity line); "local" blends toward the thread's own
+    # engagement-weighted mean stance — the argument they are actually in;
+    # "blend" mixes the two by reply_conformity_mix. The local/global
+    # contrast is itself a testable claim about where conformity pressure
+    # comes from.
+    reply_conformity: str = "global"          # local | global | blend
+    reply_conformity_mix: float = 0.5         # only read when "blend"
+
     snapshot_every: int = 1
     exposure_sample_rate: float = 0.01
 
@@ -492,8 +527,9 @@ class WorldConfig(Hashable):
 class Config(Hashable):
     # Bumped with every change that forks the run cache. All C1-C10 config
     # surface landed in one commit (change spec §0.1) so the cache forks
-    # once, legibly, rather than ten times.
-    schema_version: int = 2
+    # once, legibly, rather than ten times; C13's reply-path surface is the
+    # second batched fork.
+    schema_version: int = 3
     population: PopulationConfig = field(default_factory=PopulationConfig)
     graph: GraphConfig = field(default_factory=GraphConfig)
     dynamics: DynamicsConfig = field(default_factory=DynamicsConfig)

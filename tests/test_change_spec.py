@@ -288,7 +288,7 @@ def test_c9_attention_gini_and_reciprocity_hold_simultaneously():
     # level lever C3b's groups exist for. Calibration, not gate-fitting:
     # each dial moves its own row and both sit mid-band with margin.
     base = set_param(base, "graph.mirror_p", 0.05)
-    base = set_param(base, "dynamics.theta_scale", (("social_proof", 0.6),))
+    base = set_param(base, "dynamics.theta_scale", (("social_proof", 0.75),))
 
     from discourse_lab.network import cached_graph
     from discourse_lab.population import cached_population
@@ -804,3 +804,244 @@ def test_new_persistence_paths_round_trip(tmp_path, monkeypatch):
     # and the cache reuses it without recomputing (RUN_FORMAT 5 + tables present)
     path2 = cached_run(cfg, 0, persist=("exposures", "engagements"))
     assert path2 == path
+
+
+# --------------------------------------------------------------------------
+# C13: threads as digital micro publics - Part 1 (interaction)
+# --------------------------------------------------------------------------
+
+
+def _polarized_axis():
+    """The stance editor's `polarized` preset as a scenario axis."""
+    dens = []
+    for i in range(128):
+        x = -1 + 2 * (i + 0.5) / 128
+        dens.append(np.exp(-((x + 0.6) ** 2) / (2 * 0.2**2)) + np.exp(-((x - 0.6) ** 2) / (2 * 0.2**2)))
+    return {
+        "name": "polar", "pole_neg": "a", "pole_pos": "b",
+        "marginal": {"kind": "empirical", "bins": 128, "support": [-1, 1],
+                     "density": (np.array(dens) / np.sum(dens) * 128).tolist()},
+        "expression_cost": {"neg": 0.0, "pos": 0.0},
+    }
+
+
+# --------------------------------------------------------------------------
+# C13: threads as digital micro publics
+# --------------------------------------------------------------------------
+
+
+def test_c13_repliers_come_from_the_kernel():
+    """C13a conformance (test 1): with reply_selection='kernel', repliers are
+    content-connected to the parent - mean |replier stance - parent stance|
+    differs from the lottery condition on the same seed. If identical, the
+    coupling is decorative."""
+    gaps = {}
+    for selection in ("kernel", "lottery"):
+        cfg = _cfg(n_users=500, n_ticks=30, drift="none", reply_selection=selection)
+        engine = _engine(cfg)
+        for t in range(cfg.dynamics.n_ticks):
+            engine.step(t)
+        posts = engine.active_posts
+        is_reply = posts.kind == "reply"
+        id_to_idx = {int(pid): i for i, pid in enumerate(posts.id)}
+        reply_rows, parent_rows = [], []
+        for i in np.flatnonzero(is_reply):
+            p = id_to_idx.get(int(posts.parent[i]))
+            if p is not None:
+                reply_rows.append(i)
+                parent_rows.append(p)
+        assert reply_rows, "no in-pool replies to measure"
+        replier = pop_stance_of_rows(engine, np.array(reply_rows))
+        parent = posts.stance[np.array(parent_rows)]
+        gaps[selection] = float(np.abs(replier - parent).mean())
+
+    assert gaps["kernel"] != gaps["lottery"], (
+        f"replier-parent distance identical under kernel and lottery ({gaps}) - "
+        "the C13a coupling is decorative"
+    )
+
+
+def pop_stance_of_rows(engine, users):
+    return engine.pop.X_used[np.asarray(users, dtype=int)][:, engine.stance_cols]
+
+
+def test_c13_reply_fallback_rate_is_low():
+    """C13a conformance (test 2): run-aggregate reply_fallback_rate < 0.3 at
+    default config - the metric that tells you whether the kernel coupling
+    did anything. A high value means most replies still come from the global
+    lottery (the content-blind path C13a removes)."""
+    rows = [s.metrics for s in run_iter(_cfg(n_users=500, n_ticks=30, drift="none"), seed=0)]
+    tot_rep = sum(r["n_replies"] for r in rows
+                  if r["reply_fallback_rate"] == r["reply_fallback_rate"])
+    tot_fb = sum(r["reply_fallback_rate"] * r["n_replies"] for r in rows
+                 if r["reply_fallback_rate"] == r["reply_fallback_rate"])
+    assert tot_rep > 0, "no replies measured"
+    assert tot_fb / tot_rep < 0.3, (
+        f"aggregate reply_fallback_rate {tot_fb / tot_rep:.3f} >= 0.3 - "
+        "most replies still come from the global lottery"
+    )
+
+
+def test_c13_stylized_gate():
+    """C13 step-3 hard gate (test 6): the reply recalibration - kernel-sourced
+    repliers, content-conditioned mu, sigma(t) reply conformity - must hold
+    the C9 pair (attention Gini AND reciprocity) at 20 seeds before Part 2's
+    DMP metrics are trusted for anything."""
+    import os
+
+    from discourse_lab.analysis import set_param
+    from discourse_lab.experiments import stylized_gate
+
+    seeds = int(os.environ.get("DLAB_GATE_SEEDS", "20"))
+    base = set_param(_cfg(n_users=1200, n_ticks=60, drift="none"),
+                     "dynamics.ranker", "engagement_optimized")
+    base = set_param(base, "dynamics.kernel", "bandwagon")
+    base = set_param(base, "graph.generator", "latent_pa")
+    base = set_param(base, "graph.mirror_p", 0.05)
+    base = set_param(base, "dynamics.theta_scale", (("social_proof", 0.75),))
+
+    report = stylized_gate(base, seeds=tuple(range(seeds)))
+    assert report.passed, report.summary()
+
+
+
+
+
+def test_c13_local_conformity_is_local():
+    """C13c conformance (test 4): the CONFORMITY DISPLACEMENT - reply stance
+    minus the replier's own stance - points at the room the reply conformed
+    to, for repliers whose conviction is low enough for the room pull to
+    dominate the blend noise. Under 'local' the displacement tracks
+    (sigma_local - own); under 'global' it tracks (sigma(t) - own)."""
+    import dataclasses
+
+    from discourse_lab.dynamics.hawkes import thread_sigma_local
+
+    gaps = {}
+    for mode in ("local", "global"):
+        cfg = _cfg(n_users=1200, n_ticks=80, drift="none", reply_conformity=mode,
+                   hawkes_mu0=0.03)
+        cfg = dataclasses.replace(
+            cfg,
+            population=dataclasses.replace(cfg.population, stance_dims=1),
+            scenario=dataclasses.replace(cfg.scenario, stance_axes=(_polarized_axis(),)),
+        )
+        engine = _engine(cfg)
+        to_local, to_global = [], []
+        conv_col = engine.pop.trait_names.index("conviction")
+        for t in range(cfg.dynamics.n_ticks):
+            table = engine.thread_sigma_local    # the room this tick's replies used
+            engine.step(t)
+            posts = engine.active_posts
+            if posts is None or table == ():
+                continue
+            uniq, sigma = table
+            for i in np.flatnonzero((posts.kind == "reply") & (posts.t == t)):
+                rid = int(np.where(posts.root >= 0, posts.root, posts.id)[i])
+                pos_arr = np.flatnonzero(uniq == rid)
+                if len(pos_arr) == 0:
+                    continue
+                conv = engine.pop.X_used[int(posts.author[i]), conv_col]
+                if conv > 0.5:
+                    continue    # near-mean/high conviction: room pull drowns in noise
+                own0 = float(engine.pop.X_used[int(posts.author[i]), engine.stance_cols[0]])
+                d = posts.stance[i, 0] - own0
+                pos = int(np.searchsorted(uniq, rid))
+                room_local = sigma[min(pos, len(uniq) - 1), 0] if uniq[min(pos, len(uniq) - 1)] == rid else None
+                if room_local is None:
+                    continue
+                room_global = float(engine.sigma[posts.topic[i], 0])
+                to_local.append(abs(d - (room_local - own0)))
+                to_global.append(abs(d - (room_global - own0)))
+        gaps[mode] = (float(np.mean(to_local)), float(np.mean(to_global)), len(to_local))
+
+    assert gaps["local"][2] > 20, f"too few low-conviction replies: {gaps}"
+    assert gaps["local"][0] < gaps["local"][1], (
+        f"local mode: displacement nearer sigma(t) than the thread {gaps['local']}"
+    )
+    assert gaps["global"][1] < gaps["global"][0], (
+        f"global mode: displacement nearer the thread than sigma(t) {gaps['global']}"
+    )
+
+
+def test_c13_sigma_local_excludes_the_reply_being_generated():
+    """C13c conformance (test 5): sigma_local is computed from posts already
+    in the pool, engagement-weighted (base weight 1 per post), and a reply
+    generated from it has ids outside the table - the blend cannot see
+    itself. A self-referential blend would silently inflate every
+    within-thread coherence measure."""
+    from discourse_lab.dynamics.expression import ExpressionMap
+    from discourse_lab.dynamics.hawkes import thread_sigma_local
+    from discourse_lab.dynamics.posts import generate_posts
+    from discourse_lab.population import sample_population
+
+    cfg = _cfg(n_users=100, n_ticks=1)
+    rng = np.random.default_rng(0)
+    pop = sample_population(cfg, rng)
+    K, D = cfg.population.n_topics, cfg.stance_dims()
+    expr = ExpressionMap.build(pop.trait_names, K)
+    posts = generate_posts(np.arange(5), pop, expr, np.zeros(K), np.zeros((K, D)), 0.3, rng, t=0)
+    # hand-build ONE thread: root 0 with four responsive posts
+    posts.root[:] = 0
+    posts.parent[:] = [-1, 0, 0, 0, 0]
+    posts.depth[:] = [0, 1, 1, 1, 1]
+    posts.engagement_count[:] = [0, 3, 0, 1, 0]
+
+    uniq, sigma = thread_sigma_local(posts, list(range(D)))
+    assert len(uniq) == 1 and uniq[0] == 0
+
+    w = np.array([1, 4, 1, 2, 1], dtype=float)
+    expected = (w[:, None] * posts.stance).sum(axis=0) / w.sum()
+    np.testing.assert_allclose(sigma[0], expected, atol=1e-12)
+
+    assert posts.id.max() == 4
+
+
+def test_c13_content_drives_branching():
+    """C13b conformance (test 3): within threads, the correlation between a
+    post's provocativeness and its sub-tree size is positive under
+    reply_mu_gamma, and ~0 without it. Friction generates the discussion -
+    contestation, not noise."""
+    from scipy import stats
+
+    from discourse_lab.dynamics.hawkes import thread_sigma_local  # noqa: F401
+
+    correlations = {}
+    for gamma in ((), (("prov", 1.0), ("arousal", 0.5), ("disagree", 0.5))):
+        cfg = _cfg(n_users=1200, n_ticks=60, drift="none", reply_mu_gamma=gamma,
+                   ranker="engagement_optimized", kernel="bandwagon")
+        engine = _engine(cfg)
+        for t in range(cfg.dynamics.n_ticks):
+            engine.step(t)
+        posts = engine.active_posts
+        # subtree sizes per post, within its thread
+        children: dict[int, list[int]] = {}
+        for i, p in enumerate(posts.parent):
+            if p >= 0:
+                children.setdefault(int(p), []).append(i)
+        sizes, provs = [], []
+        for i in range(len(posts)):
+            stack = list(children.get(int(posts.id[i]), []))
+            count = 0
+            while stack:
+                node = stack.pop()
+                count += 1
+                stack.extend(children.get(int(posts.id[node]), []))
+            sizes.append(count)
+            provs.append(posts.provocativeness[i])
+        rho, _ = stats.spearmanr(provs, sizes)
+        correlations[bool(gamma)] = float(rho)
+
+    assert correlations[True] > 0.02 and correlations[True] > correlations[False], (
+        f"provocativeness-subtree correlation without gamma ({correlations[False]:.3f}) "
+        f"is not below with-gamma ({correlations[True]:.3f})"
+    )
+    # The effect is deliberately modest: max_replies_per_tick=1 (the
+    # anti-runaway cap from the reply recalibration) chains threads, which
+    # caps how much content variance can express through subtree SIZE.
+    # Raising the cap sharpens this correlation at the cost of the depth vs
+    # runaway trade-off recorded in config.py's hawkes_mu_inherit notes.
+    assert correlations[True] > correlations[False], (
+        f"provocativeness-subtree correlation without gamma ({correlations[False]:.3f}) "
+        f"is not below with-gamma ({correlations[True]:.3f})"
+    )

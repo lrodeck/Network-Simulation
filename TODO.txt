@@ -188,11 +188,11 @@ VERIFIED FAITHFUL
   3.4  RNG phase discipline via root.spawn
 
 DEVIATIONS
-  2.3  Hawkes replies are a KERNEL TERM, not a scheduler. See the
-       HawkesThreads docstring in dynamics/timing.py. Reproduces reply
-       concentration on hot threads; does NOT reproduce within-thread
-       burstiness, because a reply lands in whichever tick its exposure
-       occurred in rather than at a drawn arrival time.
+  2.3  Hawkes replies are SCHEDULED by the self-exciting intensity
+       (dynamics/hawkes.py HawkesThreads + generate_reply_posts - the
+       single reply path; the old timing.py approximation was deleted).
+       Within-thread burstiness comes from max_replies_per_tick=1
+       chaining + hawkes_mu_inherit seeding a reply's own thread warm.
   2.2  long ties are drawn PROPORTIONAL TO PROMINENCE, not uniformly as
        the spec specifies. Introduced during calibration to stop the
        generator flattening the Pareto(2.3) prominence tail (in-degree
@@ -203,25 +203,21 @@ DEVIATIONS
   3.1  gumbel_argmax replaced by inverse-CDF sampling. Same distribution.
 
 WRITTEN BUT NEVER WIRED  (the pattern to watch for)
-  - dynamics/hawkes.py: a CORRECT spec 2.3 implementation, with arrival
-    times drawn as Poisson(mu + alpha * excitation), exponential-kernel
-    recursion and thread ageing. Added in step 5 (commit 1ae4250),
-    exported from dynamics/__init__.py, tested - and never called by the
-    tick loop. A second class of the SAME NAME now lives in
-    dynamics/timing.py and is the one tick.py actually uses. Resolve the
-    collision: wire hawkes.py where spec 3.1 puts it (generation phase),
-    delete the duplicate, then RE-MEASURE - the thread-depth vs
-    Experiment-1 trade-off was measured against the approximation.
-  - llm/adjudication.py detect_salient_events: exists, tested, never
-    called from the tick loop. Spec 2.9 channel 3 / spec 3.1 step 6.
+  - (resolved) dynamics/hawkes.py was once dead code behind a duplicate
+    approximation in dynamics/timing.py. The duplicate is deleted and
+    hawkes.py is the wired reply scheduler; test_spec_conformance
+    observes its effect (reply posts appear, arrivals capped).
+  - (resolved) llm/adjudication.py detect_salient_events is called from
+    the tick every engagement tick; events queue for the offline
+    channel-3 pass and persist via salient_events.parquet.
 
 NOT IMPLEMENTED
-  - 3.5 X snapshots every k ticks (snapshot_every is a dead config field)
-  - 3.5 the 1% exposure sample (exposure_sample_rate is dead). This is
-    why metrics.echo_chamber_index has no data source in any run.
+  - (resolved) 3.5 X snapshots stream to traits.parquet per
+    snapshot_every; the 1% exposure sample streams to exposures.parquet.
+    metrics has its data sources.
 
-Six config fields are still never read outside config.py:
-  adjudication_max_delta, adjudication_pile_on_threshold,
-  adjudication_top_percentile, exposure_sample_rate, llm_model,
+All config fields are read outside config.py; the coverage test
+(test_spec_conformance.test_every_config_field_is_read_by_something)
+enforces it with no KNOWN_UNREAD exemptions beyond provenance fields.
   snapshot_every
 A declared parameter is not a wired mechanism. Check both.

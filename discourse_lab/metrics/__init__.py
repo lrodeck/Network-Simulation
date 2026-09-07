@@ -13,6 +13,13 @@ from __future__ import annotations
 import numpy as np
 from scipy import stats
 
+from discourse_lab.metrics.dmp import dmp_table, dmp_thread_count
+from discourse_lab.metrics.polarization import (
+    affective_distance,
+    animus_asymmetry,
+    camps_and_bimodality,
+    ident_animus_coupling,
+)
 from discourse_lab.metrics.powerlaw import PowerLawFit, ccdf, powerlaw_alpha, powerlaw_fit
 from discourse_lab.metrics.stylized import (
     cascade_singleton_share,

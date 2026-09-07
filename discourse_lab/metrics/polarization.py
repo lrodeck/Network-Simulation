@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import numpy as np
 
-from discourse_lab.metrics import bimodality_coefficient
 from discourse_lab.metrics.stylized import _dominant_projection, stance_clusters
 
 # Sarle's bimodality coefficient for a uniform distribution; the narrator
@@ -34,6 +33,8 @@ def camps_and_bimodality(stance: np.ndarray) -> tuple[np.ndarray | None, float]:
     """`(labels, bimodality)` with labels = None when the population is
     unimodal — the shared gate every camp-conditional number must go through.
     """
+    from discourse_lab.metrics import bimodality_coefficient  # lazy: metrics/__init__ imports this module
+
     projection = _dominant_projection(stance)
     bimodality = float(bimodality_coefficient(projection))
     if not np.isfinite(bimodality) or bimodality <= CAMP_BIMODAL_THRESHOLD:
@@ -99,7 +100,7 @@ def expressed_vs_latent_bimodality(
     expressed_projection: np.ndarray, latent_projection: np.ndarray
 ) -> dict[str, float]:
     """C7's false-consensus signature: Sarle's bimodality of *posted* stances
-    against Sarle's of the population's latent stances.
+    against the population's latent stances.
 
     Under the spiral-of-silence gate, low-conviction dissenters post less, so
     the expressed distribution shifts toward the dominant camp and its
@@ -107,6 +108,8 @@ def expressed_vs_latent_bimodality(
     bimodal population means the gate never bound — the same "equal means the
     mechanism is decorative" reading the C2 selection test uses.
     """
+    from discourse_lab.metrics import bimodality_coefficient  # lazy: avoid the package-init cycle
+
     latent = float(bimodality_coefficient(np.asarray(latent_projection, dtype=float)))
     expressed = float(bimodality_coefficient(np.asarray(expressed_projection, dtype=float)))
     return {
