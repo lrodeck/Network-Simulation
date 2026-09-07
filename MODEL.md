@@ -1,0 +1,929 @@
+# The model, explained
+
+What this simulation is, what every variable means, and the mathematics behind
+each mechanism.
+
+**How to read this.** Every section starts in plain language and needs no
+mathematics. The formal statement is folded into a `▸ The math` block you can
+click open or ignore entirely — nothing later depends on having read one. Terms
+are defined where they first appear.
+
+**Contents**
+
+1. [What the model is](#1-what-the-model-is)
+2. [The people](#2-the-people)
+3. [The network](#3-the-network)
+4. [Time and who speaks](#4-time-and-who-speaks)
+5. [What a post is](#5-what-a-post-is)
+6. [Replies and threads](#6-replies-and-threads)
+7. [The feed](#7-the-feed)
+8. [The engagement kernel](#8-the-engagement-kernel-the-theory-of-why-people-react)
+9. [Cascades](#9-cascades)
+10. [The public mood](#10-the-public-mood)
+11. [Drift: how people change](#11-drift-how-people-change)
+12. [One tick, start to finish](#12-one-tick-start-to-finish)
+13. [Measuring it](#13-measuring-it)
+14. [Every knob, in one table](#14-every-knob-in-one-table)
+15. [What this model cannot tell you](#15-what-this-model-cannot-tell-you)
+
+---
+
+## 1. What the model is
+
+A simulated social-media platform. A population of users, each with a
+personality and a set of political positions, follows one another, posts,
+sees a feed, and reacts. Run it for a few hundred rounds and you can ask:
+**does this platform put people in front of those they disagree with, and who
+gets heard?**
+
+Then change one design choice — how the feed is sorted, how much random content
+is injected, how far people scroll — hold everything else fixed, and ask again.
+That comparison is the point. It is a *normative* study: not "what does social
+media do", but "which platform design choices support democratic discourse".
+
+Three things it deliberately is **not**:
+
+- **Not agentic.** No language model decides anything. Every choice a simulated
+  person makes is drawn from a probability distribution with named parameters.
+  That is what makes it fast (whole populations at once, not one agent at a
+  time), reproducible, and analysable.
+- **Not a predictor.** It will not tell you what Twitter will do next month. It
+  is a laboratory for mechanisms: it tells you what *follows* from a set of
+  assumptions you can read and argue with.
+- **Not language-driven.** Posts are numbers — a topic, a position, a level of
+  arousal. Turning those into readable text is a separate, optional pass that
+  runs *after* a simulation, never during it.
+
+### The two-layer design
+
+| | Simulation layer | Language layer |
+|---|---|---|
+| **What it handles** | who posts, who sees what, who reacts | turning a post's numbers into words |
+| **When it runs** | every tick | offline, after the fact, optional |
+| **Uses an LLM** | never | yes |
+| **Reproducible** | exactly, from a seed | not exactly |
+
+Keeping these apart is a hard rule. It is why a 500-tick run of 10,000 users
+finishes in minutes and why the same seed gives the same answer every time.
+
+---
+
+## 2. The people
+
+Every user is a **row of numbers** — roughly 35 of them, grouped into six
+blocks. Nothing else about a person exists in the model.
+
+| Block | Columns | What it captures |
+|---|---|---|
+| **personality** | openness, conscientiousness, extraversion, agreeableness, neuroticism | the Big Five; drives *how* someone writes |
+| **expression** | verbosity, formality, irony, humor, profanity, emoji | writing style |
+| **topic_affinity** | one per topic (8 by default) | how much each subject interests them |
+| **stance** | one per ideological axis (3 by default) | where they stand politically |
+| **behavior** | activity, reply_prop, repost_prop, contrarianism, credulity, prominence | how much and how they participate |
+| **meta** | plasticity, conviction, circadian_phase | how changeable they are, and when they are awake |
+
+Two of these carry most of the model's weight:
+
+- **activity** — how often someone posts. It is drawn *lognormal*, meaning a
+  few people post enormously more than everyone else. This single choice
+  produces most of what naively looks like emergent structure, which is why
+  every result is compared against a null model that keeps it (see
+  [§13](#13-measuring-it)).
+- **prominence** — how likely others are to follow you. Drawn *Pareto*: a
+  small number of accounts are far more followable than the rest.
+
+### Stance: the political space
+
+The most important design choice. A user's political position is not one number
+but **D numbers** — a point in a *D*-dimensional space. By default D = 3, and
+a loaded scenario names each axis and each of its two poles:
+
+| Axis | Negative pole | Positive pole |
+|---|---|---|
+| provision | market | state |
+| openness | closed | open |
+| institutional trust | distrust | trust |
+
+So a user at `(−1.2, +0.4, −0.8)` leans market, slightly open, distrusting.
+"Agreement" between two people is how *close together* they are in this space.
+
+> **Why D matters more than it looks.** At D = 1 there is no orientation for
+> homophily to be homophilous *in* — everyone is on a single left–right line and
+> the geometry of the model is genuinely different, not just smaller. Loading a
+> scenario overrides the configured D, and the library refuses to do that
+> silently for exactly this reason.
+
+<details>
+<summary><b>▸ The math: how the population is drawn</b></summary>
+
+Each column *j* has a **target marginal distribution** — the shape that column
+should have across the population (lognormal for activity, Pareto for
+prominence, Beta(2,2) for most bounded traits, Normal for personality and
+stance).
+
+Drawing them independently would make everyone's traits uncorrelated, which is
+wrong: agreeable people really are less provocative. So the population is drawn
+with a **Gaussian copula**:
+
+1. Draw `Z ~ N(0, Σ)` — a multivariate normal with the desired correlation
+   structure Σ.
+2. Map each column through its own normal CDF to a uniform: `U_j = Φ(Z_j)`.
+3. Map that uniform through the target marginal's inverse CDF:
+   `X_j = F_j⁻¹(U_j)`.
+
+Step 3 gives each column exactly the marginal you asked for; step 1 gives the
+joint structure. Σ is assembled from `correlation_pairs` and projected to the
+nearest positive-semidefinite matrix (Higham's algorithm) if the requested
+correlations are jointly impossible.
+
+On top of this sits an **archetype mixture** — named groups (lurker, poster,
+firebrand, institution, newcomer) with per-trait offsets, so the population is
+drawn from a mixture rather than a single blob.
+
+> ⚠️ **The two mechanisms compose additively and neither knows about the
+> other.** An archetype that shifts two traits together already correlates
+> them. Asking for `activity × reply_prop = 0.30` with the shipped archetypes on
+> yields **0.49**. Control a pair with one mechanism or the other, not both.
+> `sample_population` warns when you do.
+
+**Two coordinate systems.** Each trait is stored twice:
+
+- `X_used` — the constrained value the model reads (a probability in [0,1], a
+  positive rate).
+- `X_stored` — an unconstrained value, related by a **link function**
+  (`logit` for [0,1], `log` for positives, `identity` for reals).
+
+Drift ([§11](#11-drift-how-people-change)) operates on `X_stored` and is plain
+addition there, so it can never push a probability past 1 or a rate below 0.
+
+</details>
+
+---
+
+## 3. The network
+
+Who follows whom. Two forces decide it, and they are the two forces that
+actually structure real follow graphs:
+
+- **Homophily** — you are more likely to follow someone close to you in
+  stance *and* topic interest.
+- **Prominence** — you are more likely to follow someone many others follow.
+
+Plus a third that matters more than its size suggests: a fraction of ties
+(10% by default) are drawn **completely at random**. Without these, the network
+is a set of sealed neighbourhoods and nothing ever spreads beyond one. They are
+the shortcuts.
+
+The graph is directed: `u → v` means *u follows v*, so v's posts reach u.
+
+<details>
+<summary><b>▸ The math: the latent-space generator</b></summary>
+
+Place every user at the point given by their stance and topic-affinity columns
+stacked together. Distance is ordinary Euclidean distance in that space:
+
+```
+d(u, v) = ‖ [s_u ; a_u] − [s_v ; a_v] ‖₂
+```
+
+The probability of a follow edge is a logistic function of distance and the
+target's prominence:
+
+```
+logit P(u → v) = α − β · d(u, v) + γ · log(1 + prominence_v)
+```
+
+- **β** (`homophily_beta`, 0.35) — how strongly closeness matters.
+- **γ** (`prominence_gamma`, 0.6) — how strongly popularity matters.
+- **α** — not a free parameter. It is solved for by bisection so the finished
+  graph hits the target `mean_degree` (40 by default).
+
+Candidates come from a *k*-nearest-neighbour search (`knn_k = 60`) rather than
+all N² pairs, which is the only tractable option past ~20k users. Long ties are
+then added uniformly at random, and α aims at `mean_degree / (1 + long_tie_fraction)`
+so the total lands on target rather than 10% over it.
+
+> ⚠️ **`knn_k` must exceed `mean_degree`.** If the candidate pool is no larger
+> than the degree drawn from it, every candidate is taken and β and γ have
+> nothing left to select among — the generator silently degrades to plain kNN.
+> Measured at `knn_k = 40, mean_degree = 40`, sweeping β from 0.35 to 1.5
+> changed clustering by *exactly nothing*. The config now raises rather than
+> letting this happen.
+
+**A known ceiling, recorded rather than hidden.** `prominence` enters as
+Pareto(2.30) with a max/mean of 303×, but realised in-degree comes out far
+flatter (tail exponent ≈ 7.9). Within the kNN pool a user can only be followed
+by the ~`knn_k` users whose neighbourhood contains them; the γ term reorders
+those candidates but cannot lift anyone out of that geometric ceiling. Since
+engagement per post cannot be more skewed than the audience sizes it is drawn
+over, this is why the attention-Gini target is missed. See
+[`FINDINGS.md`](FINDINGS.md).
+
+**Alternative generators** (`cfg.graph.generator`): `latent_pa` (long ties drawn
+proportional to prominence, lifting the tail), `sbm` (stochastic block model),
+`configuration` (degree-preserving null), `barabasi` (pure preferential
+attachment). Each is a useful null for isolating what homophily itself
+contributes.
+
+</details>
+
+---
+
+## 4. Time and who speaks
+
+Time advances in **ticks**, one hour each (24 per day). On every tick each user
+may post, with a probability set by three multiplied factors:
+
+1. **their activity** — the lognormal trait; some people are simply louder;
+2. **the hour** — a two-peak daily rhythm, busy around 9am and 7pm, and each
+   user has their own phase offset, so the population is not synchronised;
+3. **fatigue** — posting a burst suppresses your rate next tick, and it relaxes
+   back over time.
+
+<details>
+<summary><b>▸ The math: posting rate</b></summary>
+
+```
+λ_u(t)      = activity_u · posts_per_tick_rate · circ(t − φ_u) · fatigue_u(t)
+n_posts_u(t) ~ Poisson(λ_u(t))
+```
+
+`circ` is a sum of two von Mises bumps over the day (peaks at 0.38 and 0.79 of
+the day, concentration κ = 6), **mean-normalised to 1** so it redistributes
+activity across the day without changing anyone's long-run total.
+
+`posts_per_tick_rate` (0.02) is the rate at `activity = 1`. It is a separate
+scalar from the activity trait for a reason: without it the raw trait was the
+rate, giving ~2 posts/user/tick instead of ~0.04, and averaging many Poisson
+draws per user per tick pulls everyone toward the mean — which destroys exactly
+the heterogeneity the lognormal trait exists to create.
+
+Fatigue: `f ← decay·f + (1−decay)`, then `f ← f / (1 + n_posts)`.
+
+</details>
+
+---
+
+## 5. What a post is
+
+A post is also just numbers:
+
+| Field | Meaning |
+|---|---|
+| `topic` | which of the K subjects (an integer) |
+| `stance` | a point in the same D-dimensional political space as users |
+| `arousal` | how emotionally charged |
+| `valence` | positive or negative in tone |
+| `provocativeness` | how much it invites a fight |
+| `novelty` | how new the claim is |
+| `specificity` | how concrete versus vague |
+| `quality` | epistemic merit |
+| `length` | how long |
+| metadata | `id`, `t`, `author`, `parent`, `root`, `depth`, `kind`, `engagement_count` |
+
+**Choosing a topic** blends the author's own interests with what everyone is
+currently talking about. **Choosing a stance** blends the author's own position
+with the position currently dominant on that topic — weighted by their
+`conviction`. Someone with high conviction posts their own view; someone with
+low conviction echoes the room.
+
+**The style dimensions** come from a hand-written table of individually
+arguable claims: high neuroticism raises arousal; low agreeableness raises
+provocativeness; high conscientiousness raises quality and specificity.
+
+<details>
+<summary><b>▸ The math: post generation</b></summary>
+
+**Topic** — a softmax over the author's affinities, tilted by the public agenda
+`s(t)`:
+
+```
+P(topic = k) ∝ exp( a_u[k] + η · s(t)[k] )
+```
+
+`η` is `trend_eta` (0.3): how susceptible people are to what is trending.
+
+**Stance** — a convex combination of the author's own position and the topic's
+currently dominant position `σ(t)[k]`, with noise:
+
+```
+stance_p = conviction_u · s_u + (1 − conviction_u) · σ(t)[topic_p] + ε
+```
+
+**Style dimensions** — a linear map from author traits, the public mood and the
+topic:
+
+```
+d_p = A · x_u + B · s(t) + C · onehot(topic_p) + ε_d
+```
+
+`A` is the single most important authored object in the system. It is a sparse
+named-entry table, never a dense matrix, so every claim it makes is legible and
+individually editable:
+
+| post dim | trait | weight |
+|---|---|---|
+| arousal | neuroticism | +0.6 |
+| arousal | extraversion | +0.3 |
+| valence | neuroticism | −0.4 |
+| provocativeness | agreeableness | −0.6 |
+| provocativeness | contrarianism | +0.7 |
+| novelty | openness | +0.5 |
+| quality | conscientiousness | +0.4 |
+| quality | credulity | −0.3 |
+| length | verbosity | +0.8 |
+
+(Abridged; unlisted pairs are zero.) Post dims are stored unconstrained with a
+link per dim, the same discipline as user traits.
+
+> ⚠️ **`quality` is generated from author traits.** So `corr(quality,
+> engagement)` partly measures the data-generating process rather than the
+> platform. It is interpretable **only** as a difference from the matched null.
+
+</details>
+
+---
+
+## 6. Replies and threads
+
+Replies are **not** produced by people browsing their feed. They come from a
+separate process, because real conversations are bursty: a post gets its
+comments in a clump, not spread evenly, and each reply makes the next one more
+likely.
+
+This is a **self-exciting process** (a Hawkes process). Each open thread carries
+a running "heat" that jumps when a reply arrives and decays exponentially
+otherwise.
+
+Two dials govern it, and they interact in a way worth understanding:
+
+- **`hawkes_ratio`** (0.6) — how much each reply excites the next *within* a
+  thread. Must stay below 1 or threads never stop.
+- **`hawkes_mu_inherit`** (1.0) — how much heat a reply's *own* new thread
+  inherits from the thread it landed in. At 0 a reply inside a raging argument
+  is as cold as a fresh post, so depth cannot compound and threads stay flat.
+
+<details>
+<summary><b>▸ The math: the Hawkes intensity</b></summary>
+
+```
+λ_p(t) = μ_p + Σ_{t_i < t} α · exp(−β · (t − t_i))
+```
+
+with `α = hawkes_ratio · β`, so the branching ratio `α/β = hawkes_ratio`.
+Implemented by the standard exponential-kernel recursion — the sum collapses to
+one decaying state variable per thread, so cost per tick is O(open threads),
+not O(events).
+
+**A stability subtlety.** `hawkes_ratio < 1` bounds excitation *within* a
+thread. `hawkes_mu_inherit` adds a second channel *across* generations, so
+`α/β < 1` alone no longer guarantees stability. Measured at
+`hawkes_ratio = 0.6`: inherit 0.16 gives 2.4 replies per post; **inherit 0.20
+gives 473**. The transition is sharp, so the tick warns rather than letting a
+run silently saturate.
+
+Inherited heat is seeded into `excitation` (which decays), never into `μ`
+(which does not) — otherwise a thread would carry a permanent inherited
+baseline.
+
+**Why the default is not depth-optimal.** Deep threads dilute the thing the
+experiments measure. Hawkes replies are not kernel-driven — a reply carries the
+replier's own stance — so the more of the corpus is replies, the less of what a
+user consumes was selected by the engagement kernel, and the null comparison
+loses statistical power. Measured, the homophily agreement effect against its
+matched null:
+
+| `hawkes_mu_inherit` | mean depth | effect *t* |
+|---|---|---|
+| 0.6 | 1.16 | +3.77 |
+| **1.0 (default)** | **~1.2** | **+2.46** |
+| 1.8 | 1.43 | +1.93 |
+| 2.65 | 2.30 | +0.74 (noise) |
+
+Depth 1.5–3 is reachable and stable at inherit ≥ 2.2. It is an **experimental
+condition to select deliberately**, not a default, because setting it costs the
+null comparison its resolution.
+
+</details>
+
+---
+
+## 7. The feed
+
+Three steps between a post existing and someone seeing it.
+
+**Step 1 — candidates.** A post goes to its author's followers, plus
+`inject_k` randomly chosen non-followers ("recommended for you").
+
+> This is why the "algorithmic share" of exposure is undefined at
+> `inject_k = 0`: **injection is the only source of non-follower candidates**,
+> so no ranker setting can create one. That is the feed's construction, not a
+> measurement failure.
+
+**Step 2 — ranking.** Each candidate gets a score; higher sorts first. The
+ranker *is* the platform's central design choice:
+
+| Ranker | Sorts by | In one line |
+|---|---|---|
+| `chronological` | post time | the reverse-chronological feed |
+| `random` | noise | a control |
+| `popularity` | engagement so far | pure bandwagon |
+| `affinity` | topic interest + agreement | filter-bubble maximal |
+| `engagement_optimized` | affinity + arousal + social proof | a stand-in for a trained propensity model |
+
+**Step 3 — attention.** Nobody sees everything. Two caps apply: a personal
+budget of items per tick, and a decay in how likely you are to see something the
+further down the feed it sits.
+
+> ⚠️ **These two caps compose, and the softer one binds first.** Position decay
+> alone passes 6.5 items. A budget above that is not a constraint at all — at
+> the default of 30 it removes 1% of what decay already let through, and at 60,
+> **0.01%**. Sweeping a budget across 30/60/120 compares three identical
+> platforms. This cost a full 10-seed study before it was caught.
+
+<details>
+<summary><b>▸ The math: candidates, ranking, attention</b></summary>
+
+**Candidates** — `C_p = followers(author_p) ∪ inject(p, k_inj)`, vectorised as
+a ragged gather over the graph's compressed-column structure rather than a
+per-user Python loop. A `fanout_cap` (400) bounds how many followers one post
+reaches per tick.
+
+**Affinity ranker** — `score = a_u[topic_p] − ‖s_u − s_p‖`.
+**Engagement-optimized** — that, plus `arousal_p + log(1 + engagement_p)`.
+
+**Attention:**
+
+```
+B_u          ~ Poisson(attention_budget · activity_u)
+P(see at rank r) = exp(−r / τ_pos) · ρ^depth
+```
+
+An item is seen if it is within the user's budget **and** survives the
+visibility draw. `ρ^depth` (`cascade_depth_decay`, 0.7) additionally shrinks
+the reach of a post far from its cascade root.
+
+Measured share of position-decay survivors that the budget *additionally*
+removes, at τ_pos = 6:
+
+| budget | 3 | 10 | 15 | 30 | 60 | 120 |
+|---|---|---|---|---|---|---|
+| binds on | 63% | 22% | 10.0% | 1.00% | 0.01% | 0.00% |
+
+(Position decay alone passes `Σ_r exp(−r/τ) = 6.51` items.)
+
+Vary `tau_position` to ration attention, or take the budget below ~15 where it
+starts to bite. `tests/test_attention_budget_binds.py` pins this.
+
+</details>
+
+---
+
+## 8. The engagement kernel: the theory of *why* people react
+
+A user is shown a post. They do one of six things: **skip, like, reply, repost,
+quote, report**. The rule that decides is called the **kernel**, and it is where
+a theory of online behaviour gets written down.
+
+Each candidate action accumulates a **utility** from the features of the
+situation — how much the user agrees, how arousing the post is, how popular it
+already is — and the action taken is drawn from those utilities. Skipping is the
+default; a feature has to earn a reaction.
+
+**Five kernels ship, and swapping between them is swapping theories:**
+
+| Kernel | The claim it encodes |
+|---|---|
+| `homophily` | people engage with what they agree with |
+| `outrage` | people engage with what angers them, more so if contrarian |
+| `bandwagon` | people engage with what is already popular |
+| `epistemic` | people engage with what is true and new |
+| `null` | people engage at a fixed base rate, blind to content |
+
+`null` is not a throwaway. It is the **control**: same population, same graph,
+same activity, no content sensitivity. Every reported effect is measured against
+it, because heavy-tailed activity alone manufactures most of what naively looks
+like emergent structure.
+
+<details>
+<summary><b>▸ The math: multinomial logit</b></summary>
+
+```
+U_a(u, p) = θ_aᵀ · φ(x_u, d_p, ctx)      a ∈ {like, reply, repost, quote, report}
+U_skip    = 0
+P(a | u, p) = exp(U_a) / (1 + Σ_a' exp(U_a'))
+```
+
+`skip` is the **reference category**, fixed at zero utility. Only differences
+from skipping are identified, which is what makes the θ interpretable.
+
+**The feature map φ** is the theory; θ is its parameters. Swapping theories
+means swapping φ and θ, and nothing else in the codebase changes.
+
+| Feature | Definition |
+|---|---|
+| `affinity` | `a_u[topic_p]` |
+| `agreement` | `−‖s_u − s_p‖ / √D` |
+| `arousal`, `novelty`, `specificity`, `quality` | the post's own dims |
+| `arousal_x_neu` | arousal × neuroticism |
+| `provoc_x_con` | provocativeness × contrarianism |
+| `disagree_x_con` | `−agreement × contrarianism` |
+| `prominence` | `log(1 + prominence_author)` |
+| `social_proof` | `log(1 + engagement_count_p)` |
+| `tie_strength` | 1 if the viewer follows the author |
+| `recency` | `−(t − t_p)` |
+| `credulity_x_q` | `credulity_u × (1 − specificity_p)` |
+
+`disagree_x_con` exists because a kernel linear in a single global θ cannot
+express "disagreement raises engagement, *more so for contrarian users*" from
+`agreement` alone. Outrage needs that interaction.
+
+**Per-action intercepts are load-bearing.** Without them every action starts at
+U = 0, so `P(skip) = 1/6 = 17%` and the simulation engages on 83% of exposures
+*no matter what the kernel is* — even `null`. Real platforms sit at a few
+percent, and the difference propagates everywhere: an 80% engagement rate drove
+the cascade reproduction number to ~16 against a requirement of < 1.
+
+| action | intercept |
+|---|---|
+| like | −3.5 |
+| repost | −7.0 |
+| quote | −8.0 |
+| report | −8.0 |
+| reply | −8.5 |
+
+Levels are set so a featureless exposure engages ~4% of the time, with roughly
+65% like / 14% repost / 14% reply / 5% quote / <1% report.
+
+**Why `agreement` is divided by √D.** The raw Euclidean distance has a mean
+that grows like √D (−1.13 at D=1, −2.26 at D=3, −3.01 at D=5) while its spread
+barely moves. Raising D would silently subtract a constant from every utility —
+a dimensionality-dependent intercept shift wearing a feature's clothes. Dividing
+by √D keeps the feature's location and scale fixed, so a θ authored at one
+dimensionality means the same thing at another. (`agreement_metric = "euclidean"`
+restores the raw distance if you want it.)
+
+</details>
+
+---
+
+## 9. Cascades
+
+A repost or quote creates a **new post** that inherits the original's root and
+re-enters the feed with the resharer as author. That is how something spreads
+beyond its author's followers.
+
+Reposts are verbatim; quotes move the stance 40% of the way toward the quoter's
+own position, because a quote carries the quoter's framing.
+
+The system is tuned to be **subcritical with a heavy tail**: the average cascade
+dies out, but the tail crosses into virality often enough to reproduce observed
+cascade-size distributions. Over 90% of posts get no reshare at all.
+
+<details>
+<summary><b>▸ The math: the branching number</b></summary>
+
+```
+R = E[# reposts per exposure] · E[audience per repost]
+```
+
+Calibrated so `E[R] < 1` (cascades usually die) with `Var[R]` large enough that
+the tail crosses 1. `r_eff` is logged every tick as a diagnostic. Hard caps
+(`max_cascade_depth = 25`, `max_cascade_size = 1000`) raise a **warning** rather
+than silently truncating — a truncated cascade that says nothing is a corrupted
+measurement.
+
+Note that thread depth comes from the reply process ([§6](#6-replies-and-threads)),
+not from reposts. The two are separate branching processes with separate
+critical points, and spec §5.1 requires both `>90% singletons` **and**
+`depth 1.5–3` — which can only both hold if roots branch rarely while threads
+already started continue often. A single flat branching probability *p* gives
+depth `1/(1−p)`, which is 1.1 at p = 0.09 no matter how anything else is set.
+
+</details>
+
+---
+
+## 10. The public mood
+
+The platform has a memory of its own, independent of any user. Two quantities
+carry it:
+
+- **`s(t)`** — the **agenda**: how much attention each topic is getting.
+- **`σ(t)`** — the **dominant position**: for each topic, the stance currently
+  winning on it.
+
+Both feed back into what people post ([§5](#5-what-a-post-is)) and are updated
+by **engagement, not post count**. That asymmetry is the point: it is what lets
+a small number of highly-engaged users capture the agenda.
+
+<details>
+<summary><b>▸ The math</b></summary>
+
+```
+s(t+1)    = ρ_s · s(t) + (1 − ρ_s) · normalize( Σ_p w_p · onehot(topic_p) )
+σ(t+1)[k] = ρ_σ · σ(t)[k] + (1 − ρ_σ) · weighted_mean( stance_p : topic_p = k )
+w_p       = engagement_count_p
+```
+
+`ρ_s = ρ_σ = 0.9`: exponential decay with a memory of roughly ten ticks. The
+decay runs **unconditionally**, even on a tick that produced no engagement, so a
+quiet period lets attention fade rather than freezing the agenda.
+
+</details>
+
+---
+
+## 11. Drift: how people change
+
+Users are not fixed. Two channels move them, plus a spring that pulls them back.
+
+1. **Reinforcement** — you drift toward whatever style got you *more engagement
+   than you expected*. Not more engagement in absolute terms: more than your own
+   running baseline, so a big account is not permanently reinforced for being
+   big. This channel moves expression traits only.
+2. **Social influence** — your stance drifts toward the content you consumed and
+   did not reject. Liking and reposting pull you toward a post; replying pulls
+   slightly away; reporting pushes away hard.
+3. **Mean reversion** — every trait is pulled back toward a slow-moving personal
+   baseline, at a rate that differs by block: style is fashion and reverts fast;
+   stance reverts slowly; personality effectively not at all.
+
+Drift gains **ramp linearly from zero** over the first 50 ticks, so switching it
+on does not jolt the population.
+
+<details>
+<summary><b>▸ The math</b></summary>
+
+All of it operates on `X_stored` (unconstrained), so it is plain addition and
+can never leave the feasible set.
+
+**Channel 1 — reinforcement.** With surprise `r_p = engagement_p −
+E[engagement | author_p]` (the expectation being a per-user EMA):
+
+```
+residual = actual_style_stored − A · x_stored[author]
+Δ_expr   = lr · mean_over_posts( r_p · (residual · A_expr) )
+```
+
+`A_exprᵀ · residual` is exactly the gradient of the linear expression map — the
+direction in trait space that would have produced more of whatever got engaged
+with. **Averaged**, not summed, over an author's posts this tick, so the step
+size is set by `drift_lr` rather than incidentally scaling with how often
+someone happened to post.
+
+**Channel 2 — social influence.**
+
+```
+Δ_stance = lr_social · mean_over_exposures( w_action · (s_p − s_u) )
+```
+
+| action | like | repost | quote | reply | report | skip |
+|---|---|---|---|---|---|---|
+| weight | +1.0 | +1.5 | +0.5 | −0.5 | −2.0 | 0 |
+
+**Mean reversion** — Ornstein–Uhlenbeck toward a slow baseline `Bs`, itself
+initialised to the population's own starting traits (not zero):
+
+| block | personality | expression | topic_affinity | behavior | meta | stance |
+|---|---|---|---|---|---|---|
+| rate *k* | 0.00 | 0.05 | 0.02 | 0.01 | 0.01 | 0.005 |
+
+Plus Gaussian noise at `noise_sigma = 0.002`.
+
+**Channel 3** (LLM adjudication of a salient event) is **queued, never
+executed inside the tick** — events are logged for an offline pass. No network
+call ever happens inside the loop.
+
+</details>
+
+---
+
+## 12. One tick, start to finish
+
+```
+ 1. decay the public mood                    s, σ ← ρ·(…)
+ 2. draw who posts               → new posts (topic, stance, style)
+ 3. draw replies from thread heat → reply posts        [Hawkes, §6]
+ 4. build each user's candidate set   followers ∪ injected
+ 5. rank the candidates                                [the ranker, §7]
+ 6. cap by attention budget and position decay → exposures
+ 7. draw an action per exposure                        [the kernel, §8]
+ 8. reposts/quotes create derived posts                [cascades, §9]
+ 9. update the public mood from this tick's engagement
+10. drift traits                                       [§11]
+11. queue salient events for the offline language pass
+12. retire posts older than post_lifetime
+```
+
+Steps 9–11 run **outside** the "was anyone exposed?" guard: a quiet tick still
+decays the agenda and still drifts.
+
+Every phase draws from its **own named random stream** (`timing`, `generation`,
+`exposure`, `reaction`, `population`), derived from the single seed. Changing
+the number of exposures therefore does not shift the timing draws, so one
+mechanism can be altered without reshuffling every other.
+
+---
+
+## 13. Measuring it
+
+### Validity gate: does it behave like a platform?
+
+Eight **stylized facts** with target ranges taken from empirical literature.
+These are a *gate*, not a result — they say whether the model behaves enough
+like a platform to reason from.
+
+| Fact | Target |
+|---|---|
+| Engagement per post (power-law α) | 2 – 3 |
+| Cascade size (share of singletons) | ≥ 90% |
+| Thread depth (mean, branched) | 1.5 – 3 |
+| Attention Gini (lifetime, per post) | 0.80 – 0.95 |
+| Posting volume Gini | 0.70 – 0.90 |
+| Reciprocity | 0.20 – 0.40 |
+| Clustering vs degree-matched null | ≥ 3× |
+| Inter-cluster interaction rate | ≤ 0.33 |
+
+Two are currently missed, for a reason that is understood and documented rather
+than tuned around: attention concentration is capped by the graph generator, not
+by the kernel ([§3](#3-the-network)).
+
+### The result: five normative outcomes
+
+| Outcome | The question |
+|---|---|
+| `cross_cutting_exposure` | are people put in front of the other side? |
+| `voice_inequality` | who gets heard — including whether the minority camp is heard at all? |
+| `epistemic_alignment` | does merit predict attention? |
+| `hostility_given_contact` | when camps do meet, how badly does it go? |
+| `feed_narrowing` | how much narrower was the feed than the world it was drawn from? |
+
+`hostility_given_contact` deliberately returns the **contact rate and the
+hostility rate together**, because a platform that eliminates cross-camp contact
+trivially eliminates cross-camp hostility, and reporting only the second would
+score that as a success.
+
+### The matched null, and two contrasts that are easy to confuse
+
+Every cell is run twice: once with the real kernel, once with `kernel="null"`,
+**same population, same graph, same seed**. That gives two different numbers:
+
+- **`lever_effect`** — the outcome minus the outcome at the lever's *reference*
+  value. *What moving this dial does.* **This is the headline.**
+- **`kernel_delta`** — model minus its matched null at the *same* lever setting.
+  *Was this mediated by the engagement kernel?* Near zero for feed levers **by
+  construction**, because the null holds the lever fixed too.
+
+Reporting `kernel_delta` as "the effect of the ranker" is the easy mistake and
+reads as ≈ 0 for every feed lever.
+
+### One lever at a time is a screen, not a study
+
+The sweep varies one design choice at a time, which means every lever is
+evaluated **at the base configuration**. A flat row means "flat there" — a
+weaker claim than "this does not matter", and the difference is not academic:
+`tau_position` reads flat in the screen and moves cross-camp exposure by
+**+0.088 under `affinity` against −0.004 under `chronological`**.
+
+`build_interventions(..., across=)` crosses each lever against a background
+factor and `interaction_table` reports the **swing** across backgrounds. Results
+are in [`FINDINGS.md`](FINDINGS.md).
+
+### Reproducibility
+
+A run is identified by the **structural hash of its config** plus its seed, and
+cached at `dlab/runs/{hash}/{seed}/`. The hash is computed from canonical JSON —
+sorted keys, fixed float formatting — so it depends on exactly the values that
+determine the artifact and nothing else. Change any config field and you get a
+different run; change none and `cached_run` returns the existing one.
+
+---
+
+## 14. Every knob, in one table
+
+### Population
+
+| Field | Default | What it does |
+|---|---|---|
+| `n_users` | 10000 | population size |
+| `n_topics` | 8 | number of subjects |
+| `stance_dims` | 3 | *D*, the dimensionality of the political space |
+| `activity_sigma` | 1.8 | spread of posting rates. **This parameter *is* the posting-Gini target** — Gini of a lognormal is `erf(σ/2)` in closed form |
+| `pareto_alpha` | 2.3 | tail of the prominence distribution |
+| `topic_logit_sigma` | 1.0 | spread of topic interest |
+| `archetype_weights` / `_offsets` | library defaults | the named groups and their trait shifts |
+| `correlation_pairs` | () | requested trait correlations — **adds to** what archetypes already induce |
+
+### Graph
+
+| Field | Default | What it does |
+|---|---|---|
+| `generator` | `latent_space` | which model builds the network |
+| `mean_degree` | 40 | average number followed |
+| `homophily_beta` | 0.35 | strength of "follow people like me" |
+| `prominence_gamma` | 0.6 | strength of "follow people others follow" |
+| `long_tie_fraction` | 0.1 | share of ties drawn at random — the shortcuts |
+| `knn_k` | 60 | candidate pool size; **must exceed `mean_degree`** |
+| `mirror_p` | 0.02 | probability each edge is mirrored — *not* the measured reciprocity |
+| `fanout_cap` | 400 | max followers one post reaches per tick |
+
+### Dynamics — timing and volume
+
+| Field | Default | What it does |
+|---|---|---|
+| `n_ticks` | 500 | how long to run |
+| `ticks_per_day` | 24 | ticks per day; sets the circadian period |
+| `posts_per_tick_rate` | 0.02 | posting rate at `activity = 1` |
+| `fatigue_decay` | 0.9 | how fast a posting burst wears off |
+| `post_lifetime` | 5 | ticks a post stays in feeds |
+
+### Dynamics — the feed
+
+| Field | Default | What it does |
+|---|---|---|
+| `ranker` | `chronological` | **the central design lever** |
+| `inject_k` | 0 | random non-followers reached per post |
+| `attention_budget` | 30 | items per tick — **inert above ~15; see §7** |
+| `tau_position` | 6 | how far down the feed people read — **the lever that actually rations attention** |
+
+### Dynamics — engagement
+
+| Field | Default | What it does |
+|---|---|---|
+| `kernel` | `homophily` | **the theory of engagement** |
+| `kernel_theta` | () | override the kernel's weights |
+| `agreement_metric` | `rms` | divide distance by √D so θ transfers across D |
+
+### Dynamics — replies and cascades
+
+| Field | Default | What it does |
+|---|---|---|
+| `hawkes_mu0` | 0.004 | baseline reply intensity |
+| `hawkes_ratio` | 0.6 | α/β; **must stay < 1** |
+| `hawkes_beta` | 1.5 | how fast thread heat decays |
+| `hawkes_mu_inherit` | 1.0 | heat a reply's own thread inherits — **the depth dial; see §6** |
+| `max_replies_per_tick` | 1 | 1 = chains not bushes; 0 = uncapped |
+| `max_thread_age` | 15 | ticks a thread stays open |
+| `cascade_depth_decay` | 0.7 | ρ in `ρ^depth` reach decay |
+| `max_cascade_depth` / `_size` | 25 / 1000 | caps that **warn**, not truncate silently |
+
+### Dynamics — mood and drift
+
+| Field | Default | What it does |
+|---|---|---|
+| `trend_eta` | 0.3 | susceptibility to what is trending |
+| `rho_s` / `rho_sigma` | 0.9 | memory of the agenda / dominant stance |
+| `drift` | `full` | `none` \| `social` \| `full` |
+| `drift_lr` / `drift_lr_social` | 0.02 / 0.01 | step sizes for the two channels |
+| `drift_ramp_ticks` | 50 | linear ramp-in |
+| `ou_k` | () | per-block mean-reversion overrides |
+| `noise_sigma` | 0.002 | random walk on traits |
+
+### Recording
+
+| Field | Default | What it does |
+|---|---|---|
+| `snapshot_every` | 1 | ticks between trait snapshots |
+| `exposure_sample_rate` | 0.01 | share of exposures logged — exposures outnumber engagements ~50:1, so only a sample is kept |
+
+> ⚠️ At 1%, a user contributes ~2 rows per run, so **only population means are
+> interpretable**, never a per-user value. Raising it changes the config hash and
+> forks the cache — pick one rate up front and use it everywhere.
+
+---
+
+## 15. What this model cannot tell you
+
+Stated plainly, because a model's limits are part of its specification.
+
+- **No deliberation, no persuasion by reason.** Drift is social influence and
+  reinforcement only. Nobody is argued out of a position by a better argument.
+  The model speaks to *structural preconditions* for democratic discourse — who
+  is exposed to whom, who is heard — **not** to deliberative quality.
+- **`quality` is generated, not evaluated.** It comes from author traits, so
+  `epistemic_alignment` is interpretable only as a difference from the null.
+- **Camps are a statistical split, not groups.** "Camp" is the sign of a user's
+  position on the dominant axis of stance variation. It is defined even when the
+  population is a single unimodal blob, where it is noise. The narrator gates
+  camp language on a bimodality test (Sarle's coefficient > 5/9); analyses using
+  camps should say whether the population is actually bimodal.
+- **Attention concentration is capped by the graph generator.** Two of the eight
+  stylized facts are missed for this reason. It is a known, located limitation,
+  not a mystery.
+- **The screen is not the study.** A lever that reads flat has been shown flat
+  *at the base configuration*. See [§13](#13-measuring-it).
+- **It is not calibrated to any specific platform.** The targets come from
+  general empirical literature. Absolute numbers are not predictions; the
+  *comparisons between configurations* are the output.
+
+---
+
+## Where to go next
+
+| | |
+|---|---|
+| [`FINDINGS.md`](FINDINGS.md) | measured results and negative results |
+| [`notebooks/demo.ipynb`](notebooks/demo.ipynb) | the API, runnable, in build order |
+| [`discourse-lab-spec.md`](discourse-lab-spec.md) | the formal specification |
+| [`discourse-lab-dev.md`](discourse-lab-dev.md) | design decisions and their rationale |

@@ -26,11 +26,12 @@ exposure_sample_rate=0.10, 4 seeds, cross-camp exposure share, chance = 0.50):
     attention_budget was swept at 15/30/60 and moved nothing on any of the 13
                      outcome columns over 10 seeds. That was a dead-zone sweep,
                      not an inert lever: visibility decays as exp(-r/tau_pos)
-                     with tau_pos = 6, so the budget cap only binds on 10% of
-                     surviving items at b=15, 1.2% at b=30 and 0.0% at b=60 --
-                     30 and 60 are the same platform. Re-ranged to 30/10/3,
-                     where it binds on 1%/25%/60%, and `tau_position` added
-                     alongside it as the knob that actually rations attention.
+                     with tau_pos = 6, which passes 6.51 items on its own, so
+                     the budget cap only binds on 10% of surviving items at
+                     b=15, 1.0% at b=30 and 0.01% at b=60 -- 30 and 60 are the
+                     same platform. Re-ranged to 30/10/3, where it binds on
+                     1%/22%/63%, and `tau_position` added alongside it as the
+                     knob that actually rations attention.
     homophily_beta   0.35 -> 1.5 moves it 0.288 -> 0.280. Effectively inert, as
                      it is for clustering; the knob named "homophily strength"
                      is not the one that controls homophily.
