@@ -183,4 +183,5 @@ cython_debug/
 # dlab workspace: generated runs, figures, tables
 dlab/
 notebooks/dlab_demo/
+notebooks/run/
 
