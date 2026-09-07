@@ -26,6 +26,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from discourse_lab.analysis import MIN_SEEDS
+
 
 @dataclass
 class SeparabilityReport:
@@ -96,6 +98,13 @@ def separability(
     """
     runs_a = np.asarray(runs_a, dtype=float)
     runs_b = np.asarray(runs_b, dtype=float)
+    if len(runs_a) < MIN_SEEDS or len(runs_b) < MIN_SEEDS:
+        raise ValueError(
+            f"separability needs at least {MIN_SEEDS} seeds per condition (spec §4.4) "
+            f"to cross-validate over {folds} folds without a fold landing single-class; "
+            f"got {len(runs_a)} and {len(runs_b)}. A returned AUC==nan here is not a "
+            "non-identification result — it means the folds could not be evaluated."
+        )
     X = np.vstack([runs_a, runs_b])
     y = np.concatenate([np.zeros(len(runs_a)), np.ones(len(runs_b))])
     X, mean, sd = _standardize(X)

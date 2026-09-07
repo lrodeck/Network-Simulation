@@ -351,6 +351,29 @@ def test_c1_affect_polarization_metrics_are_nan_without_camps():
     assert np.isnan(animus_asymmetry(np.random.random(2000), labels))
 
 
+def test_c1_affective_distance_is_a_magnitude_not_a_normalized_asymmetry():
+    """R2 (post-SMOKE findings): affective_distance must track a widening
+    between-camp gap even when both camps' animus grows by the same factor —
+    the case a camp-symmetric kernel produces before it does anything
+    camp-conditional. animus_asymmetry, being mean-normalized, correctly
+    reports ~flat in that scenario; affective_distance must not.
+    """
+    from discourse_lab.metrics.polarization import affective_distance, animus_asymmetry
+
+    labels = np.array([0] * 1000 + [1] * 1000)
+    animus = np.concatenate([np.full(1000, 1.0), np.full(1000, 3.0)])
+    scaled = animus * 3.0
+
+    base_distance = affective_distance(animus, labels)
+    scaled_distance = affective_distance(scaled, labels)
+    assert scaled_distance == pytest.approx(base_distance * 3.0)
+    assert scaled_distance > base_distance * 2.0  # rises with the widening gap
+
+    base_asymmetry = animus_asymmetry(animus, labels)
+    scaled_asymmetry = animus_asymmetry(scaled, labels)
+    assert scaled_asymmetry == pytest.approx(base_asymmetry, abs=1e-9)  # flat: normalized
+
+
 def _tiny_posts(cfg, rng):
     from discourse_lab.dynamics.expression import ExpressionMap
     from discourse_lab.dynamics.posts import generate_posts
@@ -763,6 +786,25 @@ def test_c10_separability_recovers_a_planted_signal():
     report = separability(a, b, metric_names, seed=0)
     assert report.auc > 0.85
     assert report.top_metric == "m2"
+
+
+def test_c10_separability_refuses_below_min_seeds():
+    """R6 (post-SMOKE findings): 4 seeds per class cannot support a
+    cross-validated AUC (folds land single-class), and the resulting AUC==nan
+    must not be reportable as a non-identification result. separability()
+    should refuse rather than return something unreadable.
+    """
+    from discourse_lab.analysis import MIN_SEEDS
+    from discourse_lab.experiments.identify import separability
+
+    rng = np.random.default_rng(0)
+    n_per, n_metrics = 4, 3
+    metric_names = [f"m{i}" for i in range(n_metrics)]
+    a = rng.normal(0, 1, (n_per, n_metrics))
+    b = rng.normal(0, 1, (n_per, n_metrics))
+    assert n_per < MIN_SEEDS
+    with pytest.raises(ValueError, match="at least"):
+        separability(a, b, metric_names, seed=0)
 
 
 def test_new_persistence_paths_round_trip(tmp_path, monkeypatch):

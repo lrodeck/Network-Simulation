@@ -43,22 +43,26 @@ def camps_and_bimodality(stance: np.ndarray) -> tuple[np.ndarray | None, float]:
 
 
 def affective_distance(animus: np.ndarray, labels: np.ndarray | None) -> float:
-    """Mean `animus` differential between camps: how much more hostile the
+    """Unnormalized between-camp `animus` gap: how much more hostile the
     average camp member is toward the other side than toward their own —
-    the affective-polarization gap proper. Undefined (nan) when camps are
-    undefined; the change spec is explicit it must not be reported as zero.
+    the affective-polarization magnitude proper. Undefined (nan) when camps
+    are undefined; the change spec is explicit it must not be reported as
+    zero.
+
+    Deliberately NOT normalized by the population mean: `animus_asymmetry`
+    already reports the signed, mean-normalized share (that is what a
+    growing-but-symmetric population needs), and dividing this magnitude by
+    a population mean that itself moves under drift would report a widening
+    absolute gap as flat whenever the whole population got more hostile
+    together — exactly the case a symmetric kernel like `outrage` produces
+    when it does not yet condition on camp.
     """
     if labels is None:
         return float("nan")
     means = [animus[labels == lbl].mean() for lbl in np.unique(labels) if (labels == lbl).any()]
     if len(means) < 2:
         return float("nan")
-    # between-camp mean gap, normalised by the population mean so a
-    # uniformly more hostile population does not read as more polarized
-    total = float(np.mean(animus))
-    if total <= 0:
-        return 0.0
-    return float((max(means) - min(means)) / total)
+    return float(max(means) - min(means))
 
 
 def animus_asymmetry(animus: np.ndarray, labels: np.ndarray | None) -> float:
