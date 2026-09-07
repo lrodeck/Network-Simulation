@@ -129,6 +129,98 @@ def stylized_facts_table(report: dict, attention_gini_source: str = "lifetime, p
     )
 
 
+def world_table(cfg, pop=None) -> pl.DataFrame:
+    """T0: the world a run was conducted in, as prose rather than a hash.
+
+    `provenance_table` proves a run is reproducible; this says what it
+    describes. Reports the requested setting and, where the two can differ,
+    what the sampled population actually came out as — the distinction is the
+    point. The clearest case is trait correlation: `correlation_pairs` defaults
+    to empty, so the requested matrix is the identity and a reader of the
+    config concludes the traits are independent, while the archetype mixture
+    induces `activity x reply_prop = +0.30` because an archetype that shifts
+    two traits together correlates them.
+    """
+    import numpy as np
+
+    scenario = cfg.scenario
+    rows = [
+        {"Property": "scenario", "Requested": scenario.name or "(none)", "Realised": ""},
+        {"Property": "stance axes", "Requested": str(cfg.stance_dims()),
+         "Realised": ", ".join(scenario.axis_names()) or "(unnamed)"},
+        {"Property": "topics", "Requested": str(cfg.population.n_topics),
+         "Realised": ", ".join(scenario.topic_names) or "(unnamed)"},
+        {"Property": "users", "Requested": str(cfg.population.n_users), "Realised": ""},
+        {"Property": "graph", "Requested": cfg.graph.generator,
+         "Realised": f"mean degree {cfg.graph.mean_degree:g}"},
+        {"Property": "ranker", "Requested": cfg.dynamics.ranker, "Realised": ""},
+        {"Property": "kernel", "Requested": cfg.dynamics.kernel, "Realised": ""},
+    ]
+
+    for axis, (neg, pos) in zip(scenario.axis_names(), scenario.poles()):
+        rows.append({"Property": f"axis: {axis}", "Requested": f"{neg} -> {pos}", "Realised": ""})
+
+    requested_pairs = cfg.population.correlation_pairs
+    rows.append({
+        "Property": "trait correlations",
+        "Requested": f"{len(requested_pairs)} pair(s)" if requested_pairs else "none (identity)",
+        "Realised": "",
+    })
+    if pop is not None:
+        corr = np.corrcoef(pop.X_stored.T)
+        off = corr - np.eye(len(pop.trait_names))
+        i, j = np.unravel_index(np.argmax(np.abs(off)), off.shape)
+        rows[-1]["Realised"] = (
+            f"strongest {pop.trait_names[i]} x {pop.trait_names[j]} = {off[i, j]:+.2f}"
+        )
+    return pl.DataFrame(rows)
+
+
+def _short(value, width: int = 44) -> str:
+    """Config values that are structured data (a scenario's 128-bin densities,
+    an archetype spec) print as a count, not as their repr: the point of this
+    table is the settings a reader can act on, and one axis definition would
+    otherwise be 4000 characters."""
+    if isinstance(value, tuple):
+        if any(isinstance(v, (dict, tuple, list)) for v in value):
+            return f"{len(value)} entr{'y' if len(value) == 1 else 'ies'}"
+        text = ", ".join(map(str, value))
+    else:
+        text = str(value)
+    return text if len(text) <= width else text[: width - 1] + "\u2026"
+
+
+def config_table(cfg) -> pl.DataFrame:
+    """Every config field, grouped by section — the readable form of `repr(cfg)`.
+
+    The dataclass repr is one 900-character line, which in a notebook is the
+    single least useful way to show the most important object in the run. Same
+    information, one row per field, and non-default values flagged so the
+    handful of things this run actually changed are findable.
+    """
+    import dataclasses
+
+    default = type(cfg)()
+    rows = []
+    for section in dataclasses.fields(cfg):
+        value = getattr(cfg, section.name)
+        if not dataclasses.is_dataclass(value):
+            continue
+        base = getattr(default, section.name)
+        for field in dataclasses.fields(value):
+            current = getattr(value, field.name)
+            if dataclasses.is_dataclass(current) or isinstance(current, dict):
+                continue
+            baseline = getattr(base, field.name, None)
+            rows.append({
+                "Section": section.name,
+                "Field": field.name,
+                "Value": _short(current),
+                "": "changed" if current != baseline else "",
+            })
+    return pl.DataFrame(rows)
+
+
 def experiment_effects_table(rows: Iterable[dict], metrics: Sequence[str] = ()) -> pl.DataFrame:
     """T2: kernel x ranker effects against the matched null (spec §5.3)."""
     frame = pl.DataFrame(list(rows))

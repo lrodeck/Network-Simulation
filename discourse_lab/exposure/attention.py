@@ -5,6 +5,23 @@ over.
 
     B_u ~ Poisson(b * activity_u)
     P(see item at rank r) = exp(-r / tau_pos)
+
+**These two caps compose, and the softer one almost always binds first.**
+Position decay alone passes about `tau_pos` items in expectation (6 at the
+default), so a budget set anywhere above that is not a constraint at all.
+Measured, on a user with 200 candidates and activity 1.0, the fraction of
+decay-survivors that the budget additionally removes:
+
+    b =   3   ->  60%        b =  30   ->   1.2%
+    b =  10   ->  25%        b =  60   ->   0.0%
+    b =  15   ->  10%        b = 120   ->   0.0%
+
+At the shipped default of b = 30 the budget is very nearly decorative, and any
+sweep across 30/60/120 compares three identical platforms. This cost a 10-seed
+intervention sweep, which reported `attention_budget` as inert across all 13
+outcome columns; it was swept entirely inside its dead zone. Vary `tau_position`
+to ration attention, or take `attention_budget` below ~15 where it starts to
+bite. `tests/test_attention_budget_binds.py` pins the interaction.
 """
 
 from __future__ import annotations

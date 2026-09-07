@@ -122,14 +122,16 @@ def test_cross_cutting_sits_below_the_chance_baseline():
     would cross about half the time; a homophilous population must sit below
     that.
 
-    Deliberately NOT a lever contrast. Measured at D=3 over 6 seeds, the
-    engagement-level rate does not separate the design levers at all —
-    affinity 0.377, random 0.370, chronological 0.385, inject_k=10 0.345, every
-    difference inside its own spread. That is consistent with the stance
-    channel of homophily being inert at D=3 (agreement effect t=-0.05), and it
-    is why the normative construct is measured over *exposures*
-    (`outcomes.cross_cutting_exposure`) rather than over the far smaller and
-    noisier engagement log.
+    Deliberately NOT a lever contrast, but not because the levers do nothing.
+    A `DiscourseSummary` describes ONE tick — roughly 130 engagements — which
+    is far too few to separate conditions. Aggregated over a whole run the
+    ranker moves this substantially: cross-camp share is 0.319 under
+    `chronological` against 0.250 under `affinity` (n≈3200 engagements per
+    run, 4 seeds), and 0.362 vs 0.288 measured over exposures.
+
+    So the narrator's per-tick number is for reading the run as it happens,
+    not for comparing conditions; that is what `outcomes.cross_cutting_exposure`
+    over the persisted tables is for.
     """
     rates = np.array([_last_summary(_cfg(), seed).cross_cutting_share for seed in range(6)])
     assert np.all(np.isfinite(rates))

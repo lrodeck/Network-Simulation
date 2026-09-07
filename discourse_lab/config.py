@@ -88,7 +88,29 @@ class PopulationConfig(Hashable):
     stance_dims: int = 3
     archetype_weights: tuple[tuple[str, float], ...] = ()   # () → library defaults
     archetype_offsets: tuple[tuple[str, str, float], ...] = ()  # (archetype, trait, offset)
-    correlation_pairs: tuple[tuple[str, str, float], ...] = ()  # () → library defaults
+    # (trait_i, trait_j, rho). ADDS to whatever the archetype mixture already
+    # induces — it does not set the realised correlation. An archetype that
+    # shifts two traits together correlates them, and the two mechanisms
+    # compose without either knowing about the other. Measured at N=20000 on
+    # the shipped defaults, for activity x reply_prop:
+    #
+    #     archetypes off, no pairs           -0.001
+    #     archetypes off, asked for 0.30     +0.299   <- you get what you ask
+    #     archetypes on,  no pairs           +0.303   <- the lurker archetype
+    #     archetypes on,  asked for 0.30     +0.493   <- both, added
+    #
+    # `sample_population` warns when a requested pair touches traits an
+    # archetype also moves. To control a pair exactly, use one mechanism or
+    # the other.
+    #
+    # NOT defaulted to anything: an empty tuple gives
+    # an identity correlation matrix, so every trait — including the stance
+    # axes — is independent unless listed here. spec §7.5 notes that correlated
+    # stance axes are what produce the empirically observed collapse toward a
+    # single dominant dimension, and measured here they do: cross-camp exposure
+    # falls from 0.362 to 0.326 at rho=0.85. Trait names must match this
+    # config's own columns (see semantics.Lexicon.trait_column).
+    correlation_pairs: tuple[tuple[str, str, float], ...] = ()
     # Gini of a lognormal is erf(sigma/2) in closed form, so this parameter
     # *is* the spec §5.1 posting-volume inequality target. The spec's own
     # sigma = 1.2 gives 0.604 against its stated target of 0.7-0.9 — the two
@@ -144,7 +166,10 @@ class DynamicsConfig(Hashable):
     ticks_per_day: int = 24
     fatigue_decay: float = 0.9
 
-    attention_budget: float = 30.0            # b in B_u ~ Poisson(b · activity)
+    # b in B_u ~ Poisson(b · activity). NOTE: composes with tau_position, and at
+    # this default the position decay binds first — the budget removes ~1% of
+    # what decay already let through. See exposure/attention.py before sweeping it.
+    attention_budget: float = 30.0
     tau_position: float = 6.0                 # position decay exp(-r / tau)
     inject_k: int = 0                         # algorithmic injections per post
     ranker: str = "chronological"

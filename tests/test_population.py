@@ -7,8 +7,10 @@ from __future__ import annotations
 import dataclasses
 import json
 from pathlib import Path
+import warnings
 
 import numpy as np
+import pytest
 from scipy import stats
 
 from discourse_lab.config import Config, ScenarioConfig
@@ -135,3 +137,79 @@ def test_population_artifact_caches(tmp_path, monkeypatch):
 
     np.testing.assert_array_equal(pop1.X_used, pop2.X_used)
     assert pop1.trait_names == pop2.trait_names
+
+
+def test_requested_correlation_adds_to_what_archetypes_already_induce():
+    """`correlation_pairs` reads as "set this correlation" and behaves as "add
+    to whatever the mixture produces". Both mechanisms are legitimate; the trap
+    is that neither knows about the other.
+
+    Measured at N=20000 for activity x reply_prop: archetypes off gives -0.001
+    with no pairs and +0.299 when 0.30 is asked for; archetypes on gives +0.303
+    with no pairs and +0.493 when the same 0.30 is asked for.
+    """
+    import dataclasses
+
+    from discourse_lab.config import Config
+
+    def realised(pairs=(), weights=()):
+        cfg = dataclasses.replace(
+            Config(),
+            population=dataclasses.replace(
+                Config().population, n_users=6000,
+                correlation_pairs=pairs, archetype_weights=weights,
+            ),
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            pop = sample_population(cfg, np.random.default_rng(0))
+        corr = np.corrcoef(pop.X_stored.T)
+        i, j = pop.trait_names.index("activity"), pop.trait_names.index("reply_prop")
+        return corr[i, j]
+
+    flat = (("lurker", 1.0),)      # one archetype carrying all weight = no offsets applied
+    assert abs(realised(weights=flat)) < 0.05
+    assert realised(pairs=(("activity", "reply_prop", 0.30),), weights=flat) == pytest.approx(
+        0.30, abs=0.05
+    ), "without archetypes you should get exactly what you ask for"
+
+    induced = realised()
+    assert induced > 0.2, "the lurker archetype should correlate activity and reply_prop"
+    both = realised(pairs=(("activity", "reply_prop", 0.30),))
+    assert both > induced + 0.1, "the two mechanisms should compose, not reconcile"
+
+
+def test_composed_correlation_warns():
+    """Asking for 0.30 and silently getting 0.49 is the kind of thing that
+    survives into a paper as "we set trait correlation to 0.3"."""
+    import dataclasses
+
+    from discourse_lab.config import Config
+
+    cfg = dataclasses.replace(
+        Config(),
+        population=dataclasses.replace(
+            Config().population, n_users=200,
+            correlation_pairs=(("activity", "reply_prop", 0.30),),
+        ),
+    )
+    with pytest.warns(UserWarning, match="lurker"):
+        sample_population(cfg, np.random.default_rng(0))
+
+
+def test_no_warning_when_the_pair_is_untouched_by_any_archetype():
+    """The warning has to be specific or it becomes noise people filter out."""
+    import dataclasses
+
+    from discourse_lab.config import Config
+
+    cfg = dataclasses.replace(
+        Config(),
+        population=dataclasses.replace(
+            Config().population, n_users=200,
+            correlation_pairs=(("openness", "neuroticism", 0.30),),
+        ),
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        sample_population(cfg, np.random.default_rng(0))

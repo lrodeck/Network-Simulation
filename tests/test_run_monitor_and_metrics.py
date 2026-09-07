@@ -157,3 +157,70 @@ def test_drift_magnitude_zero_when_unchanged_positive_when_moved():
 def test_null_comparison_isolates_the_kernel_effect():
     assert null_comparison(0.8, 0.8) == 0.0
     assert null_comparison(0.8, 0.1) > 0
+
+
+# --------------------------------------------------------------------------
+# narrative panel (semantics/narrate.py surfaced in the widget)
+# --------------------------------------------------------------------------
+
+
+def test_run_monitor_surfaces_the_narrative_when_given_a_config():
+    """Six sparklines say a number moved; they do not say what the discourse is
+    about, which is what a normative study is watching for."""
+    from discourse_lab.data import scenario_config
+
+    cfg = scenario_config(
+        dataclasses.replace(
+            Config(),
+            population=dataclasses.replace(Config().population, n_users=400, stance_dims=3),
+            dynamics=dataclasses.replace(Config().dynamics, n_ticks=6, drift="none"),
+        )
+    )
+    widget = RunMonitorWidget(cfg=cfg)
+    widget.watch(run_iter(cfg, seed=0, narrate=True))
+
+    assert widget.narrative, "narrative stayed empty on a narrated run"
+    assert widget.narrative_log[-1] == widget.narrative
+    assert "stance_" not in widget.narrative, "raw column names leaked to the widget"
+
+
+def test_run_monitor_narrative_is_empty_without_narration_or_config():
+    """Two independent switches, and the charts must work regardless — the
+    widget is still a chart widget when the vocabulary is missing."""
+    from discourse_lab.data import scenario_config
+
+    cfg = scenario_config(
+        dataclasses.replace(
+            Config(),
+            population=dataclasses.replace(Config().population, n_users=300, stance_dims=3),
+            dynamics=dataclasses.replace(Config().dynamics, n_ticks=4, drift="none"),
+        )
+    )
+
+    no_cfg = RunMonitorWidget()
+    no_cfg.watch(run_iter(cfg, seed=0, narrate=True))
+    assert no_cfg.narrative == "" and len(no_cfg.ticks) == 4
+
+    no_narration = RunMonitorWidget(cfg=cfg)
+    no_narration.watch(run_iter(cfg, seed=0))
+    assert no_narration.narrative == "" and len(no_narration.ticks) == 4
+
+
+def test_narrative_log_is_capped():
+    """It syncs to the browser on every tick, so an uncapped list would resend
+    the whole run's narration each time."""
+    from discourse_lab.data import scenario_config
+
+    limit = RunMonitorWidget.NARRATIVE_LOG_LIMIT
+    cfg = scenario_config(
+        dataclasses.replace(
+            Config(),
+            population=dataclasses.replace(Config().population, n_users=300, stance_dims=3),
+            dynamics=dataclasses.replace(Config().dynamics, n_ticks=limit + 5, drift="none"),
+        )
+    )
+    widget = RunMonitorWidget(cfg=cfg)
+    widget.watch(run_iter(cfg, seed=0, narrate=True))
+
+    assert len(widget.ticks) == limit + 5
+    assert len(widget.narrative_log) == limit

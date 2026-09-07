@@ -8,6 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+import warnings
+
 import numpy as np
 from scipy import stats
 
@@ -35,6 +37,45 @@ class Population:
     archetype_names: list[str]
 
 
+def _warn_on_composed_correlation(pairs, archetypes) -> None:
+    """Warn when a requested correlation touches traits an archetype also moves.
+
+    The two mechanisms compose additively and neither knows about the other, so
+    `correlation_pairs` reads as "set this correlation to X" while behaving as
+    "add X on top of whatever the mixture already produces". Measured at
+    N=20000 on the shipped defaults:
+
+        archetypes off, no pairs        activity x reply_prop = -0.001
+        archetypes off, asked for 0.30                        = +0.299
+        archetypes on,  no pairs                              = +0.303
+        archetypes on,  asked for 0.30                        = +0.493
+
+    Asking for 0.30 and getting 0.49 is the kind of thing that survives into a
+    paper as "we set trait correlation to 0.3", so it is worth a warning rather
+    than a docstring nobody reads at the call site.
+    """
+    if not pairs:
+        return
+
+    moved: dict[str, list[str]] = {}
+    for archetype in archetypes:
+        for trait in archetype.offsets:
+            moved.setdefault(trait, []).append(archetype.name)
+
+    for a, b, rho in pairs:
+        if a in moved and b in moved:
+            shared = sorted(set(moved[a]) & set(moved[b]))
+            if shared:
+                warnings.warn(
+                    f"correlation_pairs asks for {a} x {b} = {rho:+.2f}, but the "
+                    f"archetype(s) {shared} shift both traits and so already correlate "
+                    "them. The two mechanisms add: the realised correlation will be "
+                    "larger than requested. Set archetype_offsets or correlation_pairs, "
+                    "not both, for a pair you want to control exactly.",
+                    stacklevel=3,
+                )
+
+
 def sample_population(cfg: Config, rng: np.random.Generator) -> Population:
     specs: list[TraitSpec] = trait_table(cfg)
     names = [s.name for s in specs]
@@ -45,6 +86,7 @@ def sample_population(cfg: Config, rng: np.random.Generator) -> Population:
     corr = nearest_psd_correlation(corr)
 
     archetypes = resolve_archetypes(cfg.population.archetype_weights, cfg.population.archetype_offsets)
+    _warn_on_composed_correlation(cfg.population.correlation_pairs, archetypes)
     weights, component_means = archetype_component_means(archetypes, names)
 
     z, labels = sample_latent(rng, weights, component_means, corr, n_users)
