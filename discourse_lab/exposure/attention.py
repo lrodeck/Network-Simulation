@@ -7,14 +7,14 @@ over.
     P(see item at rank r) = exp(-r / tau_pos)
 
 **These two caps compose, and the softer one almost always binds first.**
-Position decay alone passes about `tau_pos` items in expectation (6 at the
-default), so a budget set anywhere above that is not a constraint at all.
-Measured, on a user with 200 candidates and activity 1.0, the fraction of
-decay-survivors that the budget additionally removes:
+Position decay alone passes `sum_r exp(-r/tau_pos)` items in expectation --
+6.51 at the default tau_pos = 6 -- so a budget set anywhere above that is not a
+constraint at all. The fraction of decay-survivors that the budget additionally
+removes, for a user with activity 1.0:
 
-    b =   3   ->  60%        b =  30   ->   1.2%
-    b =  10   ->  25%        b =  60   ->   0.0%
-    b =  15   ->  10%        b = 120   ->   0.0%
+    b =   3   ->  63%        b =  30   ->   1.00%
+    b =  10   ->  22%        b =  60   ->   0.01%
+    b =  15   ->  10%        b = 120   ->   0.00%
 
 At the shipped default of b = 30 the budget is very nearly decorative, and any
 sweep across 30/60/120 compares three identical platforms. This cost a 10-seed

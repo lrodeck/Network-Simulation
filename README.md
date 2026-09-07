@@ -2,8 +2,15 @@
 
 Vectorized, non-agentic simulation toolbox for theories of large-scale online
 discourse. Dynamics are numeric; language is an offline rendering pass that
-never runs inside the tick loop (see `discourse-lab-spec.md` for the model,
-`discourse-lab-dev.md` for design decisions, `TODO.txt` for build status).
+never runs inside the tick loop.
+
+| | |
+|---|---|
+| **[`MODEL.md`](MODEL.md)** | **what every variable means and the maths behind each mechanism — start here.** Each section is plain-language first, with the formal statement folded into a block you can skip. |
+| [`FINDINGS.md`](FINDINGS.md) | measured results, and the negative results behind them |
+| [`notebooks/demo.ipynb`](notebooks/demo.ipynb) | the API, runnable, in build order |
+| [`discourse-lab-spec.md`](discourse-lab-spec.md) | the formal specification |
+| [`discourse-lab-dev.md`](discourse-lab-dev.md) | design decisions and rationale |
 
 ## Install
 

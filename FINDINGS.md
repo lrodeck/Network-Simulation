@@ -61,9 +61,10 @@ all — every swing <= 0.002 — so those screen rows can be read as-is.
 ## Negative results worth keeping
 
 **`attention_budget` at 15/30/60 was a dead-zone sweep, not an inert lever.**
-Visibility decays as `exp(-r/tau_position)`, which passes ~6 items on its own,
-so the budget cap removes 10% of survivors at b=15, 1.2% at b=30 and **0.0% at
-b=60** — the last two are the same platform. Re-ranged to 30/10/3 it resolves.
+Visibility decays as `exp(-r/tau_position)`, which passes 6.51 items on its
+own, so the budget cap removes 10% of survivors at b=15, 1.0% at b=30 and
+**0.01% at b=60** — the last two are the same platform. Re-ranged to 30/10/3
+(binding on 1% / 22% / 63%) it resolves.
 Pinned by `tests/test_attention_budget_binds.py`.
 
 **`algorithmic_share` cannot be rescued, and that is a property of the feed.**
