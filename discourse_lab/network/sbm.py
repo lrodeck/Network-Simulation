@@ -21,11 +21,26 @@ def sbm_graph(cfg: Config, pop: Population, rng: np.random.Generator) -> sparse.
     if gcfg.sbm_blocks and gcfg.sbm_blocks > 0:
         blocks = rng.integers(0, gcfg.sbm_blocks, size=n)
         n_blocks = gcfg.sbm_blocks
-    else:
+    elif gcfg.sbm_block_source == "topic_affinity":
+        # community structure from topic geometry rather than a persona ID:
+        # each user's block is their single most-affine topic, so users who
+        # cluster on subject matter end up in the same dense community
+        # regardless of stance or archetype.
+        topic_idx = [i for i, name in enumerate(pop.trait_names) if name.startswith("topic_affinity_")]
+        if not topic_idx:
+            raise ValueError(
+                "graph.sbm_block_source='topic_affinity' but this population has no "
+                "topic_affinity_* traits (population.n_topics == 0?)"
+            )
+        blocks = np.argmax(pop.X_used[:, topic_idx], axis=1)
+        n_blocks = len(topic_idx)
+    elif gcfg.sbm_block_source == "archetype":
         names = sorted(set(pop.archetype_names))
         idx = {name: i for i, name in enumerate(names)}
         blocks = np.array([idx[pop.archetype_names[c]] for c in pop.archetype_labels])
         n_blocks = len(names)
+    else:
+        raise ValueError(f"unknown graph.sbm_block_source: {gcfg.sbm_block_source!r}")
 
     # within/between edge probability calibrated so the realised mean degree
     # matches the target, with sbm_homophily setting the within:between ratio.
