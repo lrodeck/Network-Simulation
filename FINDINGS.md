@@ -192,3 +192,70 @@ configs must differ in dynamics.kernel alone, or it raises. With C1 affect
 and C2 selection live, differencing against a bare default-config null
 also differences those mechanisms out while the number still reads as
 being about the kernel.
+
+## The §5.1 attention-Gini band is calibrated at one kernel and does not transfer
+
+Discovered running experiment01abc (A/B/C: sorting vs. selective exposure vs.
+micropublics), which manipulates `dynamics.kernel` as its central lever - the
+same axis the C9 gate calibration above is anchored to. Gini across every
+config actually run:
+
+| config | N | kernel | attention_gini |
+|---|---|---|---|
+| calibration of record | 10,000 | bandwagon | 0.817-0.851 |
+| experiment01abc SHARED (N reduced) | 1,200 | bandwagon | 0.765-0.815 |
+| FULL-scale probe, null arm | 10,000 | null | 0.592 |
+| World A | 1,200 | outrage | 0.583 |
+| World B | 1,200 | homophily | 0.512 |
+| World C | 1,200 | civic | 0.417 |
+
+Scale (10,000 -> 1,200) costs roughly 0.05 off Gini; **the kernel costs
+roughly 0.22** - an order of magnitude more. The band ([0.8, 0.95]) is only
+reachable with `bandwagon` + `theta_scale=(("social_proof", 0.6),)`
+specifically, per the C9 finding above ("the C9 gate holds on the
+combination that produces the tail"). That was previously read as "this is
+the calibration of record, start experiments from it" - correct as far as
+it goes, but it has a sharper implication: **no experiment that manipulates
+the kernel can inherit §5.1 gate validity, on ANY arm**, including a
+matched-null arm run at `kernel="null"` - `null` misses the band by more
+than `outrage` does. This is not fixable by choosing which arm to gate on;
+it is a property of the calibration protocol itself.
+
+Two ways out, neither implemented yet: (1) per-kernel Gini bands, calibrated
+the same way C9 calibrated the bandwagon band, so a kernel-manipulating
+experiment has something valid to gate against; or (2) `attention_gini`
+leaves `stylized_gate`'s pass/fail set entirely and becomes a reported
+diagnostic (a number attached to every run, never a gate criterion) for any
+experiment whose lever is the kernel. Until one of those lands, treat every
+Gini failure in a kernel-manipulating experiment as uninformative by
+construction (already correctly excluded from `NOT_EVIDENCE` sets
+downstream) rather than as a substrate problem worth chasing.
+
+## `tie_strength` is a static follow-graph flag, not a repeated-contact accumulator
+
+`discourse_lab/exposure/kernel.py`'s `compute_features` sets
+`"tie_strength": is_follower.astype(float)` - recomputed fresh from current
+follow status on every exposure, not a running accumulator over repeated
+contact. Confirmed by reading the source directly (not inferred from a
+statistical proxy) while building experiment01abc's World C, whose §10.4(b)
+requirement is exactly a tie-strength-accumulates-over-contact mechanism.
+
+Checked whether this is only a World-C problem: none of the package's
+registered kernels (`outrage`, `homophily`, `bandwagon`, `epistemic`, `null`)
+put any weight on `tie_strength` in their theta tables - grepped `named_kernel`
+output for every registered `kernel_theta` and found no hits. The one place
+it carries real weight is experiment01abc's notebook-registered `civic`
+kernel, whose theta puts its *dominant* coefficients on it
+(`tie_strength`: 1.2 like / 0.8 repost / 1.0 reply / 0.4 quote, exceeding
+`affinity` on two of four action types). Under the actual definition of the
+feature, this makes `civic` reduce to "engage more with accounts you already
+follow" - a static follow-graph-proximity kernel, not Amin's repeated-encounter
+mechanism it was written to express. Not a wrong theory to have, but not the
+one the θ table's own comments claim, and it should be rewritten once a real
+accumulator exists rather than kept as a stand-in.
+
+General point for anyone adding a kernel: `tie_strength` under the current
+implementation is informationally identical to `affinity` (both read follow
+status), so a theta table that weights both is double-counting one signal
+under two names. Grep new theta tables for `tie_strength` before relying on
+it meaning anything beyond "is a follower."
