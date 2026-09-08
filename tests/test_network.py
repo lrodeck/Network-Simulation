@@ -126,6 +126,36 @@ def test_reciprocity_pass_hits_target_ratio():
     assert abs(observed_ratio - r) < 0.05
 
 
+def test_sbm_homophily_makes_within_block_ties_more_likely():
+    """`sbm_homophily` (h in (0, 1]) must make within-block ties MORE likely
+    than cross-block ties, strictly more so as h shrinks — the formula used
+    to compute p_within = h * p_between, which for h < 1 made same-block
+    ties LESS likely than cross-block ones (the opposite of "homophily") and
+    left clustering_ratio at ~1.0 (no excess over a degree-matched random
+    graph) regardless of how homophilous h claimed to be.
+    """
+    from discourse_lab.network.measures import clustering_vs_random
+
+    cfg = _cfg("sbm", n_users=1200, mean_degree=40.0, sbm_blocks=8, sbm_homophily=0.8)
+    rng = np.random.default_rng(0)
+    pop = sample_population(cfg, rng)
+    g = generate_graph(cfg, pop, np.random.default_rng(1))
+
+    # Block labels are drawn from `rng` inside sbm_graph itself, so instead of
+    # recovering them here, assert on the emergent graph property that must
+    # follow from real within-block preference: local clustering must exceed
+    # a degree-matched random rewiring by a real margin once h is small
+    # (strong homophily) — and must exceed the h=0.8 (weak) case.
+    strong_cfg = _cfg("sbm", n_users=1200, mean_degree=40.0, sbm_blocks=8, sbm_homophily=0.03)
+    pop2 = sample_population(strong_cfg, rng)
+    g_strong = generate_graph(strong_cfg, pop2, np.random.default_rng(2))
+    _, _, ratio_strong = clustering_vs_random(g_strong.csr, np.random.default_rng(3))
+    _, _, ratio_weak = clustering_vs_random(g.csr, np.random.default_rng(3))
+
+    assert ratio_strong > ratio_weak
+    assert ratio_strong > 2.0, f"expected real clustering excess at h=0.03, got ratio={ratio_strong:.2f}"
+
+
 def test_graph_artifact_caches(tmp_path, monkeypatch):
     monkeypatch.setenv("DLAB_HOME", str(tmp_path))
     cfg = _cfg("configuration_model", n_users=500)

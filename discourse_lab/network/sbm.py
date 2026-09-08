@@ -9,6 +9,7 @@ import numpy as np
 from scipy import sparse
 
 from discourse_lab.config import Config
+from discourse_lab.network.reciprocity import add_reciprocity
 from discourse_lab.population import Population
 from discourse_lab.registry import register
 
@@ -43,18 +44,27 @@ def sbm_graph(cfg: Config, pop: Population, rng: np.random.Generator) -> sparse.
         raise ValueError(f"unknown graph.sbm_block_source: {gcfg.sbm_block_source!r}")
 
     # within/between edge probability calibrated so the realised mean degree
-    # matches the target, with sbm_homophily setting the within:between ratio.
+    # matches the target, with sbm_homophily setting the between:within ratio
+    # (p_between = h * p_within — h in (0, 1], smaller means more homophilous).
+    #
+    # NB this used to read `p_within = h * p_between`, which for the
+    # documented default (0.8) made same-block ties LESS likely than
+    # cross-block ties — the opposite of homophily, and the reason blocks
+    # produced no local-clustering excess over a degree-matched random graph
+    # (clustering_ratio stayed ~1.0 regardless of h). Verified against
+    # clustering_vs_random directly: at N=1200/8 blocks/mean_degree=40, the
+    # spec's clustering_ratio >= 3.0 needs h below roughly 0.05-0.1, not 0.8.
     counts = np.bincount(blocks, minlength=n_blocks)
     same_pairs = (counts * (counts - 1)).sum()
     diff_pairs = n * (n - 1) - same_pairs
     h = gcfg.sbm_homophily
     target_edges = gcfg.mean_degree * n
 
-    # p_within = h * p_between; solve p_between from the total-edge constraint.
-    denom = h * same_pairs + diff_pairs
-    p_between = target_edges / denom if denom > 0 else 0.0
-    p_within = min(h * p_between, 1.0)
-    p_between = min(p_between, 1.0)
+    # p_between = h * p_within; solve p_within from the total-edge constraint.
+    denom = same_pairs + h * diff_pairs
+    p_within = target_edges / denom if denom > 0 else 0.0
+    p_between = min(h * p_within, 1.0)
+    p_within = min(p_within, 1.0)
 
     block_of = blocks
     same_block = block_of[:, None] == block_of[None, :] if n <= 4000 else None
@@ -92,4 +102,6 @@ def sbm_graph(cfg: Config, pop: Population, rng: np.random.Generator) -> sparse.
     data = np.ones(len(rows), dtype=np.int8)
     G = sparse.coo_matrix((data, (rows, cols)), shape=(n, n)).tocsr()
     G.data[:] = 1
+    if gcfg.sbm_mirror_p > 0:
+        G = add_reciprocity(G, gcfg.sbm_mirror_p, rng)
     return G
