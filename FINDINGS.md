@@ -259,3 +259,33 @@ implementation is informationally identical to `affinity` (both read follow
 status), so a theta table that weights both is double-counting one signal
 under two names. Grep new theta tables for `tie_strength` before relying on
 it meaning anything beyond "is a follower."
+
+## `group_gain`/`conformity` kernel learning amplifies camp imbalance the kernel's own theta table never authors
+
+FULL-scale run of experiment01abc (N=10,000, 500 ticks, 20 seeds) found
+World A's `affective_distance` (the symmetry diagnostic, predicted flat in
+the pre-registration) statistically significant, though small relative to
+the decision metric (`mean_animus` effect 0.00123 vs `affective_distance`
+effect 0.0000673, ~5.5%).
+
+Root cause: `outrage`'s theta table (`kernel.py:130-135`) is camp-symmetric
+- no term treats camp A/B asymmetrically. But experiment01abc runs with
+`dynamics.kernel_learning = "group_gain"`, `kernel_learning_rule =
+"conformity"`, which learns a per-user multiplicative gain on each feature
+group, including `outgroup` (`outgroup`, `outgroup_x_animus`,
+`ingroup_x_ident`). Camp membership itself comes from the sign of a
+continuous stance projection (`camps_and_bimodality`), so camp sizes and
+initial mean animus are never exactly balanced by construction - only
+balanced in expectation. A conformity-based gain rule reinforces whatever
+engagement pattern a user's camp already leans toward; over 500 ticks this
+turns a small, finite-sample initial imbalance between camps into a
+detectable (if modest) gap that the kernel's own authored weights do not
+predict.
+
+This is an emergent interaction between `group_gain`+`conformity` and
+finite-population camp asymmetry, not a bug in the outrage kernel's theta
+table and not an artifact of the metric (`affective_distance` is exactly
+the diagnostic built to catch this). Anyone drawing conclusions from a
+`kernel_learning != "none"` run should check `affective_distance` alongside
+whatever camp-symmetric prediction the theory makes - the learning tier can
+manufacture camp asymmetry the static kernel was never given.
