@@ -300,3 +300,63 @@ running a `kernel_learning != "none"` experiment with a kernel that weights
 whatever camp-symmetric prediction the theory makes; the learning tier can
 manufacture camp asymmetry the static kernel's authors never intended,
 specifically for kernels built around out-group-directed features.
+
+## `sbm_graph`'s reciprocity-by-chance and clustering ratio do not survive a population-size change, and the second one has no available fix yet
+
+`graph.sbm_homophily=0.03` was calibrated once, at N=1,200/8 blocks/
+mean_degree=40, to land both `reciprocity` and `clustering_ratio` in their
+§5.1 bands simultaneously (confirmed 20 seeds: reciprocity 0.25-0.26,
+clustering_ratio 3.8-3.9). At N=10,000 with the same `sbm_homophily` and the
+same `mean_degree`, the FULL run's own gate check failed on reciprocity
+(0.114, band [0.2, 0.4]) — the calibration silently stopped holding at a
+different population size, and the run proceeded past a printed gate
+failure without anyone routing that failure into the verdicts.
+
+Root cause, confirmed with graph-only diagnostics (no simulation, `sbm_graph`
++ `reciprocity`/`clustering_vs_random` directly): `sbm_graph` solves
+`p_within` from `target_edges / (same_pairs + h * diff_pairs)`. With
+`mean_degree` (and therefore `target_edges`) held fixed while N scales up,
+`same_pairs`/`diff_pairs` scale as N², so `p_within` falls roughly
+proportional to 1/N. Reciprocity produced purely by chance from independent
+directed-edge draws goes as `p_within²`, so an 8x increase in N (1,200 →
+10,000) collapses chance-reciprocity by roughly 64x — exactly the
+SMOKE-to-FULL drop observed (~0.25 → ~0.11-0.12).
+
+`add_reciprocity`'s `mirror_p` pass (`network/reciprocity.py`) is *not*
+broken by this — it mirrors a fraction of already-drawn edges, so its
+contribution (`2r/(1+r)`) is density-invariant by construction. It was
+simply never turned on for World C (`sbm_mirror_p` defaults to 0.0, unused
+at SMOKE because chance alone sufficed there). Turning it on at FULL scale
+does restore reciprocity into band (confirmed: mirror_p 0.00→0.20 takes
+reciprocity 0.11→0.40 roughly linearly, at fixed `sbm_homophily=0.03`).
+
+That is not the whole fix, though. `clustering_ratio` **also** collapses
+with N at fixed `sbm_homophily` and block count (3.8-3.9 at SMOKE → 1.54 at
+FULL, `sbm_mirror_p=0`), and — unlike reciprocity — lowering `sbm_homophily`
+further does not recover it: it *rises* as h→0 (1.54 at h=0.03 to 2.51 at
+h=0.0005) but plateaus below the required ≥3.0 no matter how small h gets.
+At N=10,000/8 blocks, mean block size is 1,250 users; the local edge density
+that a fixed `mean_degree` and shrinking `p_within` can put inside a block
+of that size has a triangle-density ceiling `clustering_vs_random` cannot
+clear, independent of how homophilous the generator is told to be.
+
+The lever that does clear it is block *count*, not `sbm_homophily`: raising
+`population.n_topics` (which sets the number of `sbm_block_source=
+"topic_affinity"` blocks) from 8 to 32 at N=10,000 gives mean block size 313
+and clears both bands easily (reciprocity 0.20 even with `sbm_mirror_p=0`,
+clustering_ratio 8.77). But `n_topics` is a `PopulationConfig` field shared
+by every world built from `SHARED` in experiment01abc — raising it changes
+A's and B's topic-affinity trait dimensionality too, not just C's graph, so
+it is a design change to the shared population, not a graph-only fix scoped
+to World C.
+
+**Net: no `sbm`-generator calibration is population-size-invariant as
+currently parameterized.** Anyone running an `sbm`-graph experiment at a
+different N than it was calibrated at must re-check both bands, not assume
+either survives; `sbm_mirror_p` recovers reciprocity but clustering_ratio
+needs either more blocks (a population-wide change, if blocks come from
+`topic_affinity`) or a generator change (e.g. block-size-invariant p_within
+scaling), neither of which exists yet. This is the one blocker standing
+between World C's FULL-scale backfire result (`mean_animus` larger than
+World A's, cross_camp_tie_share ≈0.50) and being quotable as a result about
+that world's substrate.
