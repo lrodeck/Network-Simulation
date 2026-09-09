@@ -424,3 +424,36 @@ per-contact hostility generator than A's." Only seed 0 is available for this
 calculation (traits/metrics for other seeds were deleted per-seed to survive
 the disk-space crisis), so there is no cross-seed CI — but the gap (1.6x) is
 far larger than the seed-to-seed noise visible elsewhere in this run.
+
+## D2 (kernel identifiability): re-run confirmed with the volume-artifact family excluded, and it's genuinely separable
+
+Three review rounds excluded volume artifacts from experiment01abc's D2
+kernel-pair separability test one name at a time -- `n_posts`, then
+`n_engagements`, then the whole `n_*` family -- and each time the AUC=1.00
+carrier just moved to the next uncaught count. The actual FULL run of
+record's own D2 output (`experiment01abc_FULL_out.ipynb`) predates even the
+`n_*`-family fix and still shows `n_replies` carrying AUC=1.00; this was
+confirmed by reading that file directly, not assumed, before re-running
+anything.
+
+Re-running D2's exact code (population/graph/dynamics config and gate
+results checked identical to the run of record) with the `n_*` family
+excluded still showed AUC=1.00, carried by `open_threads` -- `float(len(
+self.threads))` in `dynamics/tick.py`, a raw open-thread count that simply
+doesn't start with `n_`. The real exclusion criterion was never "starts
+with n_"; it's "is this an event/entity COUNT" vs "is this a rate, index,
+or learned-parameter deviation". Excluding `open_threads` too, a further
+re-run (20 seeds, all three kernel pairs) still reports AUC=1.00, now
+carried by `kernel_gain_dev` (mean `|learned per-user gain - 1|` under
+`group_gain`/`conformity` -- a direct behavioral signature of how hard each
+kernel's own theta table drives adaptation) and `reply_fallback_rate` (a
+proportion, not a count).
+
+This is the honest result, not a bug to keep chasing: the three kernels'
+aggregate behavioral signatures are genuinely, perfectly separable via
+mechanism at N=10,000/20 seeds, once every volume artifact is actually
+excluded. It is not a non-identification finding -- but it does mean D2, as
+built, cannot distinguish "these kernels differ enormously" from "these
+kernels differ just enough to be theoretically distinct," since AUC
+saturates at 1.00 either way at this population size and seed count. Full
+per-pair carriers and kept-metric lists: `results/abc/d2_identifiability.json`.
