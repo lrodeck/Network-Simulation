@@ -301,7 +301,7 @@ whatever camp-symmetric prediction the theory makes; the learning tier can
 manufacture camp asymmetry the static kernel's authors never intended,
 specifically for kernels built around out-group-directed features.
 
-## `sbm_graph`'s reciprocity-by-chance and clustering ratio do not survive a population-size change, and the second one has no available fix yet
+## `sbm_graph`'s reciprocity-by-chance and clustering ratio do not survive a population-size change (reciprocity fixed; clustering ratio still open)
 
 `graph.sbm_homophily=0.03` was calibrated once, at N=1,200/8 blocks/
 mean_degree=40, to land both `reciprocity` and `clustering_ratio` in their
@@ -324,11 +324,30 @@ SMOKE-to-FULL drop observed (~0.25 → ~0.11-0.12).
 
 `add_reciprocity`'s `mirror_p` pass (`network/reciprocity.py`) is *not*
 broken by this — it mirrors a fraction of already-drawn edges, so its
-contribution (`2r/(1+r)`) is density-invariant by construction. It was
+contribution (`2q/(1+q)`) is density-invariant by construction. It was
 simply never turned on for World C (`sbm_mirror_p` defaults to 0.0, unused
 at SMOKE because chance alone sufficed there). Turning it on at FULL scale
-does restore reciprocity into band (confirmed: mirror_p 0.00→0.20 takes
-reciprocity 0.11→0.40 roughly linearly, at fixed `sbm_homophily=0.03`).
+does restore reciprocity into band — confirmed with a graph-only sweep at
+N=10,000 (no simulation): mirror_p 0.00→0.20 takes reciprocity 0.11→0.40
+roughly linearly at fixed `sbm_homophily=0.03`. The naive `2q/(1+q)` formula
+(the module's own docstring, worked out against a different generator's
+baseline chance-reciprocity) is not a reliable predictor here — `q=0.25`
+overshoots to 0.456, above the band's 0.4 ceiling. A finer sweep (10 seeds
+per value) found `sbm_mirror_p=0.13` centers reciprocity at 0.309±0.001,
+comfortable margin on both sides of [0.2, 0.4].
+
+**Applied and confirmed**, not just diagnosed: `sbm_mirror_p=0.13` set on
+both World C and `EXTRA_CONTROLS["B_on_C_graph"]` (which builds its own
+independent SBM graph at the same homophily; `C_structure` uses the default
+`latent_space` graph and was never affected). C's arm was re-run in full at
+FULL scale (C, C-null, C_structure, B_on_C_graph — 20 seeds, 80 runs) with
+the fix applied: the real `stylized_gate` check now reports World C failing
+*only* on attention_gini (expected/universal, see the Gini finding above),
+reciprocity failure is gone. Note `clustering_ratio` is not one of
+`stylized_gate`'s checked rows (`GATE_ROWS = ("attention_gini",
+"reciprocity")` in `experiments/gate.py`) — fixing reciprocity alone clears
+the gate that actually blocks the run, independent of whatever
+`clustering_ratio` is doing.
 
 That is not the whole fix, though. `clustering_ratio` **also** collapses
 with N at fixed `sbm_homophily` and block count (3.8-3.9 at SMOKE → 1.54 at
@@ -353,10 +372,55 @@ to World C.
 **Net: no `sbm`-generator calibration is population-size-invariant as
 currently parameterized.** Anyone running an `sbm`-graph experiment at a
 different N than it was calibrated at must re-check both bands, not assume
-either survives; `sbm_mirror_p` recovers reciprocity but clustering_ratio
-needs either more blocks (a population-wide change, if blocks come from
-`topic_affinity`) or a generator change (e.g. block-size-invariant p_within
-scaling), neither of which exists yet. This is the one blocker standing
-between World C's FULL-scale backfire result (`mean_animus` larger than
-World A's, cross_camp_tie_share ≈0.50) and being quotable as a result about
-that world's substrate.
+either survives. `sbm_mirror_p` recovers reciprocity (done here); the
+`clustering_ratio` ceiling remains unfixed and needs either more blocks (a
+population-wide change, if blocks come from `topic_affinity`) or a generator
+change (e.g. block-size-invariant p_within scaling) — but since it isn't a
+gated quantity, it does not block reporting a result, only bears on how
+literally to read the original SMOKE-scale calibration comment's claim of
+"community clustering" in the graph.
+
+With reciprocity fixed, World C's FULL-scale backfire result stands: re-run
+at 20 seeds, `mean_animus` effect +0.00237 (vs A's +0.00123), essentially
+unchanged from the pre-fix figure (+0.00236) — reciprocity was a second-order
+graph property here, not the dominant one driving the effect (that's
+`cross_camp_tie_share` ≈0.50, the graph's camp-blindness, which the mirror_p
+fix does not touch). The result is now quotable as a claim about a
+camp-blind topic-block graph's substrate, subject to the scoping in the
+kernel-learning and `tie_strength` findings above.
+
+## Normalizing World C's animus effect by engagement volume weakens the backfire reading, not confirms it
+
+World C's raw `mean_animus` effect (+0.00237) is ~1.9x World A's (+0.00123),
+the headline of the backfire finding above. But C's topic-blocked graph also
+drives far more raw cascade volume: computed directly from the FULL run's
+own persisted seed-0 metrics (`metrics.parquet`, `n_engagements` summed over
+all 500 ticks — no re-run needed), C's world arm generates 2,588,398
+engagements against its null's 1,066,265 (marginal dose +152.2/user); A's
+world arm generates 1,636,103 against its null's 1,153,732 (marginal dose
++48.2/user) — C drives **3.15x A's marginal engagement volume**.
+
+Dividing the animus effect by the marginal engagement dose it took to
+produce it (`mean_animus` effect / marginal engagements-per-user, matching
+the world-minus-null differencing already used for the animus effect
+itself):
+
+| world | marginal dose/user | animus effect | **animus per marginal engagement** |
+|---|---|---|---|
+| A | 48.2  | +0.001228 | **2.55e-5** |
+| B | 15.8  | -0.000144 | -9.1e-6 (noise; B is flat) |
+| C | 152.2 | +0.002365 | **1.55e-5** |
+
+Per contact, C is **61% as hostility-inducing as A, not more**. The raw
+comparison (C's animus effect ~1.9x A's) is substantially a cascade-volume
+artifact: C's camp-blind graph produces far more total contact, and that
+larger volume — at a *lower* per-contact rate — is what the aggregate number
+reflects. This does not erase the backfire finding (C's population still
+ends up more hostile than A's, in aggregate, than the theory predicted), but
+it changes what mechanism is licensed: "C's structure generates more total
+out-group contact, and more contact costs animus even at a below-A per-unit
+rate" is a different and weaker claim than "C's mechanism is a more potent
+per-contact hostility generator than A's." Only seed 0 is available for this
+calculation (traits/metrics for other seeds were deleted per-seed to survive
+the disk-space crisis), so there is no cross-seed CI — but the gap (1.6x) is
+far larger than the seed-to-seed noise visible elsewhere in this run.
