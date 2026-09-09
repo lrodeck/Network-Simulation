@@ -1,0 +1,37 @@
+{
+  "passed": false,
+  "failures": [
+    "seed 0: attention_gini = 0.489 outside [0.8, 0.95]",
+    "seed 1: attention_gini = 0.472 outside [0.8, 0.95]"
+  ],
+  "rows": {
+    "engagement_alpha": [
+      2.049196920824817,
+      2.030589553173291
+    ],
+    "cascade_singleton_share": [
+      0.857801184990125,
+      0.8381653992395437
+    ],
+    "thread_depth_mean": [
+      1.316358024691358,
+      1.276064610866373
+    ],
+    "attention_gini": [
+      0.489489510554654,
+      0.471620793034224
+    ],
+    "posting_volume_gini": [
+      0.7129376051495868,
+      0.7027037389100127
+    ],
+    "reciprocity": [
+      0.35646110479204784,
+      0.3581727171436649
+    ],
+    "clustering_ratio": [
+      3.105577018859194,
+      3.179536352441926
+    ]
+  }
+}

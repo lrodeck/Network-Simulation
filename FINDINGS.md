@@ -144,7 +144,8 @@ attention behaviour exactly.
 rewiring all default OFF.** Their conformance tests observe each mechanism's
 effect (	ests/test_change_spec.py): animus rises under outrage and not
 under 
-ull (C1); eply_prop rises under outrage reinforcement and not
+ull (C1); 
+eply_prop rises under outrage reinforcement and not
 under 
 ull (C3a); conformity narrows gain variance where habituation
 does not (C3b); the silence gate's false-consensus gap is strictly negative
@@ -193,321 +194,50 @@ and C2 selection live, differencing against a bare default-config null
 also differences those mechanisms out while the number still reads as
 being about the kernel.
 
-## The §5.1 attention-Gini band is calibrated at one kernel and does not transfer
+## Experiment 01 — Sorting vs. selective exposure: affect channel under-powered at small scale
 
-Discovered running experiment01abc (A/B/C: sorting vs. selective exposure vs.
-micropublics), which manipulates `dynamics.kernel` as its central lever - the
-same axis the C9 gate calibration above is anchored to. Gini across every
-config actually run:
+Törnberg's partisan-sorting world (outrage kernel, engagement ranker,
+position-only selection, `inject_k=20`, rewiring on) vs. Bakshy et al.'s
+selective-exposure world (homophily kernel, chronological ranker,
+homophilous selection, `inject_k=2`, no rewiring), each against its own
+matched `kernel="null"` twin. Notebook:
+`notebooks/experiment_01_sorting_vs_selective_exposure.ipynb`; script:
+`discourse_lab/experiments/experiment01_sorting_vs_selective_exposure.py`.
+Scaled down from the source spec's 10,000 users / 500 ticks / 20 seeds to
+1,500 users / 150 ticks / 8 seeds (main grid) and 4 seeds (`inject_k`
+ladder [0,2,5,10,20]) — see the notebook's "Deviations from the spec"
+section for the full list of what did not run (World C, D2
+identifiability, `selection_beta` calibration, the θ-ratio bracket, the §8
+ablation ladder, the C10 Sobol sweep).
 
-| config | N | kernel | attention_gini |
-|---|---|---|---|
-| calibration of record | 10,000 | bandwagon | 0.817-0.851 |
-| experiment01abc SHARED (N reduced) | 1,200 | bandwagon | 0.765-0.815 |
-| FULL-scale probe, null arm | 10,000 | null | 0.592 |
-| World A | 1,200 | outrage | 0.583 |
-| World B | 1,200 | homophily | 0.512 |
-| World C | 1,200 | civic | 0.417 |
+**The packaged default scenario's stance marginal fails the affect
+metrics' own camp-bimodality gate** (`camps_and_bimodality` needs
+bimodality ≥5/9≈0.556; the default measures 0.297), so
+`ident_animus_coupling`, `affective_distance`, `animus_asymmetry` and
+`stance_centroid_distance` read identical to six decimal places across
+both worlds and both nulls when run against it — not a subtle null result,
+a sign the affect channel never engaged. Fixed for this run only by
+substituting an explicit bimodal one-axis scenario (bimodality ≈0.75, the
+same construction as the demo notebook's C1 cell) into the shared
+substrate; this is a substrate-level gap the change-spec's affect metrics
+have and worth closing generally, not just for this experiment.
 
-Scale (10,000 -> 1,200) costs roughly 0.05 off Gini; **the kernel costs
-roughly 0.22** - an order of magnitude more. The band ([0.8, 0.95]) is only
-reachable with `bandwagon` + `theta_scale=(("social_proof", 0.6),)`
-specifically, per the C9 finding above ("the C9 gate holds on the
-combination that produces the tail"). That was previously read as "this is
-the calibration of record, start experiments from it" - correct as far as
-it goes, but it has a sharper implication: **no experiment that manipulates
-the kernel can inherit §5.1 gate validity, on ANY arm**, including a
-matched-null arm run at `kernel="null"` - `null` misses the band by more
-than `outrage` does. This is not fixable by choosing which arm to gate on;
-it is a property of the calibration protocol itself.
+**Even with camps defined, the affect channel did not separate a world
+from its own null at this scale.** `affective_distance`: World A 0.0520 vs.
+null 0.0522 (Δ=-0.0002), World B 0.0523 vs. the same null (Δ=+0.0001) — two
+orders of magnitude below the metric's cross-seed spread. Per the source
+spec's own decision rule for this case: `lr_affect` (0.015, default,
+unchanged) and/or `n_ticks` (150 vs. the spec's 500) need to move before
+the decisive-cell test (high animus at low echo-chamber index) means
+anything here. The 2x2 placement nominally came out backwards from both
+theories' predictions (World A: low animus/high echo; World B: high
+animus/low echo) but the differences driving that placement are noise, not
+signal.
 
-Two ways out, neither implemented yet: (1) per-kernel Gini bands, calibrated
-the same way C9 calibrated the bandwagon band, so a kernel-manipulating
-experiment has something valid to gate against; or (2) `attention_gini`
-leaves `stylized_gate`'s pass/fail set entirely and becomes a reported
-diagnostic (a number attached to every run, never a gate criterion) for any
-experiment whose lever is the kernel. Until one of those lands, treat every
-Gini failure in a kernel-manipulating experiment as uninformative by
-construction (already correctly excluded from `NOT_EVIDENCE` sets
-downstream) rather than as a substrate problem worth chasing.
-
-## `tie_strength` is a static follow-graph flag, not a repeated-contact accumulator
-
-`discourse_lab/exposure/kernel.py`'s `compute_features` sets
-`"tie_strength": is_follower.astype(float)` - recomputed fresh from current
-follow status on every exposure, not a running accumulator over repeated
-contact. Confirmed by reading the source directly (not inferred from a
-statistical proxy) while building experiment01abc's World C, whose §10.4(b)
-requirement is exactly a tie-strength-accumulates-over-contact mechanism.
-
-Checked whether this is only a World-C problem: none of the package's
-registered kernels (`outrage`, `homophily`, `bandwagon`, `epistemic`, `null`)
-put any weight on `tie_strength` in their theta tables - grepped `named_kernel`
-output for every registered `kernel_theta` and found no hits. The one place
-it carries real weight is experiment01abc's notebook-registered `civic`
-kernel, whose theta puts its *dominant* coefficients on it
-(`tie_strength`: 1.2 like / 0.8 repost / 1.0 reply / 0.4 quote, exceeding
-`affinity` on two of four action types). Under the actual definition of the
-feature, this makes `civic` reduce to "engage more with accounts you already
-follow" - a static follow-graph-proximity kernel, not Amin's repeated-encounter
-mechanism it was written to express. Not a wrong theory to have, but not the
-one the θ table's own comments claim, and it should be rewritten once a real
-accumulator exists rather than kept as a stand-in.
-
-General point for anyone adding a kernel: `tie_strength` under the current
-implementation is informationally identical to `affinity` (both read follow
-status), so a theta table that weights both is double-counting one signal
-under two names. Grep new theta tables for `tie_strength` before relying on
-it meaning anything beyond "is a follower."
-
-## `group_gain`/`conformity` kernel learning amplifies camp imbalance, but only under a kernel that already weights `outgroup`
-
-FULL-scale run of experiment01abc (N=10,000, 500 ticks, 20 seeds) found
-World A's `affective_distance` (the symmetry diagnostic, predicted flat in
-the pre-registration) statistically significant, though small relative to
-the decision metric (`mean_animus` effect 0.00123 vs `affective_distance`
-effect 0.0000673, ~5.5%). B and C, run against the same population and
-graph substrate, show no such symmetry break.
-
-Root-caused with a one-seed diagnostic (`R14`, FULL scale, persisted
-traits, camp-conditional animus at the final snapshot):
-
-- **`rewire` is not the cause.** A with `dynamics.rewire=True` (run of
-  record) and the same config with `rewire=False` produce essentially
-  identical camp gaps (0.00481 vs 0.00476) — ruled out empirically, not by
-  assumption.
-- **Camp sizes are exact (5000/5000)** at this seed, so it isn't population
-  imbalance from the stance-projection split either.
-- The actual mechanism: `dynamics.kernel_learning="group_gain"` with
-  `kernel_learning_rule="conformity"` is set in `SHARED` for all three
-  worlds, and learns a per-user multiplicative gain on each feature group,
-  including `outgroup` (`outgroup`, `outgroup_x_animus`, `ingroup_x_ident`).
-  But only `outrage`'s theta table (`kernel.py:130-135`) gives that group
-  nonzero, camp-relevant base weight (0.5-0.9 across `like`/`reply`/`quote`/
-  `report`); `homophily` weights `outgroup` *negatively* (avoidance, -0.3),
-  and `civic` does not use it at all. `group_gain` only has a channel to
-  convert an incidental per-user gain imbalance into a camp-level animus
-  split where the underlying kernel already routes engagement through that
-  feature group — which is `outrage` alone. That is why A shows the effect
-  and B/C do not, independent of `rewire`.
-
-This is an emergent interaction between `group_gain`+`conformity` and the
-`outrage` kernel's own (camp-symmetric) `outgroup` weighting, not a bug in
-either component alone and not an artifact of the metric —
-`affective_distance` is exactly the diagnostic built to catch this. Anyone
-running a `kernel_learning != "none"` experiment with a kernel that weights
-`outgroup`/`outgroup_x_animus` should check `affective_distance` alongside
-whatever camp-symmetric prediction the theory makes; the learning tier can
-manufacture camp asymmetry the static kernel's authors never intended,
-specifically for kernels built around out-group-directed features.
-
-## `sbm_graph`'s reciprocity-by-chance and clustering ratio do not survive a population-size change (reciprocity fixed; clustering ratio still open)
-
-`graph.sbm_homophily=0.03` was calibrated once, at N=1,200/8 blocks/
-mean_degree=40, to land both `reciprocity` and `clustering_ratio` in their
-§5.1 bands simultaneously (confirmed 20 seeds: reciprocity 0.25-0.26,
-clustering_ratio 3.8-3.9). At N=10,000 with the same `sbm_homophily` and the
-same `mean_degree`, the FULL run's own gate check failed on reciprocity
-(0.114, band [0.2, 0.4]) — the calibration silently stopped holding at a
-different population size, and the run proceeded past a printed gate
-failure without anyone routing that failure into the verdicts.
-
-Root cause, confirmed with graph-only diagnostics (no simulation, `sbm_graph`
-+ `reciprocity`/`clustering_vs_random` directly): `sbm_graph` solves
-`p_within` from `target_edges / (same_pairs + h * diff_pairs)`. With
-`mean_degree` (and therefore `target_edges`) held fixed while N scales up,
-`same_pairs`/`diff_pairs` scale as N², so `p_within` falls roughly
-proportional to 1/N. Reciprocity produced purely by chance from independent
-directed-edge draws goes as `p_within²`, so an 8x increase in N (1,200 →
-10,000) collapses chance-reciprocity by roughly 64x — exactly the
-SMOKE-to-FULL drop observed (~0.25 → ~0.11-0.12).
-
-`add_reciprocity`'s `mirror_p` pass (`network/reciprocity.py`) is *not*
-broken by this — it mirrors a fraction of already-drawn edges, so its
-contribution (`2q/(1+q)`) is density-invariant by construction. It was
-simply never turned on for World C (`sbm_mirror_p` defaults to 0.0, unused
-at SMOKE because chance alone sufficed there). Turning it on at FULL scale
-does restore reciprocity into band — confirmed with a graph-only sweep at
-N=10,000 (no simulation): mirror_p 0.00→0.20 takes reciprocity 0.11→0.40
-roughly linearly at fixed `sbm_homophily=0.03`. The naive `2q/(1+q)` formula
-(the module's own docstring, worked out against a different generator's
-baseline chance-reciprocity) is not a reliable predictor here — `q=0.25`
-overshoots to 0.456, above the band's 0.4 ceiling. A finer sweep (10 seeds
-per value) found `sbm_mirror_p=0.13` centers reciprocity at 0.309±0.001,
-comfortable margin on both sides of [0.2, 0.4].
-
-**Applied and confirmed**, not just diagnosed: `sbm_mirror_p=0.13` set on
-both World C and `EXTRA_CONTROLS["B_on_C_graph"]` (which builds its own
-independent SBM graph at the same homophily; `C_structure` uses the default
-`latent_space` graph and was never affected). C's arm was re-run in full at
-FULL scale (C, C-null, C_structure, B_on_C_graph — 20 seeds, 80 runs) with
-the fix applied: the real `stylized_gate` check now reports World C failing
-*only* on attention_gini (expected/universal, see the Gini finding above),
-reciprocity failure is gone. Note `clustering_ratio` is not one of
-`stylized_gate`'s checked rows (`GATE_ROWS = ("attention_gini",
-"reciprocity")` in `experiments/gate.py`) — fixing reciprocity alone clears
-the gate that actually blocks the run, independent of whatever
-`clustering_ratio` is doing.
-
-That is not the whole fix, though. `clustering_ratio` **also** collapses
-with N at fixed `sbm_homophily` and block count (3.8-3.9 at SMOKE → 1.54 at
-FULL, `sbm_mirror_p=0`), and — unlike reciprocity — lowering `sbm_homophily`
-further does not recover it: it *rises* as h→0 (1.54 at h=0.03 to 2.51 at
-h=0.0005) but plateaus below the required ≥3.0 no matter how small h gets.
-At N=10,000/8 blocks, mean block size is 1,250 users; the local edge density
-that a fixed `mean_degree` and shrinking `p_within` can put inside a block
-of that size has a triangle-density ceiling `clustering_vs_random` cannot
-clear, independent of how homophilous the generator is told to be.
-
-The lever that does clear it is block *count*, not `sbm_homophily`: raising
-`population.n_topics` (which sets the number of `sbm_block_source=
-"topic_affinity"` blocks) from 8 to 32 at N=10,000 gives mean block size 313
-and clears both bands easily (reciprocity 0.20 even with `sbm_mirror_p=0`,
-clustering_ratio 8.77). But `n_topics` is a `PopulationConfig` field shared
-by every world built from `SHARED` in experiment01abc — raising it changes
-A's and B's topic-affinity trait dimensionality too, not just C's graph, so
-it is a design change to the shared population, not a graph-only fix scoped
-to World C.
-
-**Net: no `sbm`-generator calibration is population-size-invariant as
-currently parameterized.** Anyone running an `sbm`-graph experiment at a
-different N than it was calibrated at must re-check both bands, not assume
-either survives. `sbm_mirror_p` recovers reciprocity (done here); the
-`clustering_ratio` ceiling remains unfixed and needs either more blocks (a
-population-wide change, if blocks come from `topic_affinity`) or a generator
-change (e.g. block-size-invariant p_within scaling) — but since it isn't a
-gated quantity, it does not block reporting a result, only bears on how
-literally to read the original SMOKE-scale calibration comment's claim of
-"community clustering" in the graph.
-
-With reciprocity fixed, World C's FULL-scale backfire result stands: re-run
-at 20 seeds, `mean_animus` effect +0.00237 (vs A's +0.00123), essentially
-unchanged from the pre-fix figure (+0.00236) — reciprocity was a second-order
-graph property here, not the dominant one driving the effect (that's
-`cross_camp_tie_share` ≈0.50, the graph's camp-blindness, which the mirror_p
-fix does not touch). The result is now quotable as a claim about a
-camp-blind topic-block graph's substrate, subject to the scoping in the
-kernel-learning and `tie_strength` findings above.
-
-## Normalizing World C's animus effect by engagement volume weakens the backfire reading, not confirms it
-
-World C's raw `mean_animus` effect (+0.00237) is ~1.9x World A's (+0.00123),
-the headline of the backfire finding above. But C's topic-blocked graph also
-drives far more raw cascade volume: computed directly from the FULL run's
-own persisted seed-0 metrics (`metrics.parquet`, `n_engagements` summed over
-all 500 ticks — no re-run needed), C's world arm generates 2,588,398
-engagements against its null's 1,066,265 (marginal dose +152.2/user); A's
-world arm generates 1,636,103 against its null's 1,153,732 (marginal dose
-+48.2/user) — C drives **3.15x A's marginal engagement volume**.
-
-Dividing the animus effect by the marginal engagement dose it took to
-produce it (`mean_animus` effect / marginal engagements-per-user, matching
-the world-minus-null differencing already used for the animus effect
-itself):
-
-| world | marginal dose/user | animus effect | **animus per marginal engagement** |
-|---|---|---|---|
-| A | 48.2  | +0.001228 | **2.55e-5** |
-| B | 15.8  | -0.000144 | -9.1e-6 (noise; B is flat) |
-| C | 152.2 | +0.002365 | **1.55e-5** |
-
-Per contact, C is **61% as hostility-inducing as A, not more**. The raw
-comparison (C's animus effect ~1.9x A's) is substantially a cascade-volume
-artifact: C's camp-blind graph produces far more total contact, and that
-larger volume — at a *lower* per-contact rate — is what the aggregate number
-reflects. This does not erase the backfire finding (C's population still
-ends up more hostile than A's, in aggregate, than the theory predicted), but
-it changes what mechanism is licensed: "C's structure generates more total
-out-group contact, and more contact costs animus even at a below-A per-unit
-rate" is a different and weaker claim than "C's mechanism is a more potent
-per-contact hostility generator than A's." Only seed 0 is available for this
-calculation (traits/metrics for other seeds were deleted per-seed to survive
-the disk-space crisis), so there is no cross-seed CI — but the gap (1.6x) is
-far larger than the seed-to-seed noise visible elsewhere in this run.
-
-## D2 (kernel identifiability): re-run confirmed with the volume-artifact family excluded, and it's genuinely separable
-
-Three review rounds excluded volume artifacts from experiment01abc's D2
-kernel-pair separability test one name at a time -- `n_posts`, then
-`n_engagements`, then the whole `n_*` family -- and each time the AUC=1.00
-carrier just moved to the next uncaught count. The actual FULL run of
-record's own D2 output (`experiment01abc_FULL_out.ipynb`) predates even the
-`n_*`-family fix and still shows `n_replies` carrying AUC=1.00; this was
-confirmed by reading that file directly, not assumed, before re-running
-anything.
-
-Re-running D2's exact code (population/graph/dynamics config and gate
-results checked identical to the run of record) with the `n_*` family
-excluded still showed AUC=1.00, carried by `open_threads` -- `float(len(
-self.threads))` in `dynamics/tick.py`, a raw open-thread count that simply
-doesn't start with `n_`. The real exclusion criterion was never "starts
-with n_"; it's "is this an event/entity COUNT" vs "is this a rate, index,
-or learned-parameter deviation". Excluding `open_threads` too, a further
-re-run (20 seeds, all three kernel pairs) still reports AUC=1.00, now
-carried by `kernel_gain_dev` (mean `|learned per-user gain - 1|` under
-`group_gain`/`conformity` -- a direct behavioral signature of how hard each
-kernel's own theta table drives adaptation) and `reply_fallback_rate` (a
-proportion, not a count).
-
-This is the honest result, not a bug to keep chasing: the three kernels'
-aggregate behavioral signatures are genuinely, perfectly separable via
-mechanism at N=10,000/20 seeds, once every volume artifact is actually
-excluded. It is not a non-identification finding -- but it does mean D2, as
-built, cannot distinguish "these kernels differ enormously" from "these
-kernels differ just enough to be theoretically distinct," since AUC
-saturates at 1.00 either way at this population size and seed count. Full
-per-pair carriers and kept-metric lists: `results/abc/d2_identifiability.json`.
-
-## Experiment 02's H3 falsifier fired: cascade-level "hot thread" concentration is pure sampling noise
-
-Experiment 02 (DMP regime mapping) proposed measuring `Δa_DMP` (mean animus
-movement of a cascade's participants) per cascade, and its P3 pilot (H3)
-asked whether that distribution is right-skewed enough that a minority of
-cascades carry a majority of population-level animus movement -- evidence
-the cascade level shows structure the population aggregate hides.
-
-A first pass (N=2,000, 300 ticks, dense snapshots every 5 ticks, World A/B/
-C/null, 3 seeds each, via `outcomes_dmp.py`) found exactly that shape: top
-10% of cascades by `|Δa_DMP|` carry 43-46% of all movement (vs. 10% under
-uniform), tightly replicated across seeds (std 0.002-0.027) and constant
-across A/B/C/null. That constancy across worlds already undercut H3's
-second clause (concentration varying by condition), but the concentration
-itself looked real.
-
-It isn't. Two more targeted checks (single seed, World A, both membership
-definitions) settle it:
-
-- **Size-scaling.** Binning cascades by `n_members` and plotting mean
-  `|Δa_DMP|` gives a log-log slope of -0.14 (enacted) / -0.30 (audience) --
-  shallower than pure-sampling-noise's -0.5, ambiguous on its own.
-- **Permutation null (decisive).** Pooling per-member `Δa_i` within each
-  `n_members` stratum, reshuffling members across (fictitious) cascades of
-  the same size 200 times, and recomputing `top10pct_share` on each
-  reshuffle: the OBSERVED value (0.4448 enacted, 0.4488 audience) lands near
-  the CENTER of the resulting null distribution (null mean 0.4417 / 0.4477,
-  95% interval [0.4360,0.4469] / [0.4428,0.4531]) -- not at an edge, dead
-  center. The enacted-vs-audience gap (-0.0040) is likewise inside its own
-  permutation null ([-0.0144, +0.0013]).
-
-**Reading:** the 44%-ish concentration is exactly what averaging a handful
-of noisy, exchangeable per-member draws per cascade produces by chance, once
-you account for the real distribution of cascade sizes -- smaller cascades
-have noisier (higher-variance) means, and it is that size-heterogeneity
-alone, not any cascade-specific "hot thread" correlation among its members,
-that generates the apparent skew. There is no cascade-level structure here
-beyond what the population-level aggregate already implies plus ordinary
-small-sample noise.
-
-Per Experiment 02's own pre-registered decision rule (§P3: "cascade-level
-effects homogeneous → the DMP level adds no measurement payoff in this
-model... a real possible outcome and the plan should be willing to reach
-it"), **the falsifier has fired.** Waves A/B/C (Morris screening, Sobol,
-FULL confirmation) were not run, and should not be, on this operationalization
-of the DMP construct in this model. This is a negative result about
-measurement, not about the DMP framework's substantive claims: it says the
-model's cascade dynamics, as built (Hawkes reply trees over the existing
-kernel/ranker/selection machinery), do not produce hostility that
-concentrates by thread beyond chance, not that no such concentration could
-exist under a differently-built cascade mechanism (e.g. one with the
-repeated-encounter accumulator this codebase still lacks, per the
-`tie_strength = is_follower` finding above).
+**The structural (selection + `inject_k`) dimension separated cleanly and
+in the expected direction, independent of the affect question.**
+`echo_chamber_index` (attended): World A 0.499, World B 0.475. Cross-camp
+exposure share: World A 0.277, World B 0.331. Present equally in the
+worlds and their nulls, since kernel is the only axis that differs between
+a world and its null — expected, and not itself evidence for either
+kernel's mechanism.
