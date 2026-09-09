@@ -457,3 +457,57 @@ built, cannot distinguish "these kernels differ enormously" from "these
 kernels differ just enough to be theoretically distinct," since AUC
 saturates at 1.00 either way at this population size and seed count. Full
 per-pair carriers and kept-metric lists: `results/abc/d2_identifiability.json`.
+
+## Experiment 02's H3 falsifier fired: cascade-level "hot thread" concentration is pure sampling noise
+
+Experiment 02 (DMP regime mapping) proposed measuring `Δa_DMP` (mean animus
+movement of a cascade's participants) per cascade, and its P3 pilot (H3)
+asked whether that distribution is right-skewed enough that a minority of
+cascades carry a majority of population-level animus movement -- evidence
+the cascade level shows structure the population aggregate hides.
+
+A first pass (N=2,000, 300 ticks, dense snapshots every 5 ticks, World A/B/
+C/null, 3 seeds each, via `outcomes_dmp.py`) found exactly that shape: top
+10% of cascades by `|Δa_DMP|` carry 43-46% of all movement (vs. 10% under
+uniform), tightly replicated across seeds (std 0.002-0.027) and constant
+across A/B/C/null. That constancy across worlds already undercut H3's
+second clause (concentration varying by condition), but the concentration
+itself looked real.
+
+It isn't. Two more targeted checks (single seed, World A, both membership
+definitions) settle it:
+
+- **Size-scaling.** Binning cascades by `n_members` and plotting mean
+  `|Δa_DMP|` gives a log-log slope of -0.14 (enacted) / -0.30 (audience) --
+  shallower than pure-sampling-noise's -0.5, ambiguous on its own.
+- **Permutation null (decisive).** Pooling per-member `Δa_i` within each
+  `n_members` stratum, reshuffling members across (fictitious) cascades of
+  the same size 200 times, and recomputing `top10pct_share` on each
+  reshuffle: the OBSERVED value (0.4448 enacted, 0.4488 audience) lands near
+  the CENTER of the resulting null distribution (null mean 0.4417 / 0.4477,
+  95% interval [0.4360,0.4469] / [0.4428,0.4531]) -- not at an edge, dead
+  center. The enacted-vs-audience gap (-0.0040) is likewise inside its own
+  permutation null ([-0.0144, +0.0013]).
+
+**Reading:** the 44%-ish concentration is exactly what averaging a handful
+of noisy, exchangeable per-member draws per cascade produces by chance, once
+you account for the real distribution of cascade sizes -- smaller cascades
+have noisier (higher-variance) means, and it is that size-heterogeneity
+alone, not any cascade-specific "hot thread" correlation among its members,
+that generates the apparent skew. There is no cascade-level structure here
+beyond what the population-level aggregate already implies plus ordinary
+small-sample noise.
+
+Per Experiment 02's own pre-registered decision rule (§P3: "cascade-level
+effects homogeneous → the DMP level adds no measurement payoff in this
+model... a real possible outcome and the plan should be willing to reach
+it"), **the falsifier has fired.** Waves A/B/C (Morris screening, Sobol,
+FULL confirmation) were not run, and should not be, on this operationalization
+of the DMP construct in this model. This is a negative result about
+measurement, not about the DMP framework's substantive claims: it says the
+model's cascade dynamics, as built (Hawkes reply trees over the existing
+kernel/ranker/selection machinery), do not produce hostility that
+concentrates by thread beyond chance, not that no such concentration could
+exist under a differently-built cascade mechanism (e.g. one with the
+repeated-encounter accumulator this codebase still lacks, per the
+`tie_strength = is_follower` finding above).
