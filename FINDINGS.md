@@ -144,7 +144,8 @@ attention behaviour exactly.
 rewiring all default OFF.** Their conformance tests observe each mechanism's
 effect (	ests/test_change_spec.py): animus rises under outrage and not
 under 
-ull (C1); eply_prop rises under outrage reinforcement and not
+ull (C1); 
+eply_prop rises under outrage reinforcement and not
 under 
 ull (C3a); conformity narrows gain variance where habituation
 does not (C3b); the silence gate's false-consensus gap is strictly negative
