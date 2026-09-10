@@ -130,6 +130,25 @@ class PopulationConfig(Hashable):
     # population with a different column count silently reused would be the
     # worst kind of bug a content-addressed cache can hide.
     affect: bool = False
+    # Experiment 03 §4's affective-tribalization dial: the log-space MEAN of
+    # the initial `animus` draw (population/traits.py::_affect_marginal's
+    # lognormal). -2.2 is the pre-existing shipped default (low mean, heavy
+    # right tail); raising it moves the whole population's starting
+    # hostility up, independent of `stance_polarization` and
+    # `graph.sbm_homophily` below. Only read when `affect=True`.
+    animus_mu: float = -2.2
+    # Experiment 03 §4's ideological-tribalization dial: 0 leaves stance
+    # axis 0 at the plain `normal(0,1)` every other axis uses (unimodal —
+    # today's only behaviour); above 0 it draws from `bimodal_normal`
+    # instead (population/marginals.py), an equal-weight two-Gaussian
+    # mixture at +/-`stance_polarization`/2 — a continuous unimodal ->
+    # strongly-bimodal dial at fixed n_users/archetype mix, independent of
+    # the other two dials. Axis 0 only: `camps_and_bimodality` projects onto
+    # the dominant component, and axis 0's variance dominates as soon as
+    # separation makes it the largest, so one axis is enough to move camp
+    # bimodality without also changing every other axis's marginal shape.
+    # Ignored once a scenario supplies its own stance_axes marginals.
+    stance_polarization: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -153,7 +172,7 @@ class GraphConfig(Hashable):
     # tail (spec §5.1's engagement rows). Ignored by every other generator.
     pa_fraction: float = 0.35
     sbm_blocks: int = 0                       # 0 → derive from sbm_block_source instead
-    sbm_block_source: str = "archetype"       # archetype | topic_affinity (used when sbm_blocks == 0)
+    sbm_block_source: str = "archetype"       # archetype | topic_affinity | camp (used when sbm_blocks == 0)
     sbm_homophily: float = 0.8
     # `mirror_p` (below) is calibrated against the `latent_pa` generator's
     # naturally denser structure; the SBM's independent per-ordered-pair draws
@@ -512,6 +531,70 @@ class DynamicsConfig(Hashable):
 
     snapshot_every: int = 1
     exposure_sample_rate: float = 0.01
+
+    # -- Experiment 03 package prerequisite: time-varying parameters ----------
+    # "A schedule inside one config" (Experiment 03 design §5.1), so that
+    # forked arms share a bit-identical prefix instead of being separate
+    # configs that "merely start the same way" and diverge for reasons the
+    # config hash cannot record. `((start_tick, ((field, value), ...)), ...)`,
+    # sorted ascending on start_tick: at tick t, the LATEST entry with
+    # start_tick <= t replaces the named fields on the base config wholesale
+    # (not cumulatively on the previous entry's values — a withdrawal entry
+    # states what it wants directly rather than undoing what came before).
+    # Resolved by `effective_dynamics()` and read once per tick
+    # (TickEngine.step), so every OTHER phase of that tick (including RNG
+    # draws, which are keyed on `seed` alone, never on config content) is
+    # unaffected by which arm is running — the prefix before the first
+    # start_tick is bit-identical across arms that share it.
+    #
+    # Only fields TickEngine.step reads off its per-tick local (or rebuilds
+    # from it, like the eight valence_* coefficients — see EndogenousValence
+    # Params in tick.py's `step`) are schedule-reactive: inject_k, kernel/
+    # kernel_theta/theta_scale, civility_prob, ranker, selection,
+    # valence_mode and its coefficients, and similar. Fields consumed ONLY
+    # in TickEngine.__post_init__ (kernel_learning, agreement_metric's
+    # calibration, quality_trait_coupling) or read from the stored `Config`
+    # directly rather than the per-tick local (apply_drift's hostility/
+    # support/OU tables) are NOT schedule-reactive — scheduling them changes
+    # nothing past construction. When in doubt, check where the field is
+    # actually read; test_runner.py's bit-identical-prefix test is the
+    # pattern for verifying a specific field either way.
+    schedule: tuple[tuple[int, tuple[tuple[str, Any], ...]], ...] = ()
+
+    def __post_init__(self) -> None:
+        starts = [start for start, _ in self.schedule]
+        if starts != sorted(starts) or len(starts) != len(set(starts)):
+            raise ValueError(
+                f"dynamics.schedule start ticks must be strictly increasing, got {starts!r}"
+            )
+        if any(start < 0 for start in starts):
+            raise ValueError(f"dynamics.schedule start ticks must be >= 0, got {starts!r}")
+        field_names = {f.name for f in dataclasses.fields(self)}
+        for start, overrides in self.schedule:
+            unknown = {name for name, _ in overrides} - field_names
+            if unknown:
+                raise ValueError(
+                    f"dynamics.schedule entry at t={start} overrides unknown field(s) "
+                    f"{sorted(unknown)!r}"
+                )
+
+
+def effective_dynamics(dynamics: "DynamicsConfig", t: int) -> "DynamicsConfig":
+    """The `DynamicsConfig` in force at tick `t` under `dynamics.schedule`.
+
+    Returns `dynamics` itself (not a copy) when the schedule is empty or
+    nothing has started yet, so an unscheduled run pays no cost and no
+    identity change. See `DynamicsConfig.schedule` for the contract.
+    """
+    active: tuple[tuple[str, Any], ...] | None = None
+    for start, overrides in dynamics.schedule:
+        if start <= t:
+            active = overrides
+        else:
+            break  # __post_init__ guarantees ascending order
+    if not active:
+        return dynamics
+    return dataclasses.replace(dynamics, **dict(active))
 
 
 @dataclass(frozen=True)

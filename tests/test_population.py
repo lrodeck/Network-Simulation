@@ -63,6 +63,51 @@ def test_marginals_match_spec_families():
     assert abs(personality.std() - 1.0) < 0.1
 
 
+def test_animus_mu_moves_the_initial_animus_level():
+    """Experiment 03 §4's affective-tribalization dial."""
+    base = dataclasses.replace(
+        Config(), population=dataclasses.replace(Config().population, n_users=5000, affect=True)
+    )
+    means = []
+    for mu in (-2.2, -1.0, 0.0, 1.0):
+        cfg = dataclasses.replace(base, population=dataclasses.replace(base.population, animus_mu=mu))
+        pop = sample_population(cfg, np.random.default_rng(3))
+        means.append(pop.X_used[:, pop.trait_names.index("animus")].mean())
+
+    assert means == sorted(means), f"not monotonic in animus_mu: {means}"
+    assert means[-1] > 5 * means[0], f"raising animus_mu barely moved the level: {means}"
+
+
+def test_stance_polarization_moves_axis0_bimodality_leaving_other_axes_unimodal():
+    """Experiment 03 §4's ideological-tribalization dial: continuous, and
+    scoped to axis 0 (see PopulationConfig.stance_polarization's docstring).
+    """
+    from discourse_lab.metrics import bimodality_coefficient
+    from discourse_lab.metrics.stylized import _dominant_projection
+
+    base = dataclasses.replace(Config(), population=dataclasses.replace(Config().population, n_users=10_000))
+    bimodalities = []
+    for pol in (0.0, 2.0, 3.5, 5.0):
+        cfg = dataclasses.replace(
+            base, population=dataclasses.replace(base.population, stance_polarization=pol)
+        )
+        pop = sample_population(cfg, np.random.default_rng(3))
+        stance_idx = [i for i, n in enumerate(pop.trait_names) if n.startswith("stance_")]
+        stance = pop.X_used[:, stance_idx]
+        bimodalities.append(bimodality_coefficient(_dominant_projection(stance)))
+        if pol == 0.0:
+            # axis 0 unchanged from plain normal(0,1) at the default
+            assert abs(stance[:, 0].std() - 1.0) < 0.1
+        else:
+            # axis 1+ never touched by the dial, at any separation
+            assert abs(stance[:, 1].std() - 1.0) < 0.1
+
+    assert bimodalities == sorted(bimodalities), f"not monotonic in stance_polarization: {bimodalities}"
+    assert bimodalities[0] < 5.0 / 9.0 <= bimodalities[-1], (
+        f"expected to cross the Sarle bimodality gate (5/9): {bimodalities}"
+    )
+
+
 def test_rank_correlations_match_configured_pairs():
     cfg = dataclasses.replace(
         Config(),

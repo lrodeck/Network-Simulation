@@ -825,6 +825,8 @@ different run; change none and `cached_run` returns the existing one.
 | `topic_logit_sigma` | 1.0 | spread of topic interest |
 | `archetype_weights` / `_offsets` | library defaults | the named groups and their trait shifts |
 | `correlation_pairs` | () | requested trait correlations — **adds to** what archetypes already induce |
+| `animus_mu` | -2.2 | log-space mean of the initial `animus` draw (needs `affect=True`) — Experiment 03's affective-tribalization dial |
+| `stance_polarization` | 0.0 | axis-0 stance drawn from `bimodal_normal(separation=this)` instead of `normal(0,1)` above 0 — Experiment 03's ideological-tribalization dial, continuous unimodal → strongly bimodal |
 
 ### Graph
 
@@ -838,6 +840,8 @@ different run; change none and `cached_run` returns the existing one.
 | `knn_k` | 60 | candidate pool size; **must exceed `mean_degree`** |
 | `mirror_p` | 0.02 | probability each edge is mirrored — *not* the measured reciprocity |
 | `fanout_cap` | 400 | max followers one post reaches per tick |
+| `sbm_block_source` | `archetype` | `sbm` generator only: `archetype` \| `topic_affinity` \| `camp` (blocks = sign of the dominant stance axis — Experiment 03's structural-tribalization dial; see `network.measures.cross_camp_tie_share`) |
+| `sbm_homophily` | 0.8 | `sbm` generator only: between:within edge-probability ratio, smaller = more sorted — the dial itself, at whichever `sbm_block_source` is chosen |
 
 ### Dynamics — timing and volume
 
@@ -1092,6 +1096,32 @@ discriminating experiments as runnable designs, each required to state its
 falsifier; `experiments/sensitivity_sobol.py` attaches Sobol indices to every
 result driven by a parameter with no empirical anchor (`lr_affect`,
 `affect_ou_k`, `silence_gate`, …).
+
+### Experiment 03 infrastructure: time-varying configs and forked arms
+
+`DynamicsConfig.schedule` is a piecewise list of `(start_tick, overrides)`
+pairs: at tick `t`, `config.py::effective_dynamics` applies the latest
+entry whose `start_tick <= t` on top of the base dynamics config, entries
+NOT cumulative (a later entry restates values directly rather than undoing
+an earlier one). Every other phase of a tick — including RNG draws, keyed
+on `seed` alone and never on config content — is unaffected by which
+schedule fires, so two configs sharing a seed and an identical dynamics
+config up to some tick `T`, differing only in a schedule entry AT `T`,
+produce a **bit-identical** per-tick record for every `t < T`
+(`tests/test_runner.py::test_schedule_gives_a_bit_identical_prefix_and_diverges_after`).
+This is what lets an experiment fork several "arms" from one shared burn-in
+without the confound of separate configs that merely start out the same.
+
+Only fields `TickEngine.step` reads off its per-tick local — or rebuilds
+from it, as the eight `valence_*` coefficients now are — are
+schedule-reactive; a field consumed once at construction (`kernel_learning`,
+`quality_trait_coupling`, `agreement_metric`'s calibration) is not, and
+scheduling it silently does nothing past tick 0. `experiments/
+experiment03_bubble_intervention.py` is the first consumer: `forked_config`
+builds one config per arm from a shared `burn_in` config, each a schedule
+entry at the intervention tick (plus, optionally, a second entry at a
+withdrawal tick that restates the `none` arm's values — the hysteresis
+phase of that experiment's design).
 
 ---
 

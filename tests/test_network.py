@@ -9,9 +9,15 @@ import dataclasses
 import numpy as np
 
 from discourse_lab.config import Config
+from discourse_lab.metrics.stylized import stance_clusters
 from discourse_lab.network import cached_graph, generate_graph
 from discourse_lab.network.latent_space import _latent_coords
-from discourse_lab.network.measures import degree_sequence, global_clustering, mean_neighbor_distance
+from discourse_lab.network.measures import (
+    cross_camp_tie_share,
+    degree_sequence,
+    global_clustering,
+    mean_neighbor_distance,
+)
 from discourse_lab.network.reciprocity import add_reciprocity
 from discourse_lab.population import sample_population
 
@@ -166,3 +172,54 @@ def test_graph_artifact_caches(tmp_path, monkeypatch):
     g2 = cached_graph(cfg, seed=0, pop=pop, rng=np.random.default_rng(999))
 
     np.testing.assert_array_equal(g1.csr.toarray(), g2.csr.toarray())
+
+
+def _camp_labels(pop):
+    stance_idx = [i for i, name in enumerate(pop.trait_names) if name.startswith("stance_")]
+    return stance_clusters(pop.X_used[:, stance_idx])
+
+
+def test_camp_sbm_blocks_give_a_continuous_structural_dial_at_fixed_stance():
+    """Experiment 03 §4's prerequisite check: the structural-tribalization
+    dial must be continuously variable AT FIXED STANCE DISTRIBUTION, not two
+    discrete points the way archetype/topic_affinity SBM blocks left it
+    (FINDINGS.md: 0.29 from the latent generator, 0.50 from topic-blocked
+    SBM — "two points, not a dial"). One population, `sbm_homophily` swept
+    with `sbm_block_source="camp"`, everything else held fixed.
+    """
+    base = _cfg("sbm", n_users=2000, mean_degree=30.0, sbm_block_source="camp", sbm_mirror_p=0.0)
+    pop = sample_population(base, np.random.default_rng(7))
+    camp = _camp_labels(pop)
+
+    homophily_values = [0.05, 0.2, 0.5, 0.8, 1.0]
+    shares = []
+    for h in homophily_values:
+        cfg = dataclasses.replace(base, graph=dataclasses.replace(base.graph, sbm_homophily=h))
+        g = generate_graph(cfg, pop, np.random.default_rng(3))
+        shares.append(cross_camp_tie_share(g.csr, camp))
+
+    assert len({round(s, 2) for s in shares}) >= 4, f"only a couple distinct readings: {shares}"
+    assert shares == sorted(shares), f"not monotonic in sbm_homophily: {shares}"
+    assert shares[-1] > 0.4, "h=1.0 (blind) should sit near chance (~0.5)"
+    assert shares[0] < 0.35, "h=0.05 (sorted) should sit well below chance"
+
+
+def test_camp_sbm_blocks_target_camp_not_topic_affinity():
+    """The gap this dial exists to close: topic-affinity blocks correlate
+    with topic, not stance (change-spec V5's own passing assertion), so
+    sorting a graph by them barely moves cross-camp tie share even at
+    strong homophily. `sbm_block_source="camp"` must sort on the axis
+    `cross_camp_tie_share` itself measures.
+    """
+    base = _cfg("sbm", n_users=2000, mean_degree=30.0, sbm_homophily=0.05, sbm_mirror_p=0.0)
+    pop = sample_population(base, np.random.default_rng(11))
+    camp = _camp_labels(pop)
+
+    cfg_camp = dataclasses.replace(base, graph=dataclasses.replace(base.graph, sbm_block_source="camp"))
+    cfg_topic = dataclasses.replace(base, graph=dataclasses.replace(base.graph, sbm_block_source="topic_affinity"))
+
+    share_camp = cross_camp_tie_share(generate_graph(cfg_camp, pop, np.random.default_rng(4)).csr, camp)
+    share_topic = cross_camp_tie_share(generate_graph(cfg_topic, pop, np.random.default_rng(4)).csr, camp)
+
+    assert share_camp < 0.3, f"camp blocks should sort hard on camp, got {share_camp:.3f}"
+    assert share_topic > 0.4, f"topic blocks should be near-chance on camp, got {share_topic:.3f}"

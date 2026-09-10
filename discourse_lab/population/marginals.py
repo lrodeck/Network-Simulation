@@ -49,6 +49,30 @@ def beta(a: float = 2.0, b: float = 2.0) -> Marginal:
     return Marginal(icdf=lambda w: dist.ppf(_clip01(w)))
 
 
+@register("marginal", "bimodal_normal")
+def bimodal_normal(separation: float = 0.0, sigma: float = 1.0, grid: int = 8192) -> Marginal:
+    """Equal-weight two-component Gaussian mixture, components at
+    +/-separation/2, each scale `sigma`. `separation=0` collapses to
+    `normal(0, sigma)` — Experiment 03 §4's ideological-tribalization dial's
+    unimodal end. Tabulated and inverted like `vonmises` below: a Gaussian
+    mixture's CDF has no closed-form inverse, and spec §0.5 rules out a
+    per-user root-find.
+    """
+    lo = -separation / 2 - 6 * sigma
+    hi = separation / 2 + 6 * sigma
+    x = np.linspace(lo, hi, grid)
+    cdf = (
+        0.5 * stats.norm(loc=-separation / 2, scale=sigma).cdf(x)
+        + 0.5 * stats.norm(loc=separation / 2, scale=sigma).cdf(x)
+    )
+    cdf[0], cdf[-1] = 0.0, 1.0
+
+    def icdf(w: np.ndarray) -> np.ndarray:
+        return np.interp(_clip01(w), cdf, x)
+
+    return Marginal(icdf=icdf)
+
+
 @register("marginal", "vonmises")
 def vonmises(mu: float = 0.0, kappa: float = 2.0, grid: int = 8192) -> Marginal:
     """Inverted on a precomputed CDF grid rather than through `dist.ppf`.
