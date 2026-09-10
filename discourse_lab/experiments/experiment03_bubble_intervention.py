@@ -105,18 +105,20 @@ def dial_config(base: Config, *, affective: float, ideological: float, structura
         structural:   graph.sbm_homophily (camp blocks), 1.0 (blind) .. 0.05 (sorted)
 
     The ideological dial's Sarle-bimodality gate (metrics.polarization.
-    CAMP_BIMODAL_THRESHOLD = 5/9) crosses around level ~0.5 at N~800
-    (calibrated empirically, 4 seeds: mean bimodality 0.49 at level=0.375,
-    0.58 at 0.5, 0.66 at 0.625). BELOW the gate, camp is undefined, and the
-    ENGAGEMENT and COMPOSITION arms are then structurally near-inert (their
-    `outgroup`/`outgroup_x_animus` kernel features are conditional on camp
-    membership -- exposure/kernel.py -- so scoring 0/undefined-camp exposures
-    leaves nothing for those arms' kernel_theta overrides to act on). That is
-    a real, reportable model property, not a bug: it means "does popping the
-    bubble help" cannot even be POSED for engagement/composition until the
-    population has crossed into definable-camp territory, independent of
-    whether popping it would help once there. `wave_a_screen`'s default
-    background level accounts for this (see its docstring).
+    CAMP_BIMODAL_THRESHOLD = 5/9) crosses around level ~0.5 at N~800-1000
+    (calibrated empirically). BELOW the gate, camp is undefined, and
+    `dynamics/drift.py::apply_drift`'s C1.3 affect op is gated on
+    `camps is not None` (line ~487) -- so animus/identification do not
+    update AT ALL, for ANY arm including `none`, not only the ENGAGEMENT/
+    COMPOSITION arms whose `outgroup`/`outgroup_x_animus` kernel features
+    are separately camp-conditional. Confirmed in Wave A (FINDINGS.md):
+    every arm's delta_aff_plateau is EXACTLY 0.0 at ideological=0.1 (well
+    below the gate at this module's mapping). That is a real, reportable
+    model property, not a bug: "does popping the bubble help" is not even
+    MEASURABLE until the population has crossed into definable-camp
+    territory, independent of whether popping it would help once there.
+    `wave_a_screen`'s default background level accounts for this (see its
+    docstring).
     """
     for name, level in (("affective", affective), ("ideological", ideological), ("structural", structural)):
         if not 0.0 <= level <= 1.0:
