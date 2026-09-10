@@ -476,3 +476,218 @@ Re-ran `test_c9_attention_gini_and_reciprocity_hold_simultaneously` and
 `test_c13_stylized_gate` at the full 20-seed gate: both still pass on the
 current code — the substrate is unchanged, as the RNG-isolation argument
 predicts, and this is the confirmation rather than an assumption.
+
+## Experiment 03 — infrastructure built, Wave A run: engagement and composition diverge in sign, cleanly
+
+V1-V6 unblocked Experiment 03's question (§0 above) but three more
+prerequisites the brief itself names turned out not to exist yet, only one
+of them previously flagged. Built the same way V1-V6 were: test-first,
+defaulted to prior behaviour, each gap recorded before it was closed.
+
+**Prerequisite 1 — §5.1's "package prerequisite," a schedule inside one
+config.** Nothing existed to let a single run change parameters at a named
+tick. `DynamicsConfig.schedule` is `((start_tick, ((field, value), ...)),
+...)`, resolved per tick by `config.py::effective_dynamics` and read at the
+top of `TickEngine.step` in place of the static `self.cfg.dynamics`.
+Entries are not cumulative — a later entry restates the fields it touches
+rather than undoing an earlier entry — which is what lets a withdrawal
+entry cleanly revert to the `none` arm's values without knowing what an
+intervention arm changed. Because RNG streams are keyed on `seed` alone
+(`runner.py::phase_rngs`, never on config content) and every OTHER phase
+reads the same effective values until the first entry fires, two configs
+sharing a seed and an identical dynamics config up to some tick `T`,
+differing only in a schedule entry AT `T`, produce a **bit-identical**
+per-tick record for every `t < T` —
+`tests/test_runner.py::test_schedule_gives_a_bit_identical_prefix_and_diverges_after`
+proves this directly rather than assuming it. This is what lets Experiment
+03's four arms fork from one shared burn-in instead of being separate
+configs that "merely start the same way" and diverge for reasons the
+config hash cannot record (the confound the brief names explicitly).
+
+Not every field is schedule-reactive, and the boundary is a real trap, not
+a footnote: a field consumed once at `TickEngine` construction (`kernel_
+learning`, `quality_trait_coupling`, `agreement_metric`'s calibration) or
+read from the stored `Config` directly inside a helper that takes the whole
+config (`apply_drift`'s hostility/support/OU tables) does not react to a
+later schedule entry. **This caught a real bug before it shipped, not
+after:** `EndogenousValenceParams` (V3's eight `valence_*` coefficients)
+was built once in `TickEngine.__post_init__` from the base config and
+reused every tick via `self.valence_params` — so a "composition" arm
+scheduling `valence_gamma0` upward (raising baseline civility under
+endogenous valence) silently did nothing. Caught by exactly the V5
+discipline this project keeps leaning on: a smoke test showed the
+composition and engagement arms producing bit-identical per-tick metrics,
+which should have been impossible given they differ in `valence_gamma0`.
+Fixed by rebuilding `EndogenousValenceParams` per tick from the effective
+dynamics config inside `step` (`dynamics/tick.py`); `civility_prob` itself
+was never affected (it IS read per-tick, in the branch endogenous mode
+never takes) but would have had the identical bug under exogenous mode had
+`valence_params`-style caching been copied there too.
+
+**Prerequisite 2 — §4's structural-tribalization dial.** Recorded already
+(above): archetype/topic_affinity SBM blocks are uncorrelated with camp,
+and `homophily_beta` was already measured inert for cross-camp tie share
+(`experiments/intervention.py`'s own notes). `graph.sbm_block_source=
+"camp"` sorts SBM blocks by `stance_clusters`'s sign-of-dominant-axis
+label instead — deliberately not gated on the bimodality threshold
+`camps_and_bimodality` uses for outcome reporting, since graph structure
+needs a split even on a population that is only weakly bimodal (exactly
+the "structurally sorted but not yet affectively tribalized" cell the
+three-dial design exists to reach). `network.measures.cross_camp_tie_share`
+makes the dial's effect directly measurable rather than inferred from
+config. `tests/test_network.py` proves both the continuity (>= 4 distinct
+readings sweeping `sbm_homophily` at one fixed population, not the "two
+points" the old block sources gave) and the targeting (camp blocks push
+cross-camp tie share below 0.3; topic-affinity blocks stay above 0.4, near
+chance, on the SAME population).
+
+**Prerequisite 3 — §4's other two dials, not previously flagged as
+missing.** Discovered only once the arms were actually being wired
+together: `population.animus_mu` and `population.stance_polarization`
+did not exist either. Animus's marginal was a hardcoded
+`lognormal(mu=-2.2, sigma=1.0)`
+(`population/traits.py::_affect_marginal`); stance axes with no scenario
+loaded were always plain `normal(0, 1)` — unimodal by construction, no
+knob at all. Built the same way: `animus_mu` threads through to the
+lognormal's mean (§4's "affective... initial animus level," low -2.2 to
+high 1.0, measured to move mean animus from 0.18 to 4.46 over that range
+at N=5000); `stance_polarization` draws axis 0 from a new
+`bimodal_normal(separation, sigma)` marginal (`population/marginals.py`,
+tabulated-CDF inversion, same technique `vonmises` already uses — a
+Gaussian mixture has no closed-form inverse either) instead of plain
+normal above 0. Axis 0 only, not every axis: `camps_and_bimodality`
+projects onto the dominant component, and axis 0's variance dominates as
+soon as separation makes it the largest, so touching one axis is enough
+without changing every other axis's marginal shape. Calibrated at N=800-
+1000: the Sarle-bimodality gate (5/9) crosses around `stance_polarization`
+≈ 4, i.e. dial level ≈ 0.5 under this module's 0-8 mapping.
+`tests/test_population.py` proves both dials move monotonically and that
+`stance_polarization` leaves every axis but 0 untouched.
+
+**A property of the model, surfaced by the gate, broader than first
+recorded.** `dynamics/drift.py::apply_drift`'s C1.3 affect op — the ONLY
+place `animus`/`identification` update at all — is gated on `camps is not
+None` (line ~487), not only the engagement kernel's `outgroup`/
+`outgroup_x_animus` features. Below the bimodality gate, animus does not
+move for ANY arm, including `none` — confirmed directly in Wave A below,
+where every arm's `delta_aff_plateau` is exactly 0.0 at the lowest
+ideological-dial level swept. "Does popping the bubble help" is not
+merely hard to detect below the gate, it is not measurable at all: the
+model has nothing to report until the population has actually sorted into
+two camps. `experiments/experiment03_bubble_intervention.py::dial_config`
+documents this and `wave_a_screen` sets its shared background level (0.7,
+not the naive 0.5 midpoint) specifically to stay clear of it while sweeping
+the other two dials.
+
+**The four arms and the outcome pair (§2-3), as built.** `ARMS` in
+`experiment03_bubble_intervention.py`: `exposure` raises `inject_k` to 20;
+`engagement` SETS the kernel's `outgroup`/`outgroup_x_animus` weights to
+clearly positive values via `kernel_theta` (not `theta_scale` — a
+multiplicative scale flips sign depending on the base kernel's own
+convention, homophily's outgroup weight is negative and outrage's is
+positive, so it cannot reliably mean "more cross-camp engagement" across
+different burn-in kernels); `composition` adds `valence_gamma0=2.5`
+(P(civil) at animus=0 rises from 0.5 to 0.92) on top of the same kernel
+change. `delta_aff` (plateau animus, arm minus none, plus the same delta
+normalized by total engagement volume over the window) and `delta_ideo`
+(toward-other-camp / toward-mean / toward-own-pole / delta-k, each a
+per-user DISTANCE-DECREASE oriented toward its reference point before
+averaging) are reported as a pair, never collapsed — `delta_ideo`'s three
+camp-relative components are computed against a FIXED axis and camp split
+taken from the shared pre-intervention state, so a later tick's population
+is scored against a reference frame that does not itself drift.
+`tests/test_experiment03.py` proves the decomposition does not repeat
+Experiment 01's `affective_distance` bug: a scenario where both camps
+converge toward the population mean by the same amount cancels to exactly
+zero under a naive raw signed mean, and reads correctly as `toward_mean ≈
++1.0` here.
+
+**Wave A (§5.4), reduced scale.** Not a true Morris elementary-effects
+design — that needs multiple random trajectories through the 3-dial space
+to estimate global sensitivity, out of scope for one session — but a
+one-factor-at-a-time sign screen: each dial swept at levels {0.1, 0.5,
+0.9} with the other two held at the 0.7 background, 5 seeds per cell.
+N=1000, 60 ticks burn-in, 100 ticks post-intervention (longer than an
+initial 40-tick check, which gave legible-but-barely-so deltas of order
+1e-4 given `lr_affect=0.015`'s slow step size). 45 design points, 135
+model-arm rows, ~30s/point, ~23 minutes wall clock
+(`results/experiment03/wave_a.csv`).
+
+**Measured.** Across every non-degenerate cell (i.e. excluding
+ideological=0.1, where the gate above makes the whole affect channel
+inert):
+
+| arm | delta_aff_plateau sign | consistency |
+|---|---|---|
+| **composition** | negative (lower animus than `none`) | 40/40 seed-cells |
+| **engagement** | positive (higher animus than `none`) | 40/40 seed-cells |
+| **exposure** | positive, an order of magnitude smaller | 37/40; mixed (2/5 positive) only at structural=0.1 |
+
+**H3 (composition carries the sign) holds cleanly at this reduced scale
+and this background slice.** Engagement and composition differ not just in
+magnitude but in SIGN, on every design point where the comparison is
+measurable — the tautology-risk note in the brief's own §3 predicted
+exactly this ("the engagement arm alone... will and should show backfire...
+The composition arm is the informative one"), and Wave A reproduces it
+quantitatively rather than by construction: `civility` is the only
+difference between the two arms' schedules, and it flips the sign every
+time. `exposure`'s small, occasionally-ambiguous effect also matches prior
+work: Experiment 01 measured `inject_k` moving the raw cross-cutting-
+exposure aggregate by almost nothing while the injected items themselves
+were far more cross-cutting — "drowned out by follower fanout at any
+dosage a platform would ship."
+
+**H1 (the sign flips somewhere in the tribalization space) is NOT
+established by this pass, and that is a real limitation of the design, not
+a null result.** Within the three ranges actually swept — each dial from
+0.1 to 0.9 around a FIXED 0.7 background on the other two — no arm's sign
+changes. That rules out a crossing inside this specific one-factor-at-a-
+time slice; it says nothing about the full 3-dial volume a real Morris
+design (or a denser LHS, per the brief's own Wave B) would cover, and
+nothing about the region below the ideological gate, where the question
+is not measurable rather than answered "no". Read honestly: uniformly
+negative on composition and uniformly positive on engagement, IN THE
+SLICE TESTED, is closer to the brief's own H1 falsifier language than to
+a confirmed crossover — worth flagging rather than either claiming H1 or
+declaring it falsified.
+
+**H2 (the bundle comes apart) has a genuine, unanticipated signature in
+this data.** `toward_mean` is negative and `toward_own_pole` is positive
+in 113/120 non-degenerate seed-cells, for EVERY arm — including
+`composition`, which simultaneously LOWERS animus. The brief's own §2
+table anticipates two rows for the ideological axis ("positions converge"
+vs "positions unchanged"); what Wave A actually shows is a third pattern
+the table does not name: positions do not converge OR stay put, they
+measurably move toward radicalization even under the arm that reduces
+hostility. "Pacification without persuasion" (the table's own bottom-left
+cell) undersells it — this reads as "de-escalation with simultaneous
+ideological hardening," a combination worth a name of its own if this
+holds up at full scale. Caveat stated plainly: magnitudes here are ~1e-3,
+one reduced-scale run, and `toward_other_camp`/`toward_mean`/`toward_own_
+pole` are close to mirror images of each other in this near-linear
+two-camp setup (recorded in the outcome-pair's own module docstring) — the
+DIRECTION is the finding, not yet the magnitude.
+
+**H5 (fragmentation is a distinct outcome) has no support in this pass.**
+`delta_k` is exactly 0.0 on all 135 rows — `emergent_camps`' BIC-selected k
+never moved, for any arm, at any design point. Could be a true negative
+(the binary frame is adequate at this scale) or could be that 160 ticks
+and N=1000 is simply too short/small for a k-means-BIC estimator to
+register a shift — this pass cannot distinguish the two, and does not
+claim to.
+
+**What this is not, stated plainly (see also the module's own
+docstring).** No hysteresis phase (§5.2) — nothing here says whether the
+composition arm's de-escalation is reversible. No response-surface fit
+over the full 3-dial volume, only three one-at-a-time slices through it.
+No calibration against a corpus (§8) and no viewpoint-diversity floor
+(§2.3) — both explicitly deferred as normative/scope choices in the brief
+itself, unresolved here too. `delta_aff.per_contact` normalizes by total
+engagement volume, not contact restricted to cross-camp pairs specifically
+— the literal §2.2 ask needs an engagement/author-camp join this pass does
+not build. Waves B-D (the LHS response surface, hysteresis, and held-out
+confirmation) are not run. The open decisions §10 of the brief lists —
+the viewpoint-diversity floor's number, corpus-or-swept-anchored-group,
+and the intervention target under emergent k — are exactly as open as
+before this session; none of them blocked Wave A, but all of them block
+Wave B.

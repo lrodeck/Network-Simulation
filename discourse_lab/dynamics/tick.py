@@ -41,7 +41,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from discourse_lab.config import Config
+from discourse_lab.config import Config, effective_dynamics
 from discourse_lab.dynamics.cascade import BRANCHING_ACTIONS, CascadeState, derive_posts, r_eff
 from discourse_lab.dynamics.discourse_state import update_discourse
 from discourse_lab.dynamics.drift import DriftState, apply_drift
@@ -168,13 +168,12 @@ class TickEngine:
                 "dynamics.valence_mode='endogenous' needs population.affect=True "
                 "(V3's P(civil) reads the engaging user's own animus)"
             )
-        dcfg = self.cfg.dynamics
-        self.valence_params = EndogenousValenceParams(
-            beta0=dcfg.valence_beta0, beta_dist=dcfg.valence_beta_dist, beta_ident=dcfg.valence_beta_ident,
-            noise_agree=dcfg.valence_noise_agree, gamma0=dcfg.valence_gamma0,
-            gamma_animus=dcfg.valence_gamma_animus, gamma_dist=dcfg.valence_gamma_dist,
-            noise_civil=dcfg.valence_noise_civil,
-        )
+        # `EndogenousValenceParams` is built per-tick in `step`, from that
+        # tick's EFFECTIVE dynamics config, not here — Experiment 03's
+        # `dynamics.schedule` needs the eight `valence_*` coefficients to be
+        # schedule-reactive (e.g. a "composition" arm raising `valence_
+        # gamma0`), and a value baked in at construction from the base
+        # config would silently ignore any schedule entry that touches them.
 
         self.expr = ExpressionMap.build(
             names, K, quality_trait_coupling=self.cfg.dynamics.quality_trait_coupling
@@ -226,7 +225,12 @@ class TickEngine:
         self.camps, self.camp_bimodality = camps_and_bimodality(stance)
 
     def step(self, t: int) -> dict[str, float]:
-        cfg = self.cfg.dynamics
+        # Experiment 03 §5.1: `dynamics.schedule` (empty by default) lets a
+        # single run change select parameters at named ticks, so forked arms
+        # share a bit-identical prefix instead of being separate configs that
+        # only start out the same. See config.py::effective_dynamics for
+        # which fields are schedule-reactive.
+        cfg = effective_dynamics(self.cfg.dynamics, t)
         rngs = self.rngs
         n = self.cfg.population.n_users
         self.retired_posts = None
@@ -533,10 +537,16 @@ class TickEngine:
                         # V3: "endogenous" reads it off the engaging user's
                         # own animus/identification instead of a coin flip.
                         if cfg.valence_mode == "endogenous":
+                            valence_params = EndogenousValenceParams(
+                                beta0=cfg.valence_beta0, beta_dist=cfg.valence_beta_dist,
+                                beta_ident=cfg.valence_beta_ident, noise_agree=cfg.valence_noise_agree,
+                                gamma0=cfg.valence_gamma0, gamma_animus=cfg.valence_gamma_animus,
+                                gamma_dist=cfg.valence_gamma_dist, noise_civil=cfg.valence_noise_civil,
+                            )
                             valence = assign_valence_endogenous(
                                 features_att["agreement"], self.pop.animus[exposures_att.user_id],
                                 self.pop.identification[exposures_att.user_id], rngs["affect"],
-                                self.valence_params, cfg.force_agree, cfg.force_civil,
+                                valence_params, cfg.force_agree, cfg.force_civil,
                             )
                         else:
                             valence = assign_valence(

@@ -70,17 +70,19 @@ def _meta_marginal(name: str) -> tuple[Marginal, str]:
     raise KeyError(name)
 
 
-def _affect_marginal(name: str) -> tuple[Marginal, str]:
+def _affect_marginal(name: str, cfg: Config) -> tuple[Marginal, str]:
     """C1.1 initial draws. `identification`: moderate by default, correlated
-    with conviction at the copula level. `animus`: low mean, heavy right tail
-    — most people hold little out-group hostility, some hold a lot, which is
-    the shape the affective-polarization surveys report; log-link keeps it
-    positive and lets drift multiply it multiplicatively in used space.
+    with conviction at the copula level. `animus`: low mean by default, heavy
+    right tail — most people hold little out-group hostility, some hold a
+    lot, which is the shape the affective-polarization surveys report;
+    log-link keeps it positive and lets drift multiply it multiplicatively in
+    used space. The mean is `population.animus_mu` (Experiment 03 §4's
+    affective-tribalization dial; -2.2 is the pre-existing default).
     """
     if name == "identification":
         return build_marginal("beta", a=2.0, b=3.0), "logit"
     if name == "animus":
-        return build_marginal("lognormal", mu=-2.2, sigma=1.0), "log"
+        return build_marginal("lognormal", mu=cfg.population.animus_mu, sigma=1.0), "log"
     raise KeyError(name)
 
 
@@ -94,9 +96,19 @@ def stance_specs(cfg: Config) -> list[TraitSpec]:
             marginal = empirical_from_editor(bins=m["bins"], support=tuple(m["support"]), density=m["density"])
             specs.append(TraitSpec(f"stance_{ax.get('name', i)}", "stance", marginal, "identity"))
         return specs
-    return [
-        TraitSpec(f"stance_{i}", "stance", build_marginal("normal"), "identity") for i in range(d)
-    ]
+    specs = []
+    for i in range(d):
+        # Experiment 03 §4's ideological-tribalization dial: axis 0 only
+        # (see PopulationConfig.stance_polarization's docstring for why one
+        # axis suffices). Every other axis, and axis 0 itself at the
+        # default 0.0, is unchanged from the plain normal(0,1) this always
+        # drew.
+        if i == 0 and cfg.population.stance_polarization > 0:
+            marginal = build_marginal("bimodal_normal", separation=cfg.population.stance_polarization)
+        else:
+            marginal = build_marginal("normal")
+        specs.append(TraitSpec(f"stance_{i}", "stance", marginal, "identity"))
+    return specs
 
 
 def trait_table(cfg: Config) -> list[TraitSpec]:
@@ -127,7 +139,7 @@ def trait_table(cfg: Config) -> list[TraitSpec]:
     # and layout exactly.
     if cfg.population.affect:
         for name in AFFECT:
-            marginal, link = _affect_marginal(name)
+            marginal, link = _affect_marginal(name, cfg)
             specs.append(TraitSpec(name, "affect", marginal, link))
 
     return specs

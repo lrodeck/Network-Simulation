@@ -40,6 +40,32 @@ def sbm_graph(cfg: Config, pop: Population, rng: np.random.Generator) -> sparse.
         idx = {name: i for i, name in enumerate(names)}
         blocks = np.array([idx[pop.archetype_names[c]] for c in pop.archetype_labels])
         n_blocks = len(names)
+    elif gcfg.sbm_block_source == "camp":
+        # Experiment 03 §4's structural-tribalization dial: blocks from
+        # ideological camp (sign of the dominant stance axis), not topic or
+        # persona, so `sbm_homophily` sorts the graph BY THE SAME AXIS
+        # `metrics.polarization.camps_and_bimodality` reports affect on —
+        # letting the structural and affective/ideological dials be swept
+        # independently at a fixed stance distribution (§4's prerequisite).
+        #
+        # Deliberately `stance_clusters`, not `camps_and_bimodality`: the
+        # latter returns `None` below the Sarle bimodality gate, because
+        # camp-CONDITIONAL OUTCOME reporting must stay undefined on a
+        # unimodal population rather than read a projection artifact as two
+        # camps. Graph STRUCTURE has no such convention to inherit — a
+        # population that is only weakly bimodal can still be sorted hard by
+        # whichever lean it has, and that "structurally sorted but not (yet)
+        # affectively tribalized" cell is exactly one of the eight this
+        # experiment's three independent dials are meant to reach.
+        from discourse_lab.metrics.stylized import stance_clusters  # lazy: metrics/__init__ imports network
+
+        stance_idx = [i for i, name in enumerate(pop.trait_names) if name.startswith("stance_")]
+        if not stance_idx:
+            raise ValueError(
+                "graph.sbm_block_source='camp' but this population has no stance_* traits"
+            )
+        blocks = stance_clusters(pop.X_used[:, stance_idx])
+        n_blocks = 2
     else:
         raise ValueError(f"unknown graph.sbm_block_source: {gcfg.sbm_block_source!r}")
 

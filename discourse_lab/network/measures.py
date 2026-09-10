@@ -33,6 +33,25 @@ def mean_neighbor_distance(G: sparse.csr_matrix, coords: np.ndarray) -> float:
     return float(d.mean())
 
 
+def cross_camp_tie_share(G: sparse.csr_matrix, camp: np.ndarray) -> float:
+    """Share of edges whose two endpoints sit in different camps — Experiment
+    03 §4's structural-tribalization dial, made observable rather than
+    inferred from a generator's config. `camp` is a 0/1 label per user
+    (`metrics.stylized.stance_clusters`'s sign on the dominant stance axis,
+    the same label `graph.sbm_block_source="camp"` sorts on), so this reads
+    the same on ANY generator — a latent-space or configuration-model graph
+    can have an incidental cross-camp share too, not just an SBM one.
+
+    ~0.5 is "blind" (camp uncorrelated with tie formation, e.g. `camps` drawn
+    over an unsorted graph); the doc's "structurally sorted" end is ~0.2.
+    """
+    coo = G.tocoo()
+    if coo.nnz == 0:
+        return float("nan")
+    crosses = camp[coo.row] != camp[coo.col]
+    return float(crosses.mean())
+
+
 def reciprocity(G: sparse.csr_matrix) -> float:
     """Share of edges whose reverse edge also exists (spec §5.1: 0.2-0.4).
 
