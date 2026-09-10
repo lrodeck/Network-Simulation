@@ -37,12 +37,16 @@ import pyarrow.parquet as pq
 # 5: C2.1 — the exposure sample gained `attended` (exposed vs attended are
 #    different quantities and the echo-chamber index must say which it
 #    measured); C3b gained kernel_state.parquet; C2.2 gained rewire_log.
-RUN_FORMAT = 5
+# 6: V1 (change spec V1-V6) — engagements gained `agree`/`civil`. Every
+#    engagement is assigned a valence at the moment it happens; a run
+#    written before this cannot answer "was this a civil disagreement" and
+#    must be recomputed, not just re-read.
+RUN_FORMAT = 6
 
 POST_DIM_COLUMNS = (
     "arousal", "valence", "provocativeness", "novelty", "specificity", "quality", "length",
 )
-ENGAGEMENT_COLUMNS = ("t", "user", "post", "action")
+ENGAGEMENT_COLUMNS = ("t", "user", "post", "action", "agree", "civil")
 EXPOSURE_SAMPLE_COLUMNS = ("t", "user", "post", "rank", "is_follower", "attended", "action")
 
 
@@ -62,7 +66,14 @@ def posts_schema(stance_dims: int) -> pa.Schema:
 
 
 def engagements_schema() -> pa.Schema:
-    return pa.schema([("t", pa.int64()), ("user", pa.int64()), ("post", pa.int64()), ("action", pa.string())])
+    """`agree` / `civil` (V1, change spec V1-V6): the valence assigned to
+    this engagement at the moment it happened — see `dynamics/valence.py`.
+    Both are structurally present (every engagement gets a valence), unlike
+    `attended` on the exposure sample, which only exists when persisted."""
+    return pa.schema([
+        ("t", pa.int64()), ("user", pa.int64()), ("post", pa.int64()), ("action", pa.string()),
+        ("agree", pa.bool_()), ("civil", pa.bool_()),
+    ])
 
 
 def exposures_schema() -> pa.Schema:
@@ -203,6 +214,8 @@ class RunWriter:
             pa.array(np.asarray(events["user"]), type=pa.int64()),
             pa.array(np.asarray(events["post"]), type=pa.int64()),
             pa.array([str(a) for a in events["action"]], type=pa.string()),
+            pa.array(np.asarray(events["agree"], dtype=bool), type=pa.bool_()),
+            pa.array(np.asarray(events["civil"], dtype=bool), type=pa.bool_()),
         ]
         self.write_table("engagements", schema, pa.RecordBatch.from_arrays(arrays, schema=schema))
 

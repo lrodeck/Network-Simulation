@@ -56,12 +56,18 @@ from discourse_lab.dynamics.kernel_learning import KernelLearningState, apply_le
 from discourse_lab.dynamics.perception import PerceivedState, compute_perception
 from discourse_lab.dynamics.posts import PostBatch, concat_post_batches, filter_post_batch, generate_posts
 from discourse_lab.dynamics.reply_model import ThresholdState, threshold_model
+from discourse_lab.dynamics.report_exit import ReportSuppressionState
 from discourse_lab.dynamics.timing import (
     FatigueState,
     circadian_factor,
     circadian_shape,
     sample_post_counts,
     silence_gate_factor,
+)
+from discourse_lab.dynamics.valence import (
+    EndogenousValenceParams,
+    assign_valence,
+    assign_valence_endogenous,
 )
 from discourse_lab.exposure import apply_kernel, candidate_inbox, compute_features, named_kernel, rank_candidates
 from discourse_lab.exposure.attention import Exposures, select_exposures
@@ -95,6 +101,7 @@ class TickEngine:
     # C2.2 / C3b / C8 state
     rewire_state: RewireState = field(default_factory=RewireState)
     threshold_state: ThresholdState = field(default_factory=ThresholdState)
+    report_state: ReportSuppressionState = field(init=False)
     learner: KernelLearningState | None = field(default=None, init=False)
     # C7: users gate on LAST tick's perceived climate — the feed they have
     # already seen, not the one this tick is about to build
@@ -132,6 +139,7 @@ class TickEngine:
         n = self.cfg.population.n_users
         K, D = self.cfg.population.n_topics, self.cfg.stance_dims()
         names = self.pop.trait_names
+        self.report_state = ReportSuppressionState(n=n)
 
         learning = self.cfg.dynamics.kernel_learning
         if learning not in ("none", "group_gain", "full"):
@@ -148,6 +156,25 @@ class TickEngine:
             # C3b: kernel-owned state, deliberately NOT a trait-matrix block —
             # the population artifact is keyed independently of the kernel
             self.learner = KernelLearningState(n_users=n)
+
+        # V3: endogenous valence needs the engaging user's own animus, so it
+        # is meaningless without the affect block -- fail at construction,
+        # not silently on the first tick that tries to read pop.animus.
+        valence_mode = self.cfg.dynamics.valence_mode
+        if valence_mode not in ("exogenous", "endogenous"):
+            raise ValueError(f"unknown dynamics.valence_mode {valence_mode!r}; expected exogenous | endogenous")
+        if valence_mode == "endogenous" and not self.pop.has_affect:
+            raise ValueError(
+                "dynamics.valence_mode='endogenous' needs population.affect=True "
+                "(V3's P(civil) reads the engaging user's own animus)"
+            )
+        dcfg = self.cfg.dynamics
+        self.valence_params = EndogenousValenceParams(
+            beta0=dcfg.valence_beta0, beta_dist=dcfg.valence_beta_dist, beta_ident=dcfg.valence_beta_ident,
+            noise_agree=dcfg.valence_noise_agree, gamma0=dcfg.valence_gamma0,
+            gamma_animus=dcfg.valence_gamma_animus, gamma_dist=dcfg.valence_gamma_dist,
+            noise_civil=dcfg.valence_noise_civil,
+        )
 
         self.expr = ExpressionMap.build(
             names, K, quality_trait_coupling=self.cfg.dynamics.quality_trait_coupling
@@ -166,6 +193,26 @@ class TickEngine:
         stance_cols = [i for i, name in enumerate(names) if name.startswith("stance_")]
         self.stance_cols = stance_cols
         self.global_stance_var = float(self.pop.X_used[:, stance_cols].var()) if stance_cols else 1.0
+
+        # V1: the agree/disagree threshold for `assign_valence`, calibrated
+        # ONCE from this population's own stance geometry -- the same
+        # median-pairwise-distance technique `outcomes.py::selection_
+        # filtering` uses for its own `delta`, including the fixed seed
+        # (this is a normalization constant, not a modeling draw, so it does
+        # not consume a phase RNG stream). Kept in the SAME units as the
+        # kernel's own `agreement` feature (rms-normalized when configured).
+        if stance_cols:
+            calib_rng = np.random.default_rng(0)
+            own = self.pop.X_used[:, stance_cols]
+            n_sample = min(20_000, own.shape[0] * 4)
+            a = calib_rng.integers(0, own.shape[0], n_sample)
+            b = calib_rng.integers(0, own.shape[0], n_sample)
+            dist = np.linalg.norm(own[a] - own[b], axis=1)
+            if self.cfg.dynamics.agreement_metric == "rms":
+                dist = dist / np.sqrt(max(len(stance_cols), 1))
+            self.agree_delta = float(np.median(dist))
+        else:
+            self.agree_delta = 0.0
 
     def _refresh_camps(self) -> None:
         """C1.2: camp labels under the shared bimodality gate. Recomputed per
@@ -187,7 +234,7 @@ class TickEngine:
         self.exposure_sample = None
         self.salient_events = []
         self.rewire_events = []
-        engaged_this_tick: tuple = (None, None, None, None)
+        engaged_this_tick: tuple = (None, None, None, None, None, None)
 
         circ = circadian_factor(t, cfg.ticks_per_day, self.phase_ticks, self.circ_shape)
         # posts_per_tick_rate is the Poisson rate at activity = 1 (spec §2.3's
@@ -429,6 +476,11 @@ class TickEngine:
         if self.active_posts is not None and len(self.active_posts) > 0:
             posts = self.active_posts
             pairs = candidate_inbox(self.graph, posts, cfg.inject_k, self.cfg.graph.fanout_cap, rngs["exposure"])
+            if cfg.report_exit:
+                # V4: a report drops the reporter's future exposure to that
+                # author — applied before ranking, so a suppressed author
+                # never even competes for the feed rather than merely losing
+                pairs = self.report_state.filter_candidates(pairs, posts.author)
 
             if len(pairs) > 0:
                 scores = rank_candidates(cfg.ranker, pairs, posts, self.pop, rngs["exposure"])
@@ -474,19 +526,52 @@ class TickEngine:
                         else:
                             actions = apply_kernel(theta, features_att, rngs["reaction"])
 
+                        # V1 (change spec V1-V6): every engagement gets a
+                        # valence at the moment it happens, in its own RNG
+                        # stream (PHASES' "affect" stream) so this draw can
+                        # never shift the reaction stream's action draws.
+                        # V3: "endogenous" reads it off the engaging user's
+                        # own animus/identification instead of a coin flip.
+                        if cfg.valence_mode == "endogenous":
+                            valence = assign_valence_endogenous(
+                                features_att["agreement"], self.pop.animus[exposures_att.user_id],
+                                self.pop.identification[exposures_att.user_id], rngs["affect"],
+                                self.valence_params, cfg.force_agree, cfg.force_civil,
+                            )
+                        else:
+                            valence = assign_valence(
+                                features_att["agreement"], self.agree_delta, rngs["affect"],
+                                cfg.civility_prob, cfg.force_agree, cfg.force_civil,
+                            )
+
                         engaged = actions != "skip"
                         before = posts.engagement_count.copy()
                         np.add.at(posts.engagement_count, exposures_att.post_idx[engaged], 1)
                         engagement_delta = posts.engagement_count - before
 
                         # the (user, post, action, t) event log of spec §1.5 —
-                        # skips excluded, they are the reference category
+                        # skips excluded, they are the reference category.
+                        # agree/civil (V1) persisted alongside so downstream
+                        # outcomes can condition on valence, not just action.
                         self.engagement_events = {
                             "t": np.full(int(engaged.sum()), t, dtype=np.int64),
                             "user": exposures_att.user_id[engaged],
                             "post": posts.id[exposures_att.post_idx[engaged]],
                             "action": actions[engaged],
+                            "agree": valence.agree[engaged],
+                            "civil": valence.civil[engaged],
                         }
+
+                        # V4: a report is remembered for the exposure filter
+                        # above, on NEXT tick's candidate pass (this tick's
+                        # pairs/exposures already exist)
+                        if cfg.report_exit:
+                            is_report = actions == "report"
+                            if is_report.any():
+                                self.report_state.observe(
+                                    exposures_att.user_id[is_report],
+                                    posts.author[exposures_att.post_idx[is_report]],
+                                )
 
                         # C8 threshold model: accumulate distinct engagers per
                         # post from the event log it will draw on next tick
@@ -521,7 +606,7 @@ class TickEngine:
                         )
                             self.active_posts = concat_post_batches([self.active_posts, cascade_posts])
 
-                        engaged_this_tick = (posts, engagement_delta, exposures_att, actions, features_att)
+                        engaged_this_tick = (posts, engagement_delta, exposures_att, actions, features_att, valence)
 
                     # C2.1: the 1% diagnostic sample now spans the EXPOSED set
                     # with an `attended` flag, so the echo-chamber index can be
@@ -596,7 +681,7 @@ class TickEngine:
         # reversion. (Measured, quiet ticks never occur at n_users >= 300, so
         # this was latent rather than active; it is still wrong.)
         metrics["open_threads"] = float(len(self.threads))
-        posts_e, delta_e, exposures_e, actions_e, features_e = engaged_this_tick
+        posts_e, delta_e, exposures_e, actions_e, features_e, valence_e = engaged_this_tick
 
         if posts_e is not None:
             tick_posts = filter_post_batch(posts_e, delta_e > 0)
@@ -608,7 +693,7 @@ class TickEngine:
         apply_drift(
             self.cfg, self.pop, self.expr, self.drift_state, rngs["drift"], t,
             posts_e, None if delta_e is None else delta_e.astype(float), exposures_e, actions_e,
-            camps=self.camps,
+            camps=self.camps, valence=valence_e,
         )
         self.activity = self.pop.X_used[:, self.pop.trait_names.index("activity")]
 

@@ -241,3 +241,238 @@ exposure share: World A 0.277, World B 0.331. Present equally in the
 worlds and their nulls, since kernel is the only axis that differs between
 a world and its null — expected, and not itself evidence for either
 kernel's mechanism.
+
+## Change-spec V-series — the affect-hostility table has no de-escalation channel
+
+Third spec-versus-implementation gap surfaced by inspection, after
+`tie_strength = is_follower` (still open — see below) and the topic-affinity
+SBM blocks gap closed by implementing `graph.sbm_block_source="topic_affinity"`.
+Same shape each time: a mechanism the design docs gesture at, absent or
+unreachable in code, invisible because nothing tested for its presence.
+
+**The table.** `AFFECT_HOSTILITY_WEIGHTS` (`discourse_lab/dynamics/drift.py`)
+and `DynamicsConfig.affect_weights_hostility` (`discourse_lab/config.py`)
+carry identical values:
+
+| action | like | repost | quote | reply | report | skip |
+|---|---|---|---|---|---|---|
+| hostility weight | 0.25 | 0.25 | 0.5 | 0.5 | 2.0 | 0.0 |
+
+Every non-`skip` entry is positive. `affect_delta`'s animus term is
+`lr_affect · mean_over_exposures(outgroup · hostility_weight(action))` with
+`outgroup ∈ {0,1}` and `lr_affect >= 0`, so animus is monotone non-decreasing
+relative to each user's baseline. No `affect_weights_hostility` override
+changes that: the table is keyed on action alone, so a negative entry would
+make every instance of that action de-escalating — civil and hostile alike —
+which is a different, worse model, not a de-escalation path.
+
+**The design docs specified this as reachable, not as a known limitation.**
+`drift.py`'s own module docstring, predating this finding: "the hate-
+engagement reading (any out-group engagement raises animus, scaled by how
+confrontational the action is — Rathje et al. 2021) is a theory, and the
+contact-hypothesis alternative (likes as positive contact that LOWERS animus)
+is a different theory a sweep should be able to express without editing the
+loop." `MODEL.md`'s config table repeats the claim almost verbatim: "the
+hate-engagement reading is a theory, the contact-hypothesis alternative is a
+different one." Both name the alternative and both assert a sweep — a config
+override, no code change — should reach it. Neither is true of the shipped
+table. The gap is documented rather than re-argued: the intent for a
+de-escalation path is in writing twice, and no config value realizes it.
+
+**Scope.** Blocks Experiment 03: its question ("under what conditions is
+popping filter bubbles defensible") has four possible answers and the current
+build can reach two, since the "contact reduces hostility" quadrant is
+excluded by the update rule — the experiment would answer itself before it
+ran. Does NOT invalidate Experiment 01: every comparison there was between
+conditions all driven upward, so orderings hold, and `echo_attended` is an
+exposure measure never routed through this table. What does not survive is
+reading a condition's animus number as a *finding* rather than a
+*consequence* — `outrage` weights `outgroup` at 0.5-0.9
+(`discourse_lab/exposure/kernel.py`), so out-group engagement is already
+outrage's dominant driver, and "outrage raises animus" is definitional in two
+steps (outrage leads to more out-group engagement, and animus can only rise
+from engagement) — not an independent result of the affect channel.
+
+**V5 minimum conformance set, measured against current code**
+(`tests/test_change_spec.py::test_v5_*`). The change spec ("Change Spec V1 —
+Engagement Valence and the De-escalation Channel", reviewed but not committed
+to this repo) predicts four of its five assertions fail today. Measured: two.
+
+| assertion | result |
+|---|---|
+| de-escalation: civil cross-camp contact lowers animus below baseline | **fails** (`xfail`, strict) |
+| repeated encounter: `tie_strength` rises with repeat contact, follow status fixed | **fails** (`xfail`, strict) — `tie_strength` is exactly `is_follower.astype(float)` (`kernel.py:201`); no channel carries contact history |
+| topic-affinity blocks: assignment correlates with topic affinity, not stance | passes — closed by `graph.sbm_block_source="topic_affinity"`; default population sampling draws topic affinity and stance independently, so the max block-vs-stance point-biserial `r` stays under 0.1 at N=2000 |
+| backfire: hostile cross-camp contact raises animus | passes — trivially, every table entry is >= 0 |
+| selection: `echo_attended > echo_exposed` under `homophilous` | passes — the existing `selection_filtering` outcome (`outcomes.py`) already implements and reports exactly this decomposition |
+
+Not a subtle miss: two of the spec's four predicted failures are gaps this
+project had already closed (SBM blocks) or already built under a different
+change spec (C2 selection) before this document was written — its "three
+known gaps" framing counted `tie_strength = is_follower` and the SBM gap as
+both still open, and only one of those two still is. The two real, currently
+open gaps are the de-escalation channel itself (this document's subject,
+scheduled to close under V1/V2) and `tie_strength` (which none of V1-V6
+addresses). The latter is pinned as an `xfail(strict=True)` regression guard
+specifically so it stays visible in the suite rather than silently absent,
+and so it fails loudly — forcing the marker's removal — the moment some
+future change makes it pass.
+
+## Change-spec V-series (V1-V6) landed, sequenced as the spec's own waves
+
+Implemented in the order the change spec itself set out (`## Sequencing`):
+Wave 0 (V0, above) and Wave 1 (V5, above) first; this entry covers waves
+2-5 — V1, V2, V4, V6(1)+(2), V3, and the substrate re-gate — landed in one
+pass. `tests/test_change_spec.py::test_v1_*` through `test_v6_*` are the
+conformance set; each observes the mechanism's effect, per house style.
+
+**V1 — engagement valence.** `dynamics/valence.py::EngagementValence`:
+`agree`/`civil`, orthogonal booleans assigned per exposure at the moment of
+engagement, persisted on `engagements.parquet` (RUN_FORMAT bumped 5 -> 6).
+`agree` is NOT a per-batch median split — that was tried first and produces
+a real bug (below). It thresholds the kernel's own `agreement` feature
+against an ABSOLUTE distance calibrated once per population
+(`TickEngine.__post_init__`, `agree_delta`), the same median-pairwise-
+distance technique `outcomes.py::selection_filtering` already uses for its
+own `delta`, including the hardcoded seed (a normalization constant, not a
+modeling draw). `civil` is exogenous in V1/V2: a coin flip at
+`dynamics.civility_prob` (default 0.5), drawn from the already-registered
+`"affect"` phase stream so it cannot shift any other phase's draws.
+`force_agree`/`force_civil` pin an axis for fixture tests.
+
+**Bug caught by the EXISTING suite, not a new test.** The first `agree`
+implementation (per-tick median split) made
+`test_c1_animus_rises_under_outrage_and_not_under_null` fail: forcing
+exactly half of every batch to read "agree" washed out `outrage`'s
+deliberate skew toward disagreeable out-group content, diluting the
+outrage-vs-null animus gap into noise (0.00019 vs 0.00019). This is the
+kind of thing V5's "conformance test per mechanism, before the mechanism
+changes" discipline exists to catch, and it worked on the first structural
+change made under it — the pre-existing test caught a bug in the NEW code,
+not the other way around.
+
+**V2 — the table re-keyed on (action, valence).**
+`DynamicsConfig.affect_weights_hostility` is now a pure per-action
+MAGNITUDE table (every entry >= 0; `report` removed entirely). The sign
+lives in the new `affect_valence_signs` table
+(`disagree_hostile: +1.0, disagree_civil: -1.0, agree_civil: -0.3,
+agree_hostile: +1.2`), matching the spec's sign structure exactly:
+negative on cross-camp civil disagreement specifically (Allport's
+condition), not on in-group agreeable contact. `drift.py::affect_delta`
+composes `weight(action) * valence_cell_signs(cell)`; `identification`
+(the support/in-group channel) is untouched — the spec's re-keying is
+scoped to the hostility table alone.
+`tests/test_change_spec.py::test_v1_v2_civil_crosscamp_contact_can_lower_animus_end_to_end`
+is the spec's own V2 test, run through the real engine: forcing
+disagree+civil vs disagree+hostile on an `outrage`/polarized-population run,
+the civil arm's animus ends below both the hostile arm AND its own
+baseline — the missing direction V0 recorded is no longer missing.
+
+**V4 — report as an exit event.** Kernel: `outrage`'s `report` action
+gained an `outgroup_x_animus` term (propensity rises with the reporter's
+OWN animus — the correct causal direction, replacing the pre-V2 reading
+where report was simply the largest hostility increment). Effect:
+`dynamics/report_exit.py::ReportSuppressionState` remembers every
+(user, author) a user has reported (a sorted key-array set, same technique
+`rewire.py::RewireState` uses to avoid an N x N dense accumulator) and
+drops those pairs from `candidate_inbox`'s output before ranking, gated on
+`dynamics.report_exit` (default off, like every other change-spec
+mechanism until asked for). `report_animus_increment` (free parameter,
+default 0.0) is applied outside the (action, valence) table for anyone who
+wants a small direct effect without touching the exit mechanism.
+
+**V6(1) — continuous distance was already the mechanism.** The engagement
+kernel's `agreement` feature (`-||s_u - s_p||`, full stance vector) and
+V1's `agree_delta` threshold both already operate on continuous per-axis
+distance, never camp membership — camps only gate WHETHER the affect
+channel applies (in-group vs out-group), never HOW agreeable a specific
+dyad is. `test_v6_1_agreement_is_continuous_per_axis_not_camp_membership`
+pins the "Bernie case" (far on axis 0, close on axis 1 reads as more
+agreement than far on both) as a regression guard.
+
+**V6(2) — emergent k via BIC.** `metrics/polarization.py::emergent_camps`
+fits k-means at k=1..k_max and selects k by BIC. Two failure modes found
+and fixed before it worked, both worth recording because they are the
+generic way "fit a mixture, pick k by BIC" breaks:
+1. **Per-cluster variance is degenerate.** A Gaussian mixture's likelihood
+   is unbounded as any one cluster's variance shrinks to 0, so letting BIC
+   score each cluster's own variance rewards carving off a tiny
+   low-variance sliver, and the score decreased monotonically to k_max on
+   BOTH a clean 2-blob and a clean 5-blob synthetic population — it never
+   once selected the true k. Fixed by pooling ONE isotropic variance across
+   all k clusters (Pelleg & Moore 2000's k-means BIC), which removes the
+   degenerate degree of freedom.
+2. **Even pooled, it still needs the mixing-proportion term.** Omitting
+   `sum_i n_i * log(n_i / n)` from the log-likelihood (i.e., scoring only
+   each point's distance from its centroid, not which cluster it fell into)
+   reproduced the same monotonic-to-k_max failure, because nothing was
+   penalizing an uneven split into many small clusters. With both fixes,
+   `test_v6_2_emergent_k_recovers_two_camps` and
+   `_makes_fragmentation_visible` recover k=2 and k=5 exactly on their
+   respective synthetic populations.
+Group-directed (vector) animus remains deferred, per the spec's own
+scoping — not attempted here.
+
+**V3 — endogenous valence.** `dynamics/valence.py::assign_valence_endogenous`
+implements both logits verbatim, over the engaging user's OWN
+`animus`/`identification` (no renormalization — same convention
+`exposure/kernel.py`'s `outgroup_x_animus`/`ingroup_x_ident` features
+already use) and the dyad's full continuous distance (recovered from the
+kernel's own `agreement` feature, `d = -agreement`). Gated on
+`dynamics.valence_mode` ("exogenous" default = V1/V2's coin flip;
+"endogenous" = V3), which fails fast at engine construction if
+`population.affect` is off — P(civil) cannot read an animus that does not
+exist. None of the eight coefficients are empirically anchored (same
+status as `affect_ou_k`); signs are fixed by theory in
+`EndogenousValenceParams`' own docstring, magnitudes are free.
+
+**The bistability probe is isolated at the mechanism level, not run
+through the full tick loop.** `_iterate_animus_feedback` iterates the
+endogenous valence draw + `drift.py`-shaped OU composition directly (dyad
+distance held at 0, isolating the animus -> civility -> sign -> animus
+loop specifically) — this is what let the probe run in under 2 seconds
+instead of as a multi-minute population sweep, and it is what surfaced a
+real property of THIS model's OU design worth recording: because `Bs`
+(the mean-reversion target) itself drifts toward `X_stored` at `k/10`
+(`drift.py::DriftState`), the "restoring force" on animus vanishes as `Bs`
+catches up, so there is no finite STABLE high fixed point under pure
+self-reinforcement — a population pushed hostile does not plateau, it
+keeps drifting upward for as long as the run continues. The two regimes
+the probe demonstrates are better described as "decays to baseline" vs.
+"escapes and keeps climbing" than as two fixed points in the strict
+dynamical-systems sense; both readings satisfy the spec's actual question
+(does initial condition change the long-run fate), so the test checks the
+TREND (is the gap between a low-start and high-start population growing or
+shrinking), not a snapshot value.
+
+**Non-tautology check, not skipped.** The spec's own warning — fixing the
+self-reinforcement coefficient at a value guaranteed to produce two basins
+and then reporting basins is circular — is a standing test, not a one-off
+check: `test_v3_no_basins_when_self_reinforcement_is_absent` runs the
+IDENTICAL two starting points through the IDENTICAL other coefficients with
+only `gamma_animus` zeroed, and the gap must CLOSE over time rather than
+grow. It does (gap shrinks from 4.86 to 3.72 over 450 further steps, vs.
+growing from 8.90 to 11.87 in the `gamma_animus=-1.0` arm) — the divergent
+case is a property of the self-reinforcement term specifically, not an
+artifact of the harness.
+
+**Not built here, and deliberately out of scope.** Experiment 03 itself —
+the Morris screening that fixes V3's parameter set by sign before any
+calibration, and the break-even de-escalation magnitude Experiment 03 is
+supposed to solve for and report — is explicitly what V1-V6 unblock, not
+part of them; the change spec's own intro says "Nothing in Experiment 03
+should be built before V1-V4 land." V6's group-directed animus and the
+"target identified camp pairs" alternative for a continuous-distance
+intervention are both explicitly deferred/unsettled in the spec itself.
+
+**Wave 5 — the substrate re-gate.** None of V1-V6's new code paths execute
+under the C9/C13 gate's own config (`population.affect` off, no camps,
+`report_exit` off, `valence_mode="exogenous"` default which itself never
+touches the engagement kernel or channel-2 social weights) — `assign_valence`
+now runs on every engaged tick regardless of `population.affect`, but it
+only consumes the already-isolated `"affect"` phase stream and writes to
+columns nothing else reads, so no other phase's draws or outcomes can move.
+Re-ran `test_c9_attention_gini_and_reciprocity_hold_simultaneously` and
+`test_c13_stylized_gate` at the full 20-seed gate: both still pass on the
+current code — the substrate is unchanged, as the RNG-isolation argument
+predicts, and this is the confirmation rather than an assumption.

@@ -40,6 +40,7 @@ import numpy as np
 from discourse_lab.config import Config
 from discourse_lab.dynamics.expression import POST_DIM_LINKS, POST_DIMS, ExpressionMap
 from discourse_lab.dynamics.posts import PostBatch
+from discourse_lab.dynamics.valence import EngagementValence, valence_cell_signs
 from discourse_lab.exposure.attention import Exposures
 from discourse_lab.population import Population
 from discourse_lab.population.links import to_stored, to_used
@@ -80,24 +81,38 @@ ACTION_WEIGHTS: dict[str, float] = {
 
 # C1.3: affect weight tables — the SHIPPED DEFAULTS. The live tables come
 # from `cfg.dynamics` (`affect_weights_hostility` / `affect_weights_support`),
-# config-side for the same reason C6 moved channel 2's weights there: the
-# hate-engagement reading (any out-group engagement raises animus, scaled by
-# how confrontational the action is — Rathje et al. 2021) is a theory, and
-# the contact-hypothesis alternative (likes as positive contact that LOWERS
-# animus) is a different theory a sweep should be able to express without
-# editing the loop. Deliberately NOT channel 2's table: replying to an
-# out-group post is engagement with the out-group (animus-raising) while it
-# is stance-repulsive in channel 2, and conflating the two tables is the
-# single most likely implementation error here. The change spec's summary
-# line lists reply at -0.5, channel 2's value; its own rationale states the
-# opposite sign, and the rationale is the load-bearing part.
+# config-side for the same reason C6 moved channel 2's weights there.
+# Deliberately NOT channel 2's table: replying to an out-group post is
+# engagement with the out-group (animus-raising) while it is stance-repulsive
+# in channel 2, and conflating the two tables is the single most likely
+# implementation error here.
+#
+# V2 (change spec V1-V6): re-keyed on (action, valence). Pre-V2, this table
+# WAS the hate-engagement theory — every entry >= 0 made animus monotone
+# non-decreasing, and no override could express the contact-hypothesis
+# alternative (likes as positive contact that LOWERS animus) because the
+# table had no valence axis to hang a sign on (see FINDINGS.md, "the
+# affect-hostility table has no de-escalation channel"). Now it supplies
+# only the per-action MAGNITUDE; `AFFECT_VALENCE_SIGNS` supplies the sign.
+# `report` is REMOVED — it is disengagement, not a hostility increment (V4
+# makes it an exit event acting on future exposure instead).
 AFFECT_HOSTILITY_WEIGHTS: dict[str, float] = {
     "like": 0.25,      # fleeting out-group contact
     "repost": 0.25,    # amplifying out-group content
     "quote": 0.5,      # quoting is engagement carrying critique
     "reply": 0.5,      # a direct cross-camp exchange
-    "report": 2.0,     # the hostile act
     "skip": 0.0,       # not attending is not an interaction outcome
+}
+
+# V2: sign fixed by theory, magnitude free — see `DynamicsConfig.
+# affect_valence_signs` for the per-cell rationale. `_action_weights` gates
+# unlisted actions (report) to 0 before this ever multiplies them, so
+# `valence_cell_signs` need not special-case report either.
+AFFECT_VALENCE_SIGNS: dict[str, float] = {
+    "disagree_hostile": 1.0,
+    "disagree_civil": -1.0,
+    "agree_civil": -0.3,
+    "agree_hostile": 1.2,
 }
 
 # C1.3: the identification table mirrors it — in-group support raises
@@ -309,22 +324,34 @@ def affect_delta(
     pop: Population,
     camps: np.ndarray | None,
     lr_affect: float,
+    valence: EngagementValence,
     hostility_weights: dict[str, float] | None = None,
     support_weights: dict[str, float] | None = None,
+    valence_signs: dict[str, float] | None = None,
+    report_animus_increment: float = 0.0,
 ) -> np.ndarray:
     """C1.3 `affect_update`, registered as a drift op below so it composes
     additively with the other channels and shows up in the op-norm diagnostic.
 
         Δanimus_u         = lr_affect · mean_over_exposures(
-                                outgroup · hostility_weight(action) )
+                                outgroup · ( hostility_weight(action)
+                                             · valence_sign(cell)
+                                           + report_animus_increment · 1[report] ) )
         Δidentification_u = lr_affect · mean_over_exposures(
                                 ingroup  · support_weight(action) )
 
-    Weight tables default to `AFFECT_HOSTILITY_WEIGHTS` /
-    `AFFECT_SUPPORT_WEIGHTS`; the live tables come from `cfg.dynamics` via
-    `affect_weights(cfg)` — separate from channel 2's, see the module
-    docstring. Returns the full-width (n, n_traits) gain block, zero outside
-    the affect columns.
+    V2 (change spec V1-V6) added the valence factor to the animus term only
+    — the spec's re-keying is scoped to the hostility table, and
+    `identification` keeps its pre-V2 action-only form. `report_animus_
+    increment` (V4) is a free parameter, defaulting to 0, applied OUTSIDE
+    the (action, valence) table `report` was removed from — V4's own
+    mechanism (dynamics/report_exit.py) is the future-exposure effect; this
+    is only the optional, off-by-default direct term. Weight tables default
+    to `AFFECT_HOSTILITY_WEIGHTS` / `AFFECT_SUPPORT_WEIGHTS` /
+    `AFFECT_VALENCE_SIGNS`; the live tables come from `cfg.dynamics` via
+    `affect_weights(cfg)` / `affect_valence_signs(cfg)` — separate from
+    channel 2's, see the module docstring. Returns the full-width
+    (n, n_traits) gain block, zero outside the affect columns.
     """
     n = pop.X_stored.shape[0]
     names = pop.trait_names
@@ -338,6 +365,11 @@ def affect_delta(
     ingroup = 1.0 - outgroup
 
     host_w = _action_weights(actions, hostility_weights or AFFECT_HOSTILITY_WEIGHTS)
+    host_w = host_w * valence_cell_signs(
+        valence.agree, valence.civil, valence_signs or AFFECT_VALENCE_SIGNS
+    )
+    if report_animus_increment != 0.0:
+        host_w = host_w + report_animus_increment * (actions == "report")
     supp_w = _action_weights(actions, support_weights or AFFECT_SUPPORT_WEIGHTS)
 
     counts = np.zeros(n)
@@ -362,9 +394,11 @@ def affect_update(ctx: dict) -> np.ndarray:
     and the op is addressable by name from configs and the run monitor."""
     return affect_delta(
         ctx["exposures"], ctx["actions"], ctx["posts"], ctx["pop"],
-        ctx["camps"], ctx["lr_affect"],
+        ctx["camps"], ctx["lr_affect"], ctx["valence"],
         hostility_weights=ctx.get("hostility_weights"),
         support_weights=ctx.get("support_weights"),
+        valence_signs=ctx.get("valence_signs"),
+        report_animus_increment=ctx.get("report_animus_increment", 0.0),
     )
 
 
@@ -375,6 +409,11 @@ def affect_weights(cfg: Config) -> tuple[dict[str, float], dict[str, float]]:
     hostility["skip"] = 0.0
     support["skip"] = 0.0
     return hostility, support
+
+
+def affect_valence_signs(cfg: Config) -> dict[str, float]:
+    """V2: the live per-cell sign/magnitude table from `cfg.dynamics`."""
+    return dict(cfg.dynamics.affect_valence_signs)
 
 
 def drift_op_names() -> list[str]:
@@ -393,13 +432,18 @@ def apply_drift(
     exposures: Exposures | None,
     actions: np.ndarray | None,
     camps: np.ndarray | None = None,
+    valence: EngagementValence | None = None,
 ) -> None:
     """Mutates `pop.X_stored` (and the derived `pop.X_used`) in place, plus
     `state.Bs`, per spec §2.9's composition. `cfg.dynamics.drift`: "none"
     skips everything, "social" runs channel 2 only, "full" runs both.
     `posts`/`engagement_delta` (channel 1) and `exposures`/`actions`
     (channel 2) all reference the same tick's active-post pool. `camps`
-    (C1.3) enables the affect op when the population has the affect block.
+    (C1.3) enables the affect op when the population has the affect block;
+    `valence` (V1, change spec V1-V6) is required whenever that op actually
+    runs — every engagement is assigned one upstream, at the moment of
+    engagement (`dynamics/valence.py`), because the affect op's hostility
+    term is keyed on (action, valence), not action alone.
     """
     mode = cfg.dynamics.drift
     if mode == "none":
@@ -441,11 +485,21 @@ def apply_drift(
         # population actually carries the affect block and camps are defined;
         # its weight tables come from config, like channel 2's (C6's pattern)
         if cfg.population.affect and pop.has_affect and camps is not None:
+            if valence is None:
+                raise ValueError(
+                    "cfg.population.affect is on but apply_drift got no valence — "
+                    "every engagement needs one (change spec V1); the caller must "
+                    "assign_valence() at the same point it draws actions"
+                )
             aff_host, aff_supp = affect_weights(cfg)
+            aff_signs = affect_valence_signs(cfg)
             aff = get("drift_op", "affect_update")({
                 "exposures": exposures, "actions": actions, "posts": posts,
                 "pop": pop, "camps": camps, "lr_affect": cfg.dynamics.lr_affect,
+                "valence": valence,
                 "hostility_weights": aff_host, "support_weights": aff_supp,
+                "valence_signs": aff_signs,
+                "report_animus_increment": cfg.dynamics.report_animus_increment,
             })
             aff_cols = [i for i, nm in enumerate(names) if nm in ("identification", "animus")]
             gain[:, aff_cols] += ramp * aff[:, aff_cols]

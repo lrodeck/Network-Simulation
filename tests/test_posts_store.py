@@ -82,7 +82,8 @@ def test_engagements_are_the_spec_event_log(tmp_path, monkeypatch):
     handle = load_run(cfg, seed=0)
 
     engagements = handle.engagements()
-    assert engagements.columns == ["t", "user", "post", "action"]  # spec §1.5
+    # spec §1.5 + V1's agree/civil valence columns
+    assert engagements.columns == ["t", "user", "post", "action", "agree", "civil"]
     assert "skip" not in set(engagements["action"].unique())  # skip is the reference category
 
     # every engagement points at a post that was actually written
@@ -152,5 +153,5 @@ def test_run_iter_exposes_the_raw_record_without_a_writer(tmp_path, monkeypatch)
     assert any(s.engagement_events is not None for s in states)
 
     events = next(s.engagement_events for s in states if s.engagement_events)
-    assert set(events) == {"t", "user", "post", "action"}
+    assert set(events) == {"t", "user", "post", "action", "agree", "civil"}
     assert len({len(v) for v in events.values()}) == 1  # all columns same length

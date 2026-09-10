@@ -898,7 +898,14 @@ different run; change none and `cached_run` returns the existing one.
 |---|---|---|
 | `affect` *(population)* | False | the affect block: `identification` + `animus`, updating from interaction outcomes (C1) |
 | `lr_affect` / `affect_ou_k` | 0.015 / 0.02 | affect step size / reversion — **the reversion rate is a guess** |
-| `affect_weights_hostility` / `_support` | see `drift.py` | C1.3's weight tables — the hate-engagement reading is a theory, the contact-hypothesis alternative is a different one |
+| `affect_weights_hostility` | see `drift.py` | C1.3's per-action MAGNITUDE only as of V2 (every entry >= 0; `report` removed) |
+| `affect_weights_support` | see `drift.py` | C1.3's identification table — untouched by V2, action-keyed only |
+| `affect_valence_signs` | see `drift.py` | V2: the (action, valence) table's SIGN, keyed on the four `{agree,disagree}_{civil,hostile}` cells |
+| `civility_prob` / `force_agree` / `force_civil` | 0.5 / None / None | V1's exogenous valence: civil/hostile coin flip; force_* pin an axis for fixtures |
+| `valence_mode` | `exogenous` | V1/V2's coin flip, or `endogenous` (V3: per-user logits on animus/identification/distance) |
+| `valence_beta0/_beta_dist/_beta_ident/_noise_agree` | 0 / -1 / -0.3 / 1 | V3's P(agree) logit — see `EndogenousValenceParams` for the fixed signs |
+| `valence_gamma0/_gamma_animus/_gamma_dist/_noise_civil` | 0 / -1 / 0 / 1 | V3's P(civil) logit — `gamma_animus` is the self-reinforcement term the bistability probe needs |
+| `report_exit` / `report_animus_increment` | False / 0.0 | V4: a report suppresses future exposure to that author; optional small direct animus effect |
 | `selection` | `position_only` | content-conditional attention: `homophilous` \| `arousal_seeking` (C2) |
 | `selection_beta` | () | overrides for the selection logit's betas |
 | `rewire` / `rewire_every` / `rewire_rate` | False / 25 / 0.01 | slow follow/unfollow on accumulated interaction valence (C2) |
@@ -985,6 +992,34 @@ conformance test that observes its *effect* rather than its definition
 | **C9 attention cap** | 10% of users produced 97% of political tweets (Pew 2019); the gate demands Gini **and** reciprocity in range at once | `latent_pa` generator + the stylized gate test | generator opt-in |
 | **C10 harness** | Equifinality: many mechanisms produce the same macro pattern (Grimm et al.) | `experiments/identify.py`, `sensitivity_sobol.py`, `designs.py` | — |
 
+### V1-V6: engagement valence and the de-escalation channel
+
+Six more mechanisms ("Change Spec V1 — Engagement Valence and the
+De-escalation Channel"), same discipline: defaulted to the pre-existing
+behaviour, each covered by a conformance test
+(`tests/test_change_spec.py::test_v1_*`-`test_v6_*`). Numbered separately
+from C1-C10 because they change the affect channel's *form* (what a
+hostility increment is keyed on), not its parameters.
+
+| Mechanism | Warrant | Dial | Default |
+|---|---|---|---|
+| **V1 engagement valence** | A supportive cross-camp reply and a quote-dunk were the same event (both just "reply") — no representation for conduct independent of position | `dynamics.civility_prob`, `force_agree`/`force_civil` | civility_prob 0.5 (exogenous) |
+| **V2 (action, valence) table** | The hostility table's only sign was decided by action, so no override could express contact *reducing* hostility without making every instance of that action de-escalating, civil or hostile alike | `affect_weights_hostility` (magnitude only), `affect_valence_signs` (sign) | see `drift.py` |
+| **V3 endogenous valence** | Exogenous valence cannot produce basins; the question — does a population already hostile metabolize contact as attack — needs the feedback loop | `dynamics.valence_mode`, `valence_beta*`/`valence_gamma*` | `exogenous` (V1/V2's coin flip) |
+| **V4 report as exit** | Reporting is *dis*engagement (the user exits), not the largest hostility increment — reverse causation compiled forward | `dynamics.report_exit`, `report_animus_increment` | off |
+| **V6(2) emergent k** | `camps_and_bimodality` hardcodes k=2 before camps are defined; an intervention that fragments two camps into five hostile ones reads as "bimodality fell" under a binary frame | `metrics.polarization.emergent_camps` | measurement only, not wired into dynamics |
+
+`V6(1)` (continuous per-axis distance in the mechanism, not camp
+membership) needed no dial — the kernel's `agreement` feature and V1's
+`agree_delta` threshold already operate on the full stance vector; the
+requirement is a regression guard
+(`test_v6_1_agreement_is_continuous_per_axis_not_camp_membership`), not new
+code. `V5` is the conformance-test discipline itself (this section's own
+test files), not a runtime mechanism — written first, per the spec's own
+sequencing, so that four of its five assertions were red before V1 landed.
+V6's group-directed (vector) animus is explicitly deferred in the spec
+itself — scalar animus stays "generalized out-group hostility" for now.
+
 ### The affect block, in one equation
 
 Two new trait columns — `identification` (attachment to own camp, logit) and
@@ -998,9 +1033,15 @@ influence's (replying to out-group content is *engagement* with it, so it
 raises animus while being stance-repulsive):
 
 ```
-Δanimus_u         = lr_affect · mean_over_exposures( outgroup · hostility_weight(action) )
+Δanimus_u         = lr_affect · mean_over_exposures( outgroup · hostility_weight(action) · valence_sign(cell) )
 Δidentification_u = lr_affect · mean_over_exposures( ingroup  · support_weight(action) )
 ```
+
+The `valence_sign(cell)` factor is V2 (below): pre-V2, `hostility_weight`
+alone was always >= 0, so animus was monotone non-decreasing and no
+configuration could represent contact *reducing* hostility (recorded in
+FINDINGS.md). `identification` did not gain a valence factor — the change
+spec's re-keying is scoped to the hostility table alone.
 
 ### Learnable kernels, three tiers
 

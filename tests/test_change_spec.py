@@ -808,11 +808,14 @@ def test_c10_separability_refuses_below_min_seeds():
 
 
 def test_new_persistence_paths_round_trip(tmp_path, monkeypatch):
-    """Kernel-state snapshots, the rewire log, the final graph snapshot and
-    the `attended` exposure column must survive a persisted run — the
-    change-spec mechanisms write new tables, and a table that does not
-    round-trip is a mechanism the analysis layer cannot see."""
+    """Kernel-state snapshots, the rewire log, the final graph snapshot, the
+    `attended` exposure column, and (V1, RUN_FORMAT 6) the `agree`/`civil`
+    engagement columns must survive a persisted run — the change-spec
+    mechanisms write new tables, and a table that does not round-trip is a
+    mechanism the analysis layer cannot see."""
     import os
+
+    import polars as pl
 
     from discourse_lab.io.workspace import workspace
 
@@ -843,7 +846,11 @@ def test_new_persistence_paths_round_trip(tmp_path, monkeypatch):
     assert "attended" in exp.columns
     assert set(exp["action"].unique()) <= {"like", "repost", "reply", "quote", "report", "skip", "unattended"}
 
-    # and the cache reuses it without recomputing (RUN_FORMAT 5 + tables present)
+    eng = handle.engagements()
+    assert {"agree", "civil"} <= set(eng.columns), "V1's valence columns did not round-trip"
+    assert eng["agree"].dtype == pl.Boolean and eng["civil"].dtype == pl.Boolean
+
+    # and the cache reuses it without recomputing (RUN_FORMAT 6 + tables present)
     path2 = cached_run(cfg, 0, persist=("exposures", "engagements"))
     assert path2 == path
 
@@ -1087,3 +1094,620 @@ def test_c13_content_drives_branching():
         f"provocativeness-subtree correlation without gamma ({correlations[False]:.3f}) "
         f"is not below with-gamma ({correlations[True]:.3f})"
     )
+
+
+# --------------------------------------------------------------------------
+# V-series (change-spec-v1-engagement-valence.md): V5 minimum conformance
+# set, written before V1 per the spec's own sequencing ("Write V5 before
+# V1... a test suite written after the fix cannot demonstrate that the fix
+# was needed"). Two of the five mechanisms below (de-escalation, repeated
+# encounter) are open gaps this file pins down rather than silently passes;
+# the other three are regression guards for mechanisms that already exist.
+# --------------------------------------------------------------------------
+
+
+def test_v5_deescalation_civil_crosscamp_contact_lowers_animus():
+    """V5 minimum set, assertion 1 -- LANDED (was `xfail` before V2). `reply`
+    with a forced disagree+civil valence must push animus negative: V2's
+    `affect_valence_signs` puts the negative entry specifically on
+    `disagree_civil` (Allport's condition), not on any action's magnitude."""
+    from discourse_lab.dynamics.drift import affect_delta
+    from discourse_lab.dynamics.valence import assign_valence
+    from discourse_lab.exposure.attention import Exposures
+    from discourse_lab.population import sample_population
+
+    cfg = _cfg(n_users=200, pop={"affect": True})
+    rng = np.random.default_rng(0)
+    pop = sample_population(cfg, rng)
+    posts = _tiny_posts(cfg, rng)  # authors 0, 1, 2, 3 -- post 0's author is user 0
+
+    m = 100
+    exposures = Exposures(
+        post_idx=np.zeros(m, dtype=int),        # everyone consumes author 0's post
+        user_id=(np.arange(m) % 99) * 2 + 1,    # odd ids only: camp 1, never author 0
+        rank=np.zeros(m, dtype=int),
+        is_follower=np.ones(m, dtype=bool),
+    )
+    actions = np.full(m, "reply")
+    camps = (np.arange(cfg.population.n_users) % 2).astype(np.int64)
+    assert camps[0] == 0 and (camps[exposures.user_id] == 1).all()  # every exposure cross-camp
+    valence = assign_valence(np.zeros(m), 0.0, rng, force_agree=False, force_civil=True)  # disagree + civil
+
+    delta = affect_delta(exposures, actions, posts, pop, camps, lr_affect=0.5, valence=valence)
+    animus_col = pop.trait_names.index("animus")
+    touched = np.unique(exposures.user_id)
+    assert (delta[touched, animus_col] < 0).all(), (
+        "cross-camp civil disagreement did not lower animus -- "
+        "the de-escalation channel is not wired to disagree_civil"
+    )
+
+
+def test_v5_backfire_hostile_crosscamp_contact_raises_animus():
+    """V5 minimum set, assertion 4: `reply` with a forced disagree+hostile
+    valence -- the backfire channel V2 says "retains today's behaviour" --
+    must still raise animus on cross-camp contact. Not `report` any more:
+    V2 removed it from the hostility table entirely (V4 makes it an exit
+    event instead), so it is exactly the case this test must NOT use."""
+    from discourse_lab.dynamics.drift import affect_delta
+    from discourse_lab.dynamics.valence import assign_valence
+    from discourse_lab.exposure.attention import Exposures
+    from discourse_lab.population import sample_population
+
+    cfg = _cfg(n_users=200, pop={"affect": True})
+    rng = np.random.default_rng(0)
+    pop = sample_population(cfg, rng)
+    posts = _tiny_posts(cfg, rng)
+
+    m = 100
+    exposures = Exposures(
+        post_idx=np.zeros(m, dtype=int),
+        user_id=(np.arange(m) % 99) * 2 + 1,
+        rank=np.zeros(m, dtype=int),
+        is_follower=np.ones(m, dtype=bool),
+    )
+    actions = np.full(m, "reply")
+    camps = (np.arange(cfg.population.n_users) % 2).astype(np.int64)
+    valence = assign_valence(np.zeros(m), 0.0, rng, force_agree=False, force_civil=False)  # disagree + hostile
+
+    delta = affect_delta(exposures, actions, posts, pop, camps, lr_affect=0.5, valence=valence)
+    animus_col = pop.trait_names.index("animus")
+    touched = np.unique(exposures.user_id)
+    assert (delta[touched, animus_col] > 0).all(), (
+        "cross-camp hostile disagreement did not raise animus for every exposed user"
+    )
+
+
+def test_v1_v2_civil_crosscamp_contact_can_lower_animus_end_to_end():
+    """Change spec V1's own test ("two fixture runs identical except for the
+    valence assigned to cross-camp engagement produce different animus
+    trajectories") and V2's ("the assertion that fails today", now landed),
+    run end to end through the real engine rather than a hand-built
+    exposure batch. `force_civil` pins civility while `force_agree=False`
+    holds every engagement at disagree, isolating the civil/hostile axis
+    exactly as V2's own sign table splits it."""
+    results = {}
+    for civil in (True, False):
+        cfg = _cfg(
+            n_users=600, n_ticks=40, pop={"affect": True},
+            kernel="outrage", drift="full", drift_ramp_ticks=5,
+            force_agree=False, force_civil=civil,
+        )
+        cfg = dataclasses.replace(
+            cfg, scenario=dataclasses.replace(cfg.scenario, stance_axes=(_polarized_axis(),))
+        )
+        engine = _engine(cfg)
+        engine._refresh_camps()
+        if engine.camps is None:
+            raise AssertionError("polarized scenario produced no camps — the shared gate failed")
+        start = float(engine.pop.animus.mean())
+        for t in range(cfg.dynamics.n_ticks):
+            engine.step(t)
+        results[civil] = (start, float(engine.pop.animus.mean()))
+
+    civil_start, civil_end = results[True]
+    _, hostile_end = results[False]
+    assert civil_end < hostile_end, (
+        f"civil run's animus ({civil_end:.4f}) is not below the hostile run's ({hostile_end:.4f})"
+    )
+    assert civil_end < civil_start, (
+        f"civil run's animus rose ({civil_start:.4f} -> {civil_end:.4f}) rather than falling "
+        "below baseline -- the missing direction V0 recorded, still missing"
+    )
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "Open gap, one of the three named in V0 (change-spec-v1-engagement-"
+        "valence.md), not addressed by this spec's V1-V6 items. "
+        "`compute_features` has no channel for contact history: "
+        "`tie_strength` is exactly `is_follower.astype(float)`, bimodal "
+        "{0, 1} regardless of how many times two users have crossed paths. "
+        "Remove this marker once a repeat-contact mechanism lands."
+    ),
+)
+def test_v5_repeated_encounter_tie_strength_rises_with_repeat_contact():
+    """V5 minimum set, assertion 2: a tie-strength feature should register
+    the relationship, not just the follow edge -- repeated contact with the
+    same author should read as a stronger tie than a first encounter,
+    holding follow status fixed."""
+    from discourse_lab.exposure.attention import Exposures
+    from discourse_lab.exposure.kernel import compute_features
+    from discourse_lab.population import sample_population
+
+    cfg = _cfg(n_users=200)
+    rng = np.random.default_rng(0)
+    pop = sample_population(cfg, rng)
+    posts = _tiny_posts(cfg, rng)
+
+    is_follower = np.zeros(4, dtype=bool)  # follow status held fixed: nobody follows
+    exposures = Exposures(
+        post_idx=np.zeros(4, dtype=int),   # all four rows are the same author (post 0)
+        user_id=np.array([10, 10, 10, 11]),
+        rank=np.zeros(4, dtype=int),
+        is_follower=is_follower,
+    )
+    feats = compute_features(exposures, posts, pop, is_follower, t_current=3)
+    tie = feats["tie_strength"]
+
+    repeat_contact_tie = tie[:3].mean()  # user 10's third encounter with this author
+    first_contact_tie = tie[3]           # user 11's first
+    assert repeat_contact_tie > first_contact_tie, (
+        f"tie_strength ({tie}) does not separate repeat contact from a first "
+        "encounter at fixed follow status -- it is exactly is_follower"
+    )
+
+
+def test_v5_topic_affinity_blocks_correlate_with_topic_affinity_not_stance():
+    """V5 minimum set, assertion 3: the second of the three gaps named in
+    V0, already closed by `graph.sbm_block_source='topic_affinity'` --
+    micro-public block assignment must track subject-matter geometry, not
+    ideology. Kept in the regression set so a future population or SBM
+    change cannot silently leak stance into it."""
+    from scipy import stats
+
+    from discourse_lab.population import sample_population
+
+    cfg = _cfg(n_users=2000)
+    rng = np.random.default_rng(0)
+    pop = sample_population(cfg, rng)
+    names = pop.trait_names
+    topic_idx = [i for i, n in enumerate(names) if n.startswith("topic_affinity_")]
+    stance_idx = [i for i, n in enumerate(names) if n.startswith("stance_")]
+    assert topic_idx and stance_idx
+
+    # graph.sbm_block_source="topic_affinity": each user's block is their
+    # single most-affine topic (discourse_lab/network/sbm.py)
+    blocks = np.argmax(pop.X_used[:, topic_idx], axis=1)
+
+    max_stance_corr = max(
+        abs(stats.pointbiserialr((blocks == b).astype(float), pop.X_used[:, s])[0])
+        for b in range(len(topic_idx)) for s in stance_idx
+    )
+    assert max_stance_corr < 0.1, (
+        f"topic-affinity block assignment correlates with stance (r={max_stance_corr:.2f}) "
+        "-- micro-publics defined by subject matter are leaking ideology"
+    )
+
+
+def test_v5_selection_echo_attended_exceeds_echo_exposed_under_homophilous():
+    """V5 minimum set, assertion 5: choice must filter MORE than exposure
+    already does under `homophilous` selection -- the observable
+    `selection_filtering.selection_shift` (outcomes.py) exists precisely to
+    report this; kept here as a direct mechanism-level regression guard."""
+    from discourse_lab.exposure.attention import Exposures
+    from discourse_lab.exposure.selection import apply_selection
+    from discourse_lab.metrics import echo_chamber_index
+
+    rng = np.random.default_rng(0)
+    n_users, m = 200, 4000
+    own_stance = rng.normal(0, 1, (n_users, 1))
+    user_id = rng.integers(0, n_users, m)
+    # exposure pool: half near the user's own position, half far -- only
+    # mildly assorted on its own, leaving room for choice to filter further
+    offset = np.where(rng.random(m) < 0.5, rng.normal(0, 0.1, m), rng.normal(0, 3.0, m))
+    consumed_stance = (own_stance[user_id, 0] + offset)[:, None]
+
+    agreement = -np.abs(consumed_stance[:, 0] - own_stance[user_id, 0])
+    exposures = Exposures(
+        post_idx=np.zeros(m, dtype=int), user_id=user_id,
+        rank=np.zeros(m, dtype=int), is_follower=np.ones(m, dtype=bool),
+    )
+    attended = apply_selection(
+        "homophilous", exposures, {"agreement": agreement, "arousal": np.zeros(m)},
+        tau_position=6.0, rng=rng,
+    )
+
+    delta = float(np.median(np.abs(offset)))
+    idx_exposed = echo_chamber_index(own_stance, consumed_stance, user_id, delta=delta)
+    idx_attended = echo_chamber_index(own_stance, consumed_stance[attended], user_id[attended], delta=delta)
+
+    mean_exposed = float(np.nanmean(idx_exposed))
+    mean_attended = float(np.nanmean(idx_attended))
+    assert mean_attended > mean_exposed, (
+        f"echo_attended ({mean_attended:.3f}) does not exceed echo_exposed "
+        f"({mean_exposed:.3f}) under homophilous selection"
+    )
+
+
+# --------------------------------------------------------------------------
+# V4: report becomes an exit event, not a hostility increment
+# --------------------------------------------------------------------------
+
+
+def test_v4_report_propensity_rises_with_animus():
+    """V4's first test: report propensity rises with the reporter's OWN
+    animus -- the correct causal direction, replacing the pre-V2 reading
+    where report was simply the largest hostility increment."""
+    from discourse_lab.exposure.kernel import apply_kernel, named_kernel
+
+    m = 20_000
+    half = m // 2
+    features = {
+        "intercept": np.ones(m), "affinity": np.zeros(m), "agreement": np.full(m, -1.0),
+        "arousal": np.zeros(m), "arousal_x_neu": np.zeros(m),
+        "provoc_x_con": np.zeros(m), "disagree_x_con": np.zeros(m),
+        "prominence": np.zeros(m), "social_proof": np.zeros(m), "tie_strength": np.zeros(m),
+        "quality": np.zeros(m), "novelty": np.zeros(m), "specificity": np.zeros(m),
+        "recency": np.zeros(m), "credulity_x_q": np.zeros(m),
+        "outgroup": np.ones(m),  # every row is cross-camp contact
+        "outgroup_x_animus": np.concatenate([np.zeros(half), np.full(m - half, 5.0)]),
+        "ingroup_x_ident": np.zeros(m),
+    }
+    rng = np.random.default_rng(0)
+    actions = apply_kernel(named_kernel("outrage"), features, rng)
+    low_animus_report_rate = (actions[:half] == "report").mean()
+    high_animus_report_rate = (actions[half:] == "report").mean()
+    assert high_animus_report_rate > low_animus_report_rate, (
+        f"report rate did not rise with animus ({low_animus_report_rate:.4f} -> "
+        f"{high_animus_report_rate:.4f})"
+    )
+
+
+def test_v4_a_reported_authors_future_exposure_drops():
+    """V4's second test: a user who reports has lower subsequent exposure to
+    the reported source. Unit level on `ReportSuppressionState`: candidate
+    pairs from a reported (user, author) are dropped; unrelated pairs
+    survive untouched."""
+    from discourse_lab.dynamics.report_exit import ReportSuppressionState
+    from discourse_lab.exposure.inbox import CandidatePairs
+
+    n = 100
+    state = ReportSuppressionState(n=n)
+    state.observe(users=np.array([1]), authors=np.array([2]))
+
+    posts_author = np.array([2, 2, 3])  # posts 0,1 by author 2 (reported); post 2 by author 3
+    pairs = CandidatePairs(
+        post_idx=np.array([0, 1, 2]),
+        user_id=np.array([1, 5, 1]),      # user 1 sees author 2 twice and author 3 once
+        is_follower=np.ones(3, dtype=bool),
+    )
+    filtered = state.filter_candidates(pairs, posts_author)
+
+    assert len(filtered) == 2, (
+        f"expected the (user 5, author 2) and (user 1, author 3) pairs to survive "
+        f"and (user 1, author 2) to be dropped, got {filtered}"
+    )
+    surviving = set(zip(filtered.user_id.tolist(), posts_author[filtered.post_idx].tolist()))
+    assert surviving == {(5, 2), (1, 3)}, (
+        f"user 1's future exposure to reported author 2 did not drop, or an unrelated pair was "
+        f"wrongly dropped (surviving pairs: {surviving})"
+    )
+    # the OTHER surviving case: user 5 was never blocked from author 2
+    filtered2 = state.filter_candidates(
+        CandidatePairs(post_idx=np.array([0]), user_id=np.array([5]), is_follower=np.ones(1, dtype=bool)),
+        posts_author,
+    )
+    assert len(filtered2) == 1, "an unrelated user's exposure was wrongly suppressed"
+
+
+def test_v4_report_exit_wired_into_the_tick_records_real_reports():
+    """The same mechanism as the unit test above, but confirming `tick.py`
+    actually calls `ReportSuppressionState.observe()` from a real run with
+    `dynamics.report_exit=True` -- the unit test never touches the tick
+    loop, so it cannot catch a wiring mistake (observe() never called, or
+    called with the wrong arrays) on its own."""
+    cfg = _cfg(
+        n_users=300, n_ticks=25, drift="none", report_exit=True,
+        kernel_theta=(("report", "intercept", 3.0),),  # force reports to actually occur
+    )
+    engine = _engine(cfg)
+    reported_pairs: set[tuple[int, int]] = set()
+    for t in range(cfg.dynamics.n_ticks):
+        engine.step(t)
+        ev = engine.engagement_events
+        if ev is not None and len(ev.get("user", [])) > 0:
+            is_report = ev["action"] == "report"
+            if is_report.any():
+                authors = _authors_of_posts(engine, ev["post"][is_report])
+                reported_pairs.update(zip(ev["user"][is_report].tolist(), authors.tolist()))
+
+    assert reported_pairs, "no reports occurred; the fixture kernel override is not forcing them"
+    u0, a0 = next(iter(reported_pairs))
+    assert engine.report_state.is_blocked(np.array([u0]), np.array([a0]))[0], (
+        "a real report from the tick loop is not recorded as blocked -- observe() is not wired in"
+    )
+
+
+def _authors_of_posts(engine, post_ids: np.ndarray) -> np.ndarray:
+    posts = engine.active_posts
+    id_to_author = {int(pid): int(a) for pid, a in zip(posts.id, posts.author)}
+    return np.array([id_to_author.get(int(pid), -1) for pid in post_ids])
+
+
+def test_v4_report_animus_increment_defaults_to_zero():
+    """V4's third test: animus does not rise from the report act itself at
+    the default parameter. `report` no longer appears in the hostility
+    table at all (V2), so this is really a regression guard on both V2 and
+    V4 agreeing that report contributes nothing to animus by default."""
+    from discourse_lab.dynamics.drift import affect_delta
+    from discourse_lab.dynamics.valence import assign_valence
+    from discourse_lab.exposure.attention import Exposures
+    from discourse_lab.population import sample_population
+
+    cfg = _cfg(n_users=200, pop={"affect": True})
+    rng = np.random.default_rng(0)
+    pop = sample_population(cfg, rng)
+    posts = _tiny_posts(cfg, rng)
+
+    m = 100
+    exposures = Exposures(
+        post_idx=np.zeros(m, dtype=int),
+        user_id=(np.arange(m) % 99) * 2 + 1,
+        rank=np.zeros(m, dtype=int),
+        is_follower=np.ones(m, dtype=bool),
+    )
+    actions = np.full(m, "report")
+    camps = (np.arange(cfg.population.n_users) % 2).astype(np.int64)
+    valence = assign_valence(np.zeros(m), 0.0, rng, force_agree=False, force_civil=False)
+
+    delta = affect_delta(exposures, actions, posts, pop, camps, lr_affect=0.5, valence=valence)
+    animus_col = pop.trait_names.index("animus")
+    touched = np.unique(exposures.user_id)
+    assert (delta[touched, animus_col] == 0.0).all(), (
+        "cross-camp `report` moved animus at the default report_animus_increment=0.0"
+    )
+
+    # and the free parameter, when set, does move it
+    delta_on = affect_delta(
+        exposures, actions, posts, pop, camps, lr_affect=0.5, valence=valence,
+        report_animus_increment=0.4,
+    )
+    assert (delta_on[touched, animus_col] > 0).all(), (
+        "report_animus_increment=0.4 had no effect -- the free parameter is decorative"
+    )
+
+
+# --------------------------------------------------------------------------
+# V6(1)+(2): continuous distance in the mechanism; emergent k as a measurement
+# --------------------------------------------------------------------------
+
+
+def test_v6_1_agreement_is_continuous_per_axis_not_camp_membership():
+    """V6(1): the mechanism already uses full per-axis continuous distance,
+    not a binary camp flag -- the "Bernie case" (a user far on axis 0,
+    close on axis 1) must read as agreement-bearing content on the affinity
+    axis that carries it, exactly like same-camp content would. If the
+    kernel's `agreement` feature only ever looked at camp sign, the two
+    would be indistinguishable."""
+    from discourse_lab.exposure.attention import Exposures
+    from discourse_lab.exposure.kernel import compute_features
+    from discourse_lab.population import sample_population
+
+    cfg = _cfg(n_users=200, pop={"stance_dims": 2})
+    rng = np.random.default_rng(0)
+    pop = sample_population(cfg, rng)
+    posts = _tiny_posts(cfg, rng)
+
+    stance_idx = [i for i, n in enumerate(pop.trait_names) if n.startswith("stance_")]
+    assert len(stance_idx) == 2
+    # user 10: axis 0 = +2 (far right), axis 1 = 0
+    # post's stance (from _tiny_posts) is whatever it is; pin it and compare
+    # two users who are EQUIDISTANT on axis 0 from the post but one is close
+    # on axis 1 (the Bernie case) and one is far on both
+    post_stance = np.array([2.0, 0.0])
+    posts.stance[0] = post_stance
+    pop.X_used[10, stance_idx] = [-2.0, 3.0]   # far on axis 0, far on axis 1 too
+    pop.X_used[11, stance_idx] = [-2.0, -3.0]  # far on axis 0, equally far on axis 1 (control)
+    pop.X_used[12, stance_idx] = [-2.0, 0.1]   # far on axis 0, CLOSE on axis 1 (Bernie case)
+
+    exposures = Exposures(
+        post_idx=np.zeros(3, dtype=int), user_id=np.array([10, 11, 12]),
+        rank=np.zeros(3, dtype=int), is_follower=np.ones(3, dtype=bool),
+    )
+    feats = compute_features(exposures, posts, pop, exposures.is_follower, t_current=0)
+    agreement = feats["agreement"]
+    # closer on the SECOND axis must read as more agreement than farther on
+    # it, even though both are equally far on the first axis -- a
+    # camp-sign-only mechanism (1-D projection) could not distinguish rows
+    # 10 and 12 at all, since a median-split camp label ignores axis 1
+    # entirely
+    assert agreement[2] > agreement[0], (
+        f"closer-on-axis-1 (Bernie case) did not read as more agreement ({agreement[2]:.3f} vs {agreement[0]:.3f})"
+    )
+    assert agreement[0] == pytest.approx(agreement[1]), (
+        "equal full-vector distance did not produce equal agreement"
+    )
+
+
+def test_v6_2_emergent_k_recovers_two_camps():
+    from discourse_lab.metrics.polarization import emergent_camps
+
+    rng = np.random.default_rng(0)
+    stance = np.concatenate([
+        rng.normal(-2.0, 1.0, (400, 1)), rng.normal(2.0, 1.0, (400, 1)),
+    ])
+    result = emergent_camps(stance, k_max=5, seed=0)
+    assert result["k"] == 2, f"expected k=2 on a clean bimodal population, got {result['k']}"
+
+
+def test_v6_2_emergent_k_makes_fragmentation_visible():
+    """The demonstration V6 itself asks for: an intervention that dissolves
+    two camps into five smaller hostile ones must be visible as k rising,
+    not just as "bimodality fell" under the old binary frame. Five
+    well-separated blobs must select k=5, not silently collapse back to 2."""
+    from discourse_lab.metrics.polarization import emergent_camps
+
+    rng = np.random.default_rng(0)
+    centers = [-6.0, -3.0, 0.0, 3.0, 6.0]
+    stance = np.concatenate([rng.normal(c, 0.5, (200, 1)) for c in centers])
+    result = emergent_camps(stance, k_max=8, seed=0)
+    assert result["k"] == 5, f"expected k=5 on five well-separated blobs, got {result['k']}"
+    assert len(np.unique(result["labels"])) == 5
+
+
+# --------------------------------------------------------------------------
+# V3: endogenous valence
+# --------------------------------------------------------------------------
+
+
+def test_v3_monotonicity_in_each_predictor_holding_others_fixed():
+    """V3's first test. Each predictor swept with the others held at 0 (or
+    their default), large N so the empirical agree/civil rate is a reliable
+    proxy for the underlying probability. Signs checked are the ones
+    `EndogenousValenceParams`' own docstring fixes by theory."""
+    from discourse_lab.dynamics.valence import EndogenousValenceParams, assign_valence_endogenous
+
+    m = 20_000
+    rng = np.random.default_rng(0)
+
+    def agree_rate(dist, ident, params=None):
+        params = params or EndogenousValenceParams(noise_agree=0.5)
+        v = assign_valence_endogenous(np.full(m, -dist), np.zeros(m), np.full(m, ident), rng, params)
+        return v.agree.mean()
+
+    def civil_rate(animus, dist=0.0, params=None):
+        params = params or EndogenousValenceParams(noise_civil=0.5)
+        v = assign_valence_endogenous(np.full(m, -dist), np.full(m, animus), np.zeros(m), rng, params)
+        return v.civil.mean()
+
+    near, far = agree_rate(dist=0.0, ident=0.0), agree_rate(dist=4.0, ident=0.0)
+    assert near > far, f"P(agree) did not fall with distance ({near:.3f} -> {far:.3f})"
+
+    low_id, high_id = agree_rate(dist=1.0, ident=0.0), agree_rate(dist=1.0, ident=5.0)
+    assert low_id > high_id, f"P(agree) did not fall with identification ({low_id:.3f} -> {high_id:.3f})"
+
+    low_an, high_an = civil_rate(animus=0.0), civil_rate(animus=5.0)
+    assert low_an > high_an, f"P(civil) did not fall with animus ({low_an:.3f} -> {high_an:.3f})"
+
+    # gamma_dist defaults to 0 (a genuinely free, unswept coefficient) --
+    # confirm the wiring responds correctly once a sweep sets it
+    swept = EndogenousValenceParams(gamma_dist=-1.0, noise_civil=0.5)
+    near_c = civil_rate(animus=0.0, dist=0.0, params=swept)
+    far_c = civil_rate(animus=0.0, dist=4.0, params=swept)
+    assert near_c > far_c, f"P(civil) did not respond to gamma_dist ({near_c:.3f} -> {far_c:.3f})"
+
+
+def _iterate_animus_feedback(start_animus, gamma_animus, gamma0, lr, ou_k, steps, n=3000, seed=0):
+    """Isolates the animus <-> civility feedback loop at the mechanism
+    level -- iterate the endogenous valence draw, the resulting sign, and
+    a drift.py-shaped OU update (Bs tracking X_stored at k/10, exactly
+    `dynamics/drift.py::apply_drift`'s own composition) directly, without
+    the full tick loop's other confounds (dyad distance held at 0 -- this
+    isolates the animus -> civility -> sign -> animus loop specifically).
+    Returns the per-step population-mean animus trajectory."""
+    from discourse_lab.dynamics.drift import AFFECT_VALENCE_SIGNS
+    from discourse_lab.dynamics.valence import (
+        EndogenousValenceParams,
+        assign_valence_endogenous,
+        valence_cell_signs,
+    )
+
+    rng = np.random.default_rng(seed)
+    animus = np.full(n, start_animus)
+    baseline = np.full(n, start_animus)  # Bs starts at X_stored's own value, per DriftState
+    identification = np.zeros(n)
+    agreement = np.zeros(n)
+    params = EndogenousValenceParams(
+        beta0=0.0, beta_dist=0.0, beta_ident=0.0, noise_agree=0.5,
+        gamma0=gamma0, gamma_animus=gamma_animus, gamma_dist=0.0, noise_civil=0.5,
+    )
+    magnitude = 0.5  # stand-in action magnitude (~reply's weight in AFFECT_HOSTILITY_WEIGHTS)
+    means = []
+    for _ in range(steps):
+        valence = assign_valence_endogenous(agreement, animus, identification, rng, params)
+        sign = valence_cell_signs(valence.agree, valence.civil, AFFECT_VALENCE_SIGNS)
+        animus = animus + lr * magnitude * sign - ou_k * (animus - baseline)
+        animus = np.clip(animus, 0.0, None)
+        baseline = baseline + (ou_k / 10.0) * (animus - baseline)
+        means.append(float(animus.mean()))
+    return means
+
+
+def test_v3_bistability_probe_finds_both_regimes():
+    """V3's second test: for at least some coefficient setting, two
+    populations identical except for initial animus must settle at
+    different long-run outcomes -- the sharp version of the Experiment 03
+    question (does a population already pushed into the hostile regime
+    metabolize added contact as attack, rather than returning to baseline).
+
+    Checked as a TREND, not a single snapshot: the gap between the two
+    trajectories must be GROWING (still diverging at the end of the run),
+    not merely large because slow OU decay has not caught up yet -- that
+    distinction is exactly what the companion non-tautology test below
+    turns on.
+    """
+    low = _iterate_animus_feedback(0.1, gamma_animus=-1.0, gamma0=2.0, lr=0.05, ou_k=0.005, steps=600)
+    high = _iterate_animus_feedback(6.0, gamma_animus=-1.0, gamma0=2.0, lr=0.05, ou_k=0.005, steps=600)
+
+    gap_mid = abs(low[149] - high[149])
+    gap_end = abs(low[-1] - high[-1])
+    assert gap_end > gap_mid, (
+        f"the two trajectories were converging, not diverging (gap@150={gap_mid:.3f}, "
+        f"gap@600={gap_end:.3f}) -- not a genuine feedback regime at this coefficient setting"
+    )
+    assert gap_end > 5.0, f"final gap too small to call this bistability ({gap_end:.3f})"
+    assert low[-1] < 1.0, f"the low-start trajectory did not stay near baseline ({low[-1]:.3f})"
+
+
+def test_v3_no_basins_when_self_reinforcement_is_absent():
+    """Non-tautology note (spec): fixing gamma_animus at a value guaranteed
+    to produce two basins and then reporting basins would be circular.
+    This is the control the sweep must include: at gamma_animus=0 (no
+    animus -> civility feedback at all), the SAME two starting points,
+    under the SAME other coefficients, must show the gap CLOSING over time
+    instead of growing -- ordinary decay, not a second regime."""
+    low = _iterate_animus_feedback(0.1, gamma_animus=0.0, gamma0=2.0, lr=0.05, ou_k=0.005, steps=600)
+    high = _iterate_animus_feedback(6.0, gamma_animus=0.0, gamma0=2.0, lr=0.05, ou_k=0.005, steps=600)
+
+    gap_mid = abs(low[149] - high[149])
+    gap_end = abs(low[-1] - high[-1])
+    assert gap_end < gap_mid, (
+        f"the gap did not close with no self-reinforcement (gap@150={gap_mid:.3f}, "
+        f"gap@600={gap_end:.3f}) -- the bistability test above may be tautological"
+    )
+
+
+def test_v3_endogenous_mode_requires_the_affect_block():
+    cfg = _cfg(n_users=100, valence_mode="endogenous")
+    with pytest.raises(ValueError, match="affect"):
+        _engine(cfg)
+
+
+def test_v3_endogenous_valence_wired_into_a_real_run():
+    """Smoke test: `valence_mode='endogenous'` must run end to end through
+    the real tick loop (not just the isolated mechanism above) and actually
+    vary the assigned valence rather than collapsing to one constant cell."""
+    cfg = _cfg(
+        n_users=400, n_ticks=15, pop={"affect": True}, kernel="outrage",
+        drift="full", drift_ramp_ticks=5, valence_mode="endogenous",
+    )
+    cfg = dataclasses.replace(
+        cfg, scenario=dataclasses.replace(cfg.scenario, stance_axes=(_polarized_axis(),))
+    )
+    engine = _engine(cfg)
+    engine._refresh_camps()
+    if engine.camps is None:
+        raise AssertionError("polarized scenario produced no camps — the shared gate failed")
+
+    seen_cells: set[str] = set()
+    for t in range(cfg.dynamics.n_ticks):
+        engine.step(t)
+        ev = engine.engagement_events
+        if ev is not None and len(ev.get("user", [])) > 0:
+            agree, civil = ev["agree"], ev["civil"]
+            cells = np.where(agree, np.where(civil, "agree_civil", "agree_hostile"),
+                              np.where(civil, "disagree_civil", "disagree_hostile"))
+            seen_cells.update(cells.tolist())
+
+    assert len(seen_cells) > 1, f"endogenous mode collapsed to a single valence cell: {seen_cells}"

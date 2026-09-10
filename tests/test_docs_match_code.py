@@ -28,7 +28,8 @@ SECTIONS = {
 
 # Documented as prose rather than a literal (e.g. "library defaults", "()").
 NON_LITERAL = {"archetype_weights", "archetype_offsets", "correlation_pairs",
-               "kernel_theta", "ou_k"}
+               "kernel_theta", "ou_k", "affect_weights_hostility",
+               "affect_weights_support", "affect_valence_signs"}
 
 
 def _documented_defaults() -> dict[str, str]:
