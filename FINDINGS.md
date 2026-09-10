@@ -241,3 +241,79 @@ exposure share: World A 0.277, World B 0.331. Present equally in the
 worlds and their nulls, since kernel is the only axis that differs between
 a world and its null — expected, and not itself evidence for either
 kernel's mechanism.
+
+## Change-spec V-series — the affect-hostility table has no de-escalation channel
+
+Third spec-versus-implementation gap surfaced by inspection, after
+`tie_strength = is_follower` (still open — see below) and the topic-affinity
+SBM blocks gap closed by implementing `graph.sbm_block_source="topic_affinity"`.
+Same shape each time: a mechanism the design docs gesture at, absent or
+unreachable in code, invisible because nothing tested for its presence.
+
+**The table.** `AFFECT_HOSTILITY_WEIGHTS` (`discourse_lab/dynamics/drift.py`)
+and `DynamicsConfig.affect_weights_hostility` (`discourse_lab/config.py`)
+carry identical values:
+
+| action | like | repost | quote | reply | report | skip |
+|---|---|---|---|---|---|---|
+| hostility weight | 0.25 | 0.25 | 0.5 | 0.5 | 2.0 | 0.0 |
+
+Every non-`skip` entry is positive. `affect_delta`'s animus term is
+`lr_affect · mean_over_exposures(outgroup · hostility_weight(action))` with
+`outgroup ∈ {0,1}` and `lr_affect >= 0`, so animus is monotone non-decreasing
+relative to each user's baseline. No `affect_weights_hostility` override
+changes that: the table is keyed on action alone, so a negative entry would
+make every instance of that action de-escalating — civil and hostile alike —
+which is a different, worse model, not a de-escalation path.
+
+**The design docs specified this as reachable, not as a known limitation.**
+`drift.py`'s own module docstring, predating this finding: "the hate-
+engagement reading (any out-group engagement raises animus, scaled by how
+confrontational the action is — Rathje et al. 2021) is a theory, and the
+contact-hypothesis alternative (likes as positive contact that LOWERS animus)
+is a different theory a sweep should be able to express without editing the
+loop." `MODEL.md`'s config table repeats the claim almost verbatim: "the
+hate-engagement reading is a theory, the contact-hypothesis alternative is a
+different one." Both name the alternative and both assert a sweep — a config
+override, no code change — should reach it. Neither is true of the shipped
+table. The gap is documented rather than re-argued: the intent for a
+de-escalation path is in writing twice, and no config value realizes it.
+
+**Scope.** Blocks Experiment 03: its question ("under what conditions is
+popping filter bubbles defensible") has four possible answers and the current
+build can reach two, since the "contact reduces hostility" quadrant is
+excluded by the update rule — the experiment would answer itself before it
+ran. Does NOT invalidate Experiment 01: every comparison there was between
+conditions all driven upward, so orderings hold, and `echo_attended` is an
+exposure measure never routed through this table. What does not survive is
+reading a condition's animus number as a *finding* rather than a
+*consequence* — `outrage` weights `outgroup` at 0.5-0.9
+(`discourse_lab/exposure/kernel.py`), so out-group engagement is already
+outrage's dominant driver, and "outrage raises animus" is definitional in two
+steps (outrage leads to more out-group engagement, and animus can only rise
+from engagement) — not an independent result of the affect channel.
+
+**V5 minimum conformance set, measured against current code**
+(`tests/test_change_spec.py::test_v5_*`). The change spec ("Change Spec V1 —
+Engagement Valence and the De-escalation Channel", reviewed but not committed
+to this repo) predicts four of its five assertions fail today. Measured: two.
+
+| assertion | result |
+|---|---|
+| de-escalation: civil cross-camp contact lowers animus below baseline | **fails** (`xfail`, strict) |
+| repeated encounter: `tie_strength` rises with repeat contact, follow status fixed | **fails** (`xfail`, strict) — `tie_strength` is exactly `is_follower.astype(float)` (`kernel.py:201`); no channel carries contact history |
+| topic-affinity blocks: assignment correlates with topic affinity, not stance | passes — closed by `graph.sbm_block_source="topic_affinity"`; default population sampling draws topic affinity and stance independently, so the max block-vs-stance point-biserial `r` stays under 0.1 at N=2000 |
+| backfire: hostile cross-camp contact raises animus | passes — trivially, every table entry is >= 0 |
+| selection: `echo_attended > echo_exposed` under `homophilous` | passes — the existing `selection_filtering` outcome (`outcomes.py`) already implements and reports exactly this decomposition |
+
+Not a subtle miss: two of the spec's four predicted failures are gaps this
+project had already closed (SBM blocks) or already built under a different
+change spec (C2 selection) before this document was written — its "three
+known gaps" framing counted `tie_strength = is_follower` and the SBM gap as
+both still open, and only one of those two still is. The two real, currently
+open gaps are the de-escalation channel itself (this document's subject,
+scheduled to close under V1/V2) and `tie_strength` (which none of V1-V6
+addresses). The latter is pinned as an `xfail(strict=True)` regression guard
+specifically so it stays visible in the suite rather than silently absent,
+and so it fails loudly — forcing the marker's removal — the moment some
+future change makes it pass.

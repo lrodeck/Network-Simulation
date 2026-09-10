@@ -1087,3 +1087,213 @@ def test_c13_content_drives_branching():
         f"provocativeness-subtree correlation without gamma ({correlations[False]:.3f}) "
         f"is not below with-gamma ({correlations[True]:.3f})"
     )
+
+
+# --------------------------------------------------------------------------
+# V-series (change-spec-v1-engagement-valence.md): V5 minimum conformance
+# set, written before V1 per the spec's own sequencing ("Write V5 before
+# V1... a test suite written after the fix cannot demonstrate that the fix
+# was needed"). Two of the five mechanisms below (de-escalation, repeated
+# encounter) are open gaps this file pins down rather than silently passes;
+# the other three are regression guards for mechanisms that already exist.
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "V1/V2 gap, not yet fixed. AFFECT_HOSTILITY_WEIGHTS is keyed on "
+        "action alone and every entry is >= 0 (drift.py's own docstring: "
+        "'the contact-hypothesis alternative (likes as positive contact "
+        "that LOWERS animus) is a different theory a sweep should be able "
+        "to express without editing the loop' -- but no "
+        "affect_weights_hostility override can express it, because the "
+        "table has no valence axis to hang a sign on). V2 rekeys the table "
+        "on (action, valence) with disagree+civil negative; remove this "
+        "marker once that lands and this flips to a real pass."
+    ),
+)
+def test_v5_deescalation_civil_crosscamp_contact_lowers_animus():
+    """V5 minimum set, assertion 1. `like` is the least confrontational
+    action AFFECT_HOSTILITY_WEIGHTS has -- the shipped model's closest thing
+    to "civil" contact -- so if even all-`like` cross-camp engagement cannot
+    push a user's animus contribution negative, no configuration of the
+    current table can represent contact reducing hostility."""
+    from discourse_lab.dynamics.drift import AFFECT_HOSTILITY_WEIGHTS, affect_delta
+    from discourse_lab.exposure.attention import Exposures
+    from discourse_lab.population import sample_population
+
+    assert all(w >= 0 for w in AFFECT_HOSTILITY_WEIGHTS.values()), (
+        "a negative entry already exists in AFFECT_HOSTILITY_WEIGHTS -- this test is stale"
+    )
+
+    cfg = _cfg(n_users=200, pop={"affect": True})
+    rng = np.random.default_rng(0)
+    pop = sample_population(cfg, rng)
+    posts = _tiny_posts(cfg, rng)  # authors 0, 1, 2, 3 -- post 0's author is user 0
+
+    m = 100
+    exposures = Exposures(
+        post_idx=np.zeros(m, dtype=int),        # everyone consumes author 0's post
+        user_id=(np.arange(m) % 99) * 2 + 1,    # odd ids only: camp 1, never author 0
+        rank=np.zeros(m, dtype=int),
+        is_follower=np.ones(m, dtype=bool),
+    )
+    actions = np.full(m, "like")                # the table's most civil action
+    camps = (np.arange(cfg.population.n_users) % 2).astype(np.int64)
+    assert camps[0] == 0 and (camps[exposures.user_id] == 1).all()  # every exposure cross-camp
+
+    delta = affect_delta(exposures, actions, posts, pop, camps, lr_affect=0.5)
+    animus_col = pop.trait_names.index("animus")
+    assert (delta[:, animus_col] < 0).any(), (
+        "no exposed user's animus fell under all-`like` cross-camp contact -- "
+        "the de-escalation channel does not exist"
+    )
+
+
+def test_v5_backfire_hostile_crosscamp_contact_raises_animus():
+    """V5 minimum set, assertion 4: the half of the quadrant the current
+    model already gets right -- `report`, the table's most confrontational
+    action, must raise animus on cross-camp contact. This is the entire
+    content of AFFECT_HOSTILITY_WEIGHTS today, so it passes now; kept in the
+    regression set because V1/V2 rekey this table and must not break it."""
+    from discourse_lab.dynamics.drift import affect_delta
+    from discourse_lab.exposure.attention import Exposures
+    from discourse_lab.population import sample_population
+
+    cfg = _cfg(n_users=200, pop={"affect": True})
+    rng = np.random.default_rng(0)
+    pop = sample_population(cfg, rng)
+    posts = _tiny_posts(cfg, rng)
+
+    m = 100
+    exposures = Exposures(
+        post_idx=np.zeros(m, dtype=int),
+        user_id=(np.arange(m) % 99) * 2 + 1,
+        rank=np.zeros(m, dtype=int),
+        is_follower=np.ones(m, dtype=bool),
+    )
+    actions = np.full(m, "report")
+    camps = (np.arange(cfg.population.n_users) % 2).astype(np.int64)
+
+    delta = affect_delta(exposures, actions, posts, pop, camps, lr_affect=0.5)
+    animus_col = pop.trait_names.index("animus")
+    touched = np.unique(exposures.user_id)
+    assert (delta[touched, animus_col] > 0).all(), (
+        "cross-camp `report` did not raise animus for every exposed user"
+    )
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "Open gap, one of the three named in V0 (change-spec-v1-engagement-"
+        "valence.md), not addressed by this spec's V1-V6 items. "
+        "`compute_features` has no channel for contact history: "
+        "`tie_strength` is exactly `is_follower.astype(float)`, bimodal "
+        "{0, 1} regardless of how many times two users have crossed paths. "
+        "Remove this marker once a repeat-contact mechanism lands."
+    ),
+)
+def test_v5_repeated_encounter_tie_strength_rises_with_repeat_contact():
+    """V5 minimum set, assertion 2: a tie-strength feature should register
+    the relationship, not just the follow edge -- repeated contact with the
+    same author should read as a stronger tie than a first encounter,
+    holding follow status fixed."""
+    from discourse_lab.exposure.attention import Exposures
+    from discourse_lab.exposure.kernel import compute_features
+    from discourse_lab.population import sample_population
+
+    cfg = _cfg(n_users=200)
+    rng = np.random.default_rng(0)
+    pop = sample_population(cfg, rng)
+    posts = _tiny_posts(cfg, rng)
+
+    is_follower = np.zeros(4, dtype=bool)  # follow status held fixed: nobody follows
+    exposures = Exposures(
+        post_idx=np.zeros(4, dtype=int),   # all four rows are the same author (post 0)
+        user_id=np.array([10, 10, 10, 11]),
+        rank=np.zeros(4, dtype=int),
+        is_follower=is_follower,
+    )
+    feats = compute_features(exposures, posts, pop, is_follower, t_current=3)
+    tie = feats["tie_strength"]
+
+    repeat_contact_tie = tie[:3].mean()  # user 10's third encounter with this author
+    first_contact_tie = tie[3]           # user 11's first
+    assert repeat_contact_tie > first_contact_tie, (
+        f"tie_strength ({tie}) does not separate repeat contact from a first "
+        "encounter at fixed follow status -- it is exactly is_follower"
+    )
+
+
+def test_v5_topic_affinity_blocks_correlate_with_topic_affinity_not_stance():
+    """V5 minimum set, assertion 3: the second of the three gaps named in
+    V0, already closed by `graph.sbm_block_source='topic_affinity'` --
+    micro-public block assignment must track subject-matter geometry, not
+    ideology. Kept in the regression set so a future population or SBM
+    change cannot silently leak stance into it."""
+    from scipy import stats
+
+    from discourse_lab.population import sample_population
+
+    cfg = _cfg(n_users=2000)
+    rng = np.random.default_rng(0)
+    pop = sample_population(cfg, rng)
+    names = pop.trait_names
+    topic_idx = [i for i, n in enumerate(names) if n.startswith("topic_affinity_")]
+    stance_idx = [i for i, n in enumerate(names) if n.startswith("stance_")]
+    assert topic_idx and stance_idx
+
+    # graph.sbm_block_source="topic_affinity": each user's block is their
+    # single most-affine topic (discourse_lab/network/sbm.py)
+    blocks = np.argmax(pop.X_used[:, topic_idx], axis=1)
+
+    max_stance_corr = max(
+        abs(stats.pointbiserialr((blocks == b).astype(float), pop.X_used[:, s])[0])
+        for b in range(len(topic_idx)) for s in stance_idx
+    )
+    assert max_stance_corr < 0.1, (
+        f"topic-affinity block assignment correlates with stance (r={max_stance_corr:.2f}) "
+        "-- micro-publics defined by subject matter are leaking ideology"
+    )
+
+
+def test_v5_selection_echo_attended_exceeds_echo_exposed_under_homophilous():
+    """V5 minimum set, assertion 5: choice must filter MORE than exposure
+    already does under `homophilous` selection -- the observable
+    `selection_filtering.selection_shift` (outcomes.py) exists precisely to
+    report this; kept here as a direct mechanism-level regression guard."""
+    from discourse_lab.exposure.attention import Exposures
+    from discourse_lab.exposure.selection import apply_selection
+    from discourse_lab.metrics import echo_chamber_index
+
+    rng = np.random.default_rng(0)
+    n_users, m = 200, 4000
+    own_stance = rng.normal(0, 1, (n_users, 1))
+    user_id = rng.integers(0, n_users, m)
+    # exposure pool: half near the user's own position, half far -- only
+    # mildly assorted on its own, leaving room for choice to filter further
+    offset = np.where(rng.random(m) < 0.5, rng.normal(0, 0.1, m), rng.normal(0, 3.0, m))
+    consumed_stance = (own_stance[user_id, 0] + offset)[:, None]
+
+    agreement = -np.abs(consumed_stance[:, 0] - own_stance[user_id, 0])
+    exposures = Exposures(
+        post_idx=np.zeros(m, dtype=int), user_id=user_id,
+        rank=np.zeros(m, dtype=int), is_follower=np.ones(m, dtype=bool),
+    )
+    attended = apply_selection(
+        "homophilous", exposures, {"agreement": agreement, "arousal": np.zeros(m)},
+        tau_position=6.0, rng=rng,
+    )
+
+    delta = float(np.median(np.abs(offset)))
+    idx_exposed = echo_chamber_index(own_stance, consumed_stance, user_id, delta=delta)
+    idx_attended = echo_chamber_index(own_stance, consumed_stance[attended], user_id[attended], delta=delta)
+
+    mean_exposed = float(np.nanmean(idx_exposed))
+    mean_attended = float(np.nanmean(idx_attended))
+    assert mean_attended > mean_exposed, (
+        f"echo_attended ({mean_attended:.3f}) does not exceed echo_exposed "
+        f"({mean_exposed:.3f}) under homophilous selection"
+    )
