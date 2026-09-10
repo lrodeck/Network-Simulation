@@ -42,6 +42,67 @@ def camps_and_bimodality(stance: np.ndarray) -> tuple[np.ndarray | None, float]:
     return stance_clusters(stance), bimodality
 
 
+def emergent_camps(stance: np.ndarray, k_max: int = 5, seed: int = 0) -> dict:
+    """V6(2) (change spec V1-V6): k as a MEASUREMENT, not an assumption.
+
+    `camps_and_bimodality` median-splits ONE axis, so k=2 is hardcoded before
+    camps are defined at all. This fits k-means at k=1..k_max and selects k
+    by BIC (Pelleg & Moore 2000's formulation: one POOLED isotropic variance
+    shared across all k clusters, not one variance per cluster), so an
+    intervention that dissolves two camps into five smaller hostile ones is
+    visible as a change in k — the binary frame can only report that as
+    "bimodality fell" and read it as success.
+
+    Per-cluster variance was tried first and rejected: a Gaussian mixture's
+    likelihood is unbounded as any one cluster's variance shrinks to 0, so
+    letting BIC over-segment a true cluster into a tiny low-variance sliver
+    is rewarded rather than penalized, and the score decreased monotonically
+    to k_max instead of turning back up past the true k. Pooling the
+    variance across clusters removes that degenerate degree of freedom.
+
+    The log-likelihood also needs the mixing-proportion term
+    `sum_i n_i * log(n_i / n)` (each point's probability includes which
+    cluster it fell into, not just its distance from that cluster's
+    centroid) — omitting it was the second failure mode tried: BIC still
+    picked k_max, because nothing was penalizing a split into many small,
+    uneven clusters when only the distance term was scored. With it,
+    `n_params = k*d + 1 + (k-1)` (centroids, one shared variance, k-1 free
+    mixing proportions) — the standard k-means BIC (Pelleg & Moore 2000).
+
+    Full stance geometry (all D axes), never a single dominant projection —
+    the mechanism-level requirement V3 also needs (a user close on axis 1
+    and far on axis 0 should not be flattened onto one line before k is
+    even chosen). Returns `{"k", "labels", "bic", "centroids"}`; `bic` is
+    the winning k's score, for comparability across runs/interventions.
+    """
+    from scipy.cluster.vq import kmeans2
+
+    n, d = stance.shape
+    best: dict | None = None
+    for k in range(1, min(k_max, n) + 1):
+        if k == 1:
+            centroids = stance.mean(axis=0, keepdims=True)
+            labels = np.zeros(n, dtype=int)
+        else:
+            centroids, labels = kmeans2(stance, k, seed=seed, minit="++")
+
+        rss = float(((stance - centroids[labels]) ** 2).sum())
+        free_dims = max(n - k, 1)
+        var = max(rss / (free_dims * d), 1e-12)  # pooled isotropic variance, shared across clusters
+
+        log_lik = -0.5 * n * d * np.log(2 * np.pi * var) - rss / (2 * var)
+        counts = np.bincount(labels, minlength=k)
+        counts = counts[counts > 0]
+        log_lik += float(np.sum(counts * np.log(counts / n)))  # mixing-proportion term
+        n_params = k * d + 1 + (k - 1)  # centroids + shared variance + free mixing proportions
+        bic = -2 * log_lik + n_params * np.log(n)
+
+        if best is None or bic < best["bic"]:
+            best = {"k": k, "labels": labels.copy(), "bic": float(bic), "centroids": centroids.copy()}
+
+    return best
+
+
 def affective_distance(animus: np.ndarray, labels: np.ndarray | None) -> float:
     """Unnormalized between-camp `animus` gap: how much more hostile the
     average camp member is toward the other side than toward their own —

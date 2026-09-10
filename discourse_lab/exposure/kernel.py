@@ -132,6 +132,14 @@ KERNEL_THETAS: dict[str, tuple[tuple[str, str, float], ...]] = {
         ("reply", "outgroup", 0.9), ("reply", "disagree_x_con", 0.6), ("reply", "arousal", 1.0),
         ("quote", "outgroup", 0.7), ("quote", "disagree_x_con", 0.4), ("quote", "arousal", 0.8),
         ("report", "outgroup", 0.6), ("report", "disagree_x_con", 0.5),
+        # V4 (change spec V1-V6): report propensity rises with the
+        # reporter's OWN animus -- the correct causal direction, replacing
+        # the pre-V2 reading where report was simply the largest hostility
+        # increment (reverse causation compiled forward: one reports
+        # *because* angry). Only fires when camps + the affect block are
+        # both live (CONDITIONAL_FEATURES); silently absent otherwise, like
+        # every other camp/affect-conditional term in this table.
+        ("report", "outgroup_x_animus", 0.7),
     )),
     "bandwagon": _with_intercepts((
         ("like", "social_proof", 1.0), ("like", "prominence", 0.6),

@@ -321,20 +321,84 @@ class DynamicsConfig(Hashable):
     # the C10 sensitivity sweep.
     affect_ou_k: float = 0.02
     # C1.3's weight tables, config-side for the same reason C6 moved channel
-    # 2's: the claim "out-group engagement raises animus, scaled by how
-    # confrontational the action is" (Rathje et al. 2021's hate-engagement
-    # reading) is a theory, and the contact-hypothesis alternative (likes as
-    # positive contact) is a different theory that a sweep should be able to
-    # express without editing the loop. `skip` is structurally 0 and not a
-    # dial. (action, weight) pairs; unlisted actions are 0.
+    # 2's. `skip` is structurally 0 and not a dial. (action, weight) pairs;
+    # unlisted actions are 0.
+    #
+    # V2 (change spec V1-V6, "Engagement Valence and the De-escalation
+    # Channel"): re-keyed on (action, valence). This table now supplies only
+    # the per-ACTION MAGNITUDE (a reply weighs more than a like) — every
+    # entry is >= 0 by construction. The SIGN comes from `affect_valence_signs`
+    # below: `weight(action) * valence_sign_and_magnitude(cell)`. `report` is
+    # REMOVED from this table entirely — it is disengagement (the user hands
+    # the conflict to the platform and exits), not a hostility increment, and
+    # V4 makes it an exit event acting on future exposure instead.
     affect_weights_hostility: tuple[tuple[str, float], ...] = (
-        ("like", 0.25), ("repost", 0.25), ("quote", 0.5),
-        ("reply", 0.5), ("report", 2.0),
+        ("like", 0.25), ("repost", 0.25), ("quote", 0.5), ("reply", 0.5),
     )
     affect_weights_support: tuple[tuple[str, float], ...] = (
         ("like", 1.0), ("repost", 1.5), ("quote", 0.5),
         ("reply", 0.5), ("report", -1.0),
     )
+    # V2: sign fixed by theory, magnitude free (like `affect_ou_k`, carried
+    # in the C10 sensitivity sweep rather than calibrated). Keys are
+    # "{agree,disagree}_{civil,hostile}".
+    #   disagree_hostile  +  the backfire channel — retains pre-V2 behaviour
+    #   disagree_civil    -  Allport's contact hypothesis, operationalized:
+    #                        the de-escalation channel V1-V4 exists to add
+    #   agree_civil       -  affirmation; small because it is mostly in-group
+    #   agree_hostile     +  the pile-on cell (in-group bonding against an
+    #                        out-group) — not made smaller than
+    #                        disagree_hostile, since V1's own warrant is that
+    #                        this cell carries social reward and is the most
+    #                        likely to dominate
+    affect_valence_signs: tuple[tuple[str, float], ...] = (
+        ("disagree_hostile", 1.0), ("disagree_civil", -1.0),
+        ("agree_civil", -0.3), ("agree_hostile", 1.2),
+    )
+    # V1: the two valence axes assigned at the moment of engagement.
+    # agree/disagree is derived from the kernel's own `agreement` feature
+    # (thresholded against each tick's own median, so the split needs no
+    # calibrated distance and is stable across stance dimensionality); civil
+    # /hostile is exogenous here — a coin flip at `civility_prob` — until V3
+    # replaces it with a per-user logit on animus and stance distance.
+    # `force_agree` / `force_civil` pin an axis for EVERY engagement this
+    # run: the fixture hook change-spec V1's own test needs ("every
+    # engagement is agree+civil" / "...disagree+hostile"), not a production
+    # dial.
+    civility_prob: float = 0.5
+    force_agree: bool | None = None
+    force_civil: bool | None = None
+
+    # -- V3: endogenous valence ------------------------------------------------
+    # "exogenous" (V1/V2, default): civility is `civility_prob`, agree/disagree
+    # a fixed geometric threshold. "endogenous": both come from the engaging
+    # user's own state and the dyad's geometry (dynamics/valence.py::
+    # assign_valence_endogenous) -- the feedback loop the bistability question
+    # needs (does a population already in a hostile regime metabolize added
+    # contact as attack). Requires `population.affect` (P(civil) reads the
+    # user's own animus). None of the eight coefficients below are empirically
+    # anchored (same status as `affect_ou_k`); signs are fixed by theory
+    # (see EndogenousValenceParams), magnitudes are swept.
+    valence_mode: str = "exogenous"       # exogenous | endogenous
+    valence_beta0: float = 0.0
+    valence_beta_dist: float = -1.0
+    valence_beta_ident: float = -0.3
+    valence_noise_agree: float = 1.0
+    valence_gamma0: float = 0.0
+    valence_gamma_animus: float = -1.0
+    valence_gamma_dist: float = 0.0
+    valence_noise_civil: float = 1.0
+
+    # -- V4: report as an exit event ------------------------------------------
+    # `report` moved out of the hostility table (V2); this is what replaces
+    # it. `report_exit=True` makes a report suppress the reporter's future
+    # exposure to that author (dynamics/report_exit.py) — defaulted off like
+    # every other change-spec mechanism until asked for.
+    # `report_animus_increment` is a free parameter (spec: "a free parameter,
+    # defaulting to zero") for a small direct animus effect from the act
+    # itself, applied outside the (action, valence) hostility table.
+    report_exit: bool = False
+    report_animus_increment: float = 0.0
 
     # -- C2: selection layer and tie rewiring ---------------------------------
     # Bakshy, Messing & Adamic (2015) found individual choice filtered
