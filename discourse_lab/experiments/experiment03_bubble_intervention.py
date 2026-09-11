@@ -31,15 +31,22 @@ and recorded in FINDINGS.md:
     elementary-effects design (SS5.4 names "Morris screening"; a real Morris
     design needs multiple random trajectories through the 3-dial space to
     estimate global sensitivity, which is out of scope for a first pass).
-  - `delta_aff.per_contact` normalizes by TOTAL engagement volume over the
-    intervention window, not contact restricted to cross-camp pairs
-    specifically (SS2.2's literal ask) -- the latter needs an
-    engagement/author-camp join this pass does not build.
   - No hysteresis phase (SS5.2), no response-surface fit, no calibration
     against a corpus (SS8), no viewpoint-diversity floor (SS2.3 -- a
     normative choice the brief itself defers). Wave A's own falsifier (H1:
     does the sign of Delta_aff flip anywhere in the swept space) does not
     need any of these.
+  - Wave A itself covered a truncated ideological range: below the Sarle
+    bimodality gate, `dynamics.affect_drive="camp"` (the mechanism Wave A
+    ran under) froze the affect channel entirely, for every arm. V7.3
+    (change-spec-v7-continuous-affect.md) replaces that with a continuous
+    `"distance"` mechanism -- this module's own default since -- and V7.6
+    re-gates the resulting substrate; `delta_aff.per_contact`'s
+    total-engagement-volume normalization is joined by V7.4's
+    cross-camp-restricted `per_cross_contact`, and `DeltaIdeo` gains
+    `ideo_level_*` (V7.2) and `delta_bic_margin` (V7.5). Wave A′ -- the
+    re-run this unlocks, over the full dial range -- has not been run
+    (FINDINGS.md).
 """
 
 from __future__ import annotations
@@ -63,8 +70,10 @@ from discourse_lab.runner import cached_run, load_run
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RESULTS_DIR = REPO_ROOT / "results" / "experiment03"
 
-# traits: the outcome pair needs per-user stance/animus snapshots.
+# traits: the outcome pair needs per-user stance/animus snapshots (V7.4
+# additionally joins these against engagements for per_cross_contact).
 # engagements: delta_aff's per-contact denominator.
+# posts: V7.4's join also needs each engaged post's own stance.
 PERSIST = ("posts", "engagements", "traits")
 
 
@@ -81,6 +90,13 @@ def base_config(n_users: int, n_ticks: int) -> Config:
     "endogenous"` (V3): the feedback loop SS5.2's bistability question
     needs, and central to SS3's tautology-risk discussion (whether an
     already-hostile population metabolizes contact as attack).
+
+    `affect_drive="distance"` (V7.3, change-spec-v7-continuous-affect.md):
+    the whole point of this experiment is to measure the ideological dial's
+    low end, which sits below the Sarle bimodality gate `"camp"` mode
+    freezes the affect channel on (FINDINGS.md's "does popping the bubble
+    help is not measurable" finding, from Wave A). Wave A′ (V7.6) is the
+    re-run this unlocks.
     """
     cfg = Config()
     cfg = set_param(cfg, "population.n_users", n_users)
@@ -88,6 +104,7 @@ def base_config(n_users: int, n_ticks: int) -> Config:
     cfg = set_param(cfg, "dynamics.kernel", "outrage")
     cfg = set_param(cfg, "population.affect", True)
     cfg = set_param(cfg, "dynamics.valence_mode", "endogenous")
+    cfg = set_param(cfg, "dynamics.affect_drive", "distance")
     return cfg
 
 
@@ -106,19 +123,30 @@ def dial_config(base: Config, *, affective: float, ideological: float, structura
 
     The ideological dial's Sarle-bimodality gate (metrics.polarization.
     CAMP_BIMODAL_THRESHOLD = 5/9) crosses around level ~0.5 at N~800-1000
-    (calibrated empirically). BELOW the gate, camp is undefined, and
+    (calibrated empirically). BELOW the gate, camp is undefined, and under
+    `dynamics.affect_drive="camp"` (the pre-V7.3 mechanism)
     `dynamics/drift.py::apply_drift`'s C1.3 affect op is gated on
-    `camps is not None` (line ~487) -- so animus/identification do not
-    update AT ALL, for ANY arm including `none`, not only the ENGAGEMENT/
-    COMPOSITION arms whose `outgroup`/`outgroup_x_animus` kernel features
-    are separately camp-conditional. Confirmed in Wave A (FINDINGS.md):
-    every arm's delta_aff_plateau is EXACTLY 0.0 at ideological=0.1 (well
-    below the gate at this module's mapping). That is a real, reportable
-    model property, not a bug: "does popping the bubble help" is not even
-    MEASURABLE until the population has crossed into definable-camp
+    `camps is not None` -- so animus/identification do not update AT ALL,
+    for ANY arm including `none`, not only the ENGAGEMENT/COMPOSITION arms
+    whose `outgroup`/`outgroup_x_animus` kernel features are separately
+    camp-conditional. Confirmed in Wave A (FINDINGS.md): every arm's
+    delta_aff_plateau is EXACTLY 0.0 at ideological=0.1 (well below the gate
+    at this module's mapping). That is a real, reportable model property
+    under `"camp"` mode, not a bug: "does popping the bubble help" is not
+    even MEASURABLE until the population has crossed into definable-camp
     territory, independent of whether popping it would help once there.
-    `wave_a_screen`'s default background level accounts for this (see its
-    docstring).
+    `wave_a_screen`'s default background level was chosen to stay clear of
+    this gate (see its docstring) for exactly that reason.
+
+    V7.3 (change-spec-v7-continuous-affect.md) replaces this with
+    `dynamics.affect_drive="distance"` -- `base_config`'s own default from
+    V7.3 onward -- which has no bimodality gate at all: the affect channel
+    is measurable at every ideological level, including 0.1. The paragraph
+    above therefore describes `"camp"` mode (still reachable by overriding
+    `affect_drive` back to it, e.g. to reproduce a pre-V7.3 result) rather
+    than this module's own current behaviour; Wave A's own truncated-domain
+    limitation is what V7.6's "Wave A′" re-run (FINDINGS.md, V7 sequencing)
+    exists to lift.
     """
     for name, level in (("affective", affective), ("ideological", ideological), ("structural", structural)):
         if not 0.0 <= level <= 1.0:
@@ -135,6 +163,20 @@ def dial_config(base: Config, *, affective: float, ideological: float, structura
         ),
         graph=dataclasses.replace(
             base.graph, generator="sbm", sbm_block_source="camp", sbm_homophily=sbm_homophily,
+            # V7.6's re-gate (change-spec-v7-continuous-affect.md) is the
+            # first time this substrate was ever run through `stylized_gate`
+            # -- it failed reciprocity at 0.065 against the spec's 0.2-0.4
+            # band with `sbm_mirror_p` left at its 0.0 default (an SBM-only
+            # top-up `network/sbm.py::sbm_graph` needs and this module never
+            # supplied; `graph.mirror_p`, the OTHER generators' knob, is not
+            # read by `sbm_graph` at all). 0.15 was calibrated the same way
+            # `experiments/gate.py::calibrated_gate_config` calibrated its
+            # own `mirror_p` -- swept empirically against the measured
+            # share, not the mirror probability itself (`network/
+            # reciprocity.py`'s "mirror_p is NOT the reciprocity you then
+            # measure") -- landing reciprocity at ~0.29-0.30, mid-band, at
+            # both N=2,000 and N=10,000 (FINDINGS.md).
+            sbm_mirror_p=0.15,
         ),
     )
 
@@ -216,6 +258,13 @@ def forked_config(
 class DeltaAff:
     plateau: float       # mean animus at the post-intervention plateau, arm minus none
     per_contact: float   # the same delta, normalized by total engagement volume over the window
+    # V7.4: the same delta normalized by CROSS-CAMP-RESTRICTED contact only
+    # (events whose dyad stance distance exceeds `d_cross`) -- SS2.2's
+    # literal ask, which a total-volume denominator cannot answer since the
+    # arms deliberately change the cross-camp SHARE of engagement, not just
+    # its volume. NaN when the join inputs (traits/posts persistence) are
+    # unavailable, so `_aff_from_arrays` stays callable without them.
+    per_cross_contact: float = float("nan")
 
 
 @dataclass(frozen=True)
@@ -224,16 +273,27 @@ class DeltaIdeo:
     `toward_own_pole`, a camp-signed projection change) averaged across
     users -- oriented toward/away from its reference point BEFORE
     averaging, which is what keeps opposite-camp movement from cancelling
-    the way a raw coordinate mean would. NaN on the first three whenever the
-    PRE-intervention population is unimodal (camp is then a projection
-    artifact, not two camps -- metrics/polarization.py's own convention).
-    `delta_k` is never gated on that: V6(2) exists precisely so fragmentation
-    is visible even where the binary camp frame is not.
+    the way a raw coordinate mean would. These three, and `ideo_level_*`
+    below, are NaN whenever the PRE-intervention population is unimodal
+    (camp is then a projection artifact, not two camps --
+    metrics/polarization.py's own convention). `delta_k` and
+    `delta_bic_margin` are never gated on that: V6(2)/V7.5 exist precisely
+    so fragmentation is visible even where the binary camp frame is not.
     """
-    toward_other_camp: float   # shrink in mean distance to the OTHER camp's pre-period centroid
-    toward_mean: float         # shrink in mean distance to the pre-period global mean
-    toward_own_pole: float     # growth in own-camp-signed movement along the pre-period dominant axis
-    delta_k: float             # change in emergent k (metrics.polarization.emergent_camps)
+    toward_other_camp: float   # shrink in mean distance to the OTHER camp's pre-period centroid, arm minus none
+    toward_mean: float         # shrink in mean distance to the pre-period global mean, arm minus none
+    toward_own_pole: float     # growth in own-camp-signed movement along the pre-period dominant axis, arm minus none
+    delta_k: float             # change in emergent k (metrics.polarization.emergent_camps), arm minus none
+    # V7.5: the BIC-margin analogue of delta_k -- a gradient rather than a
+    # step, so H5 is readable even where delta_k stays flat. Never NaN-gated.
+    delta_bic_margin: float = float("nan")
+    # V7.2: the `none` arm's OWN absolute movement (not net of anything) --
+    # the background behaviour worth seeing precisely because it is NOT the
+    # effect. `toward_*` above already differences it out; recovering an
+    # arm's own absolute level, if ever needed, is `toward_* + ideo_level_*`.
+    ideo_level_toward_other_camp: float = float("nan")
+    ideo_level_toward_mean: float = float("nan")
+    ideo_level_toward_own_pole: float = float("nan")
 
 
 def _stance_and_animus_at(handle, cfg: Config, tick: int) -> tuple[np.ndarray, np.ndarray]:
@@ -272,13 +332,82 @@ def _fixed_axis(stance0: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 
 def _aff_from_arrays(
-    animus_arm: np.ndarray, animus_none: np.ndarray, contact_arm: float, contact_none: float
+    animus_arm: np.ndarray, animus_none: np.ndarray, contact_arm: float, contact_none: float,
+    cross_contact_arm: float = float("nan"), cross_contact_none: float = float("nan"),
 ) -> DeltaAff:
     """Pure-array core of `delta_aff`, split out so the normalization logic
-    is unit-testable on toy inputs without a persisted run."""
+    is unit-testable on toy inputs without a persisted run. `cross_contact_*`
+    (V7.4) are optional: omitted, `per_cross_contact` stays NaN rather than
+    silently dividing by the wrong (total-volume) denominator."""
     plateau_delta = float(np.nanmean(animus_arm) - np.nanmean(animus_none))
     denom = max(float(contact_arm), float(contact_none), 1.0)
-    return DeltaAff(plateau=plateau_delta, per_contact=plateau_delta / denom)
+    per_contact = plateau_delta / denom
+
+    per_cross_contact = float("nan")
+    if np.isfinite(cross_contact_arm) and np.isfinite(cross_contact_none):
+        cross_denom = max(float(cross_contact_arm), float(cross_contact_none), 1.0)
+        per_cross_contact = plateau_delta / cross_denom
+
+    return DeltaAff(plateau=plateau_delta, per_contact=per_contact, per_cross_contact=per_cross_contact)
+
+
+def _cross_contact_from_frames(
+    engagements: pl.DataFrame, traits: pl.DataFrame, posts: pl.DataFrame,
+    stance_cols: list[str], d_cross: float, rms: bool,
+) -> tuple[float, float]:
+    """Pure-frame core of the V7.4 engagement/author-stance join: for each
+    engagement (columns `t`, `user`, `post`), look up the ENGAGING user's own
+    stance at that tick (`traits`: `t`, `user`, `stance_cols`) and the post's
+    own stance (`posts`: `post`, `stance_cols`), then classify the event as
+    cross-contact when their distance exceeds `d_cross` -- the SAME
+    saturation midpoint V7.3's mechanism uses (`dynamics.affect_d0`), so the
+    two thresholds cannot drift apart. Returns `(total_contact,
+    cross_contact)`; `total_contact` is the RAW engagement count (matching
+    `delta_aff`'s existing total-volume denominator) rather than the
+    post-join count, so a snapshot cadence that ever missed a tick would
+    undercount cross_contact specifically rather than silently also shrink
+    the total-volume denominator it is meant to be compared against.
+    """
+    total_contact = float(engagements.height)
+    if total_contact == 0:
+        return 0.0, 0.0
+
+    joined = engagements.join(traits, on=["t", "user"], how="inner")
+    joined = joined.join(posts, on="post", how="inner", suffix="_post")
+    if joined.height == 0:
+        return total_contact, 0.0
+
+    user_stance = joined.select(stance_cols).to_numpy()
+    post_stance = joined.select([f"{c}_post" for c in stance_cols]).to_numpy()
+    dist = np.linalg.norm(user_stance - post_stance, axis=1)
+    if rms:
+        dist = dist / np.sqrt(max(len(stance_cols), 1))
+
+    cross_contact = float((dist > d_cross).sum())
+    return total_contact, cross_contact
+
+
+def _cross_contact_share(
+    handle, cfg: Config, *, window_start: int, plateau_tick: int, d_cross: float
+) -> tuple[float, float]:
+    """`RunHandle`-reading wrapper around `_cross_contact_from_frames`."""
+    engagements = handle.engagements().filter(
+        (pl.col("t") >= window_start) & (pl.col("t") <= plateau_tick)
+    ).select(["t", "user", "post"])
+
+    # Positional `stance_{d}` names throughout, matching `posts.parquet`'s
+    # own naming (io/store.py::posts_schema) exactly rather than
+    # `trait_names(cfg)`'s (which would instead carry a scenario's named
+    # axes, e.g. "stance_provision", were one ever loaded here) -- base_
+    # config never loads a scenario, so the two naming conventions coincide,
+    # but joining against `posts.parquet` needs the latter regardless.
+    stance_cols = [f"stance_{d}" for d in range(cfg.stance_dims())]
+    traits = handle.traits_used(cfg).select(["t", "user", *stance_cols])
+    posts = handle.posts().select(["id", *stance_cols]).rename({"id": "post"})
+
+    return _cross_contact_from_frames(
+        engagements, traits, posts, stance_cols, d_cross, rms=(cfg.dynamics.agreement_metric == "rms"),
+    )
 
 
 def delta_aff(handle_arm, handle_none, cfg: Config, *, window_start: int, plateau_tick: int) -> DeltaAff:
@@ -290,27 +419,43 @@ def delta_aff(handle_arm, handle_none, cfg: Config, *, window_start: int, platea
         window = m.filter((pl.col("t") >= window_start) & (pl.col("t") <= plateau_tick))
         return float(window["n_engagements"].sum())
 
-    return _aff_from_arrays(animus_arm, animus_none, _contact(handle_arm), _contact(handle_none))
+    cross_arm, cross_none = float("nan"), float("nan")
+    if handle_arm.has_traits and handle_none.has_traits and handle_arm.has_posts and handle_none.has_posts:
+        d_cross = cfg.dynamics.affect_d0
+        _, cross_arm = _cross_contact_share(
+            handle_arm, cfg, window_start=window_start, plateau_tick=plateau_tick, d_cross=d_cross,
+        )
+        _, cross_none = _cross_contact_share(
+            handle_none, cfg, window_start=window_start, plateau_tick=plateau_tick, d_cross=d_cross,
+        )
+
+    return _aff_from_arrays(
+        animus_arm, animus_none, _contact(handle_arm), _contact(handle_none),
+        cross_contact_arm=cross_arm, cross_contact_none=cross_none,
+    )
 
 
 def _ideo_decomposition(
-    stance0: np.ndarray, stance1_arm: np.ndarray, stance1_none: np.ndarray, k1_arm: int, k1_none: int
+    stance0: np.ndarray, stance1_arm: np.ndarray, stance1_none: np.ndarray, k1_arm: int, k1_none: int,
+    bic_margin_arm: float = float("nan"), bic_margin_none: float = float("nan"),
 ) -> DeltaIdeo:
     """Pure-array core of `delta_ideo`, split out so the four-way
     decomposition is unit-testable on toy stance arrays. `stance0` is the
     SHARED pre-intervention state (SS5.1); `stance1_arm`/`stance1_none` are
-    each run's own state at the plateau tick; `k1_arm`/`k1_none` their
-    emergent-k at that same tick (computed by the caller, which already
-    has `stance1_*` in hand — no reason to run k-means twice on the same
-    array here).
+    each run's own state at the plateau tick; `k1_arm`/`k1_none` (V7.5:
+    `bic_margin_arm`/`bic_margin_none`) their emergent-k (and its BIC margin)
+    at that same tick (computed by the caller, which already has
+    `stance1_*` in hand — no reason to run k-means twice on the same array
+    here).
     """
     mean0, axis = _fixed_axis(stance0)
     proj0 = (stance0 - mean0) @ axis
     bimodality0 = float(bimodality_coefficient(proj0))
     delta_k = float(k1_arm - k1_none)
+    delta_bic_margin = float(bic_margin_arm - bic_margin_none)
 
     if not np.isfinite(bimodality0) or bimodality0 <= CAMP_BIMODAL_THRESHOLD:
-        return DeltaIdeo(float("nan"), float("nan"), float("nan"), delta_k)
+        return DeltaIdeo(float("nan"), float("nan"), float("nan"), delta_k, delta_bic_margin=delta_bic_margin)
 
     camp0 = (proj0 > np.median(proj0)).astype(np.int64)
     sign0 = np.where(camp0 == 1, 1.0, -1.0)
@@ -328,8 +473,20 @@ def _ideo_decomposition(
         toward_pole = sign0 * (proj1 - proj0)
         return np.array([toward_other.mean(), toward_mean.mean(), toward_pole.mean()])
 
-    net = _movement(stance1_arm) - _movement(stance1_none)
-    return DeltaIdeo(float(net[0]), float(net[1]), float(net[2]), delta_k)
+    # V7.2: `none`'s own absolute movement, retained (not just differenced
+    # away) so the background drift `toward_own_pole`/`toward_mean` etc. are
+    # measured against is itself visible -- it is what "toward_own_pole
+    # positive in 113/120 cells" was actually reporting before this delta
+    # existed to isolate the intervention's OWN contribution from it.
+    level_none = _movement(stance1_none)
+    net = _movement(stance1_arm) - level_none
+    return DeltaIdeo(
+        float(net[0]), float(net[1]), float(net[2]), delta_k,
+        delta_bic_margin=delta_bic_margin,
+        ideo_level_toward_other_camp=float(level_none[0]),
+        ideo_level_toward_mean=float(level_none[1]),
+        ideo_level_toward_own_pole=float(level_none[2]),
+    )
 
 
 def delta_ideo(handle_arm, handle_none, cfg: Config, *, pre_tick: int, plateau_tick: int) -> DeltaIdeo:
@@ -339,9 +496,12 @@ def delta_ideo(handle_arm, handle_none, cfg: Config, *, pre_tick: int, plateau_t
     stance0, _ = _stance_and_animus_at(handle_arm, cfg, pre_tick)
     stance1_arm, _ = _stance_and_animus_at(handle_arm, cfg, plateau_tick)
     stance1_none, _ = _stance_and_animus_at(handle_none, cfg, plateau_tick)
-    k1_arm = int(emergent_camps(stance1_arm)["k"])
-    k1_none = int(emergent_camps(stance1_none)["k"])
-    return _ideo_decomposition(stance0, stance1_arm, stance1_none, k1_arm, k1_none)
+    res_arm = emergent_camps(stance1_arm)
+    res_none = emergent_camps(stance1_none)
+    return _ideo_decomposition(
+        stance0, stance1_arm, stance1_none, int(res_arm["k"]), int(res_none["k"]),
+        bic_margin_arm=float(res_arm["bic_margin"]), bic_margin_none=float(res_none["bic_margin"]),
+    )
 
 
 # --------------------------------------------------------------------------
@@ -374,8 +534,13 @@ def run_design_point(
         rows.append({
             "arm": arm, "seed": seed,
             "delta_aff_plateau": aff.plateau, "delta_aff_per_contact": aff.per_contact,
+            "delta_aff_per_cross_contact": aff.per_cross_contact,
             "toward_other_camp": ideo.toward_other_camp, "toward_mean": ideo.toward_mean,
             "toward_own_pole": ideo.toward_own_pole, "delta_k": ideo.delta_k,
+            "delta_bic_margin": ideo.delta_bic_margin,
+            "ideo_level_toward_other_camp": ideo.ideo_level_toward_other_camp,
+            "ideo_level_toward_mean": ideo.ideo_level_toward_mean,
+            "ideo_level_toward_own_pole": ideo.ideo_level_toward_own_pole,
         })
     return rows
 

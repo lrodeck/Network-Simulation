@@ -72,13 +72,24 @@ def emergent_camps(stance: np.ndarray, k_max: int = 5, seed: int = 0) -> dict:
     Full stance geometry (all D axes), never a single dominant projection —
     the mechanism-level requirement V3 also needs (a user close on axis 1
     and far on axis 0 should not be flattened onto one line before k is
-    even chosen). Returns `{"k", "labels", "bic", "centroids"}`; `bic` is
-    the winning k's score, for comparability across runs/interventions.
+    even chosen). Returns `{"k", "labels", "bic", "centroids", "bic_margin"}`;
+    `bic` is the winning k's score, for comparability across runs/
+    interventions.
+
+    V7.5 (change-spec-v7-continuous-affect.md): `bic_margin` is the BIC gap
+    between the selected k and its runner-up, normalized by the selected
+    k's own |BIC| — a step function (`k`) tells you whether the estimator's
+    pick moved, not whether it was a close call or a landslide, and a
+    population drifting steadily toward a k-change looks identical to a
+    flat null right up until the argmax flips. `bic_margin` is that
+    gradient: it shrinks toward 0 as a runner-up k closes in, and is `nan`
+    when fewer than two k were fit to compare (`k_max <= 1` or `n <= 1`).
     """
     from scipy.cluster.vq import kmeans2
 
     n, d = stance.shape
     best: dict | None = None
+    bics: list[float] = []
     for k in range(1, min(k_max, n) + 1):
         if k == 1:
             centroids = stance.mean(axis=0, keepdims=True)
@@ -96,9 +107,18 @@ def emergent_camps(stance: np.ndarray, k_max: int = 5, seed: int = 0) -> dict:
         log_lik += float(np.sum(counts * np.log(counts / n)))  # mixing-proportion term
         n_params = k * d + 1 + (k - 1)  # centroids + shared variance + free mixing proportions
         bic = -2 * log_lik + n_params * np.log(n)
+        bics.append(bic)
 
         if best is None or bic < best["bic"]:
             best = {"k": k, "labels": labels.copy(), "bic": float(bic), "centroids": centroids.copy()}
+
+    sorted_bics = sorted(bics)
+    if len(sorted_bics) >= 2:
+        selected_bic, runner_up_bic = sorted_bics[0], sorted_bics[1]
+        denom = abs(selected_bic) if selected_bic != 0 else 1.0
+        best["bic_margin"] = float((runner_up_bic - selected_bic) / denom)
+    else:
+        best["bic_margin"] = float("nan")
 
     return best
 

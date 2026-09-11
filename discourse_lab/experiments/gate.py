@@ -9,11 +9,16 @@ the gate, and the experiment runners call it before spending the sweep's
 budget — so a Gini-quoting result carries its gate status with it instead of
 inheriting one from a config that no longer passes.
 
-The gate asserts the pair that can quietly half-succeed: attention Gini in
-[0.8, 0.95] AND reciprocity in [0.2, 0.4], per seed, never either row alone
-(C9's overlay depresses reciprocity while raising Gini). Other rows are
-collected but not graded here — several only bind at production scale;
-`stylized_facts_from_run` grades the full table.
+V7.6 (change-spec-v7-continuous-affect.md) demoted `attention_gini` out of
+the graded set: it is kernel-bound (in-band only under `bandwagon`; every
+other kernel this codebase ships measures 0.6-0.75 or ~0.97 under `drift=
+"full"`'s C3a compounding — see FINDINGS.md), so a config that legitimately
+studies a different engagement theory can never pass it, and carrying it as
+a pass/fail row produced three rounds of misleading "off-gate" language
+before this. `GATE_ROWS` is `reciprocity` alone now; `attention_gini` (and
+`clustering_ratio`, never graded here) are still measured and still
+reported in `GateReport.rows` and the full `stylized_facts_from_run` table
+— flagged against their reference range, just never blocking.
 
 Warnings, not refusals: studying an off-gate configuration is legitimate —
 quoting one without knowing it is not.
@@ -32,7 +37,7 @@ from discourse_lab.network import cached_graph
 from discourse_lab.population import cached_population
 from discourse_lab.runner import cached_run, load_run, phase_rngs
 
-GATE_ROWS = ("attention_gini", "reciprocity")
+GATE_ROWS = ("reciprocity",)
 
 
 def calibrated_gate_config() -> Config:
@@ -72,11 +77,11 @@ def stylized_gate(
     n_ticks: int | None = None,
     warn: bool = False,
 ) -> GateReport:
-    """Run the C9 pair-gate at `base`'s own settings, and grade the gate rows
-    per seed. `n_ticks` scales a long config down for a cheap pre-flight.
-    With `warn=True` a failure also emits a warning — the experiment runners
-    set that, so an off-gate sweep announces itself before its numbers
-    exist."""
+    """Run the stylized-fact gate at `base`'s own settings, and grade the
+    `GATE_ROWS` (V7.6: `reciprocity` alone — see module docstring) per seed.
+    `n_ticks` scales a long config down for a cheap pre-flight. With
+    `warn=True` a failure also emits a warning — the experiment runners set
+    that, so an off-gate sweep announces itself before its numbers exist."""
     cfg = base
     if n_ticks is not None and cfg.dynamics.n_ticks > n_ticks:
         cfg = set_param(cfg, "dynamics.n_ticks", n_ticks)

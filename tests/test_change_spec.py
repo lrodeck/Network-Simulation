@@ -427,12 +427,21 @@ def test_c1_animus_rises_under_outrage_and_not_under_null():
     population produces no expected asymmetry, and the change spec's own
     asymmetry metric exists precisely to flag models that can only ever
     produce symmetric outcomes. Both runs share the same cached population
-    (same seed, same sub-hash)."""
+    (same seed, same sub-hash).
+
+    `affect_drive="camp"` pinned explicitly (V7.3, change-spec-v7-continuous-
+    affect.md): this test's `1e-4` margin was calibrated against the binary
+    mechanism's sharper contrast, where a same-camp `null` engagement
+    contributes EXACTLY zero to animus. Under the `"distance"` mode that is
+    now the config default, a same-camp dyad still carries a small non-zero
+    phi(d), which narrows (without reversing) the outrage-vs-null gap this
+    specific margin checks — see test_change_spec_v7.py's own V7.3 tests for
+    the distance-mode conformance check."""
     drift = {}
     for kernel in ("outrage", "null"):
         cfg = _cfg(
             n_users=600, n_ticks=40, pop={"affect": True},
-            kernel=kernel, drift="full", drift_ramp_ticks=5,
+            kernel=kernel, drift="full", drift_ramp_ticks=5, affect_drive="camp",
         )
         cfg = dataclasses.replace(
             cfg, scenario=dataclasses.replace(cfg.scenario, stance_axes=(_polarized_axis(),))
@@ -741,10 +750,22 @@ def test_c8_threshold_model_requires_distinct_engaged_neighbours():
 def test_gate_passes_on_the_calibration_of_record_and_warns_off_gate():
     """The C9 gate as a runnable check: `stylized_gate` must pass on the
     recalibrated combination and warn on an off-gate config, so a
-    Gini-quoting result carries its gate status instead of inheriting one
-    from settings that no longer pass. The off-gate probe is the
-    `chronological` ranker — attention spreads evenly under a time-ordered
-    feed, which lands the Gini far BELOW the band (the other half-success)."""
+    reciprocity-quoting result carries its gate status instead of inheriting
+    one from settings that no longer pass.
+
+    The off-gate probe is `graph.mirror_p=0.0` — removing the shared
+    reciprocity top-up (`network/__init__.py::generate_graph`'s post-pass,
+    applied after every generator) leaves only `latent_pa`'s own by-chance
+    reciprocal pairs, `network/reciprocity.py`'s own documented ~0.157,
+    below the [0.2, 0.4] band.
+
+    V7.6 (change-spec-v7-continuous-affect.md) demoted `attention_gini` out
+    of `GATE_ROWS` (it is kernel-bound — in-band only under `bandwagon` —
+    so carrying it as a pass/fail row punished every other kernel for a
+    property it could never have). The off-gate probe was previously
+    `dynamics.ranker="chronological"` (spreads attention evenly, landing
+    Gini far below band) — a Gini failure, which no longer blocks, so the
+    probe now targets the one row that still does."""
     import warnings as w
 
     from discourse_lab.analysis import set_param
@@ -753,11 +774,11 @@ def test_gate_passes_on_the_calibration_of_record_and_warns_off_gate():
     report = stylized_gate(calibrated_gate_config(), seeds=(0, 1), n_ticks=60)
     assert report.passed, report.summary()
 
-    off_gate = set_param(calibrated_gate_config(), "dynamics.ranker", "chronological")
+    off_gate = set_param(calibrated_gate_config(), "graph.mirror_p", 0.0)
     with w.catch_warnings(record=True) as caught:
         w.simplefilter("always")
         bad = stylized_gate(off_gate, seeds=(0, 1), n_ticks=60, warn=True)
-    assert not bad.passed, f"chronological unexpectedly passed: {bad.summary()}"
+    assert not bad.passed, f"mirror_p=0.0 unexpectedly passed: {bad.summary()}"
     assert any("stylized gate FAILED" in str(c.message) for c in caught), (
         "an off-gate sweep ran silently - the warning is the point"
     )

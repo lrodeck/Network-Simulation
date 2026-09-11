@@ -691,3 +691,159 @@ the viewpoint-diversity floor's number, corpus-or-swept-anchored-group,
 and the intervention target under emergent k — are exactly as open as
 before this session; none of them blocked Wave A, but all of them block
 Wave B.
+
+## Change spec V7 — continuous affect drive: implemented, substrate re-gated
+
+V7.1-V7.6 (change-spec-v7-continuous-affect.md), landed together per this
+project's V1-V6 precedent. The spec's own diagnosis was correct: the C1.3
+affect op's `camps is not None` gate froze animus/identification for every
+arm below the Sarle bimodality threshold, which is exactly the region
+Experiment 03's H1 crossing would have to sit in if it exists.
+
+**V7.1 — gate-state instrumentation.** `metrics.parquet` gains `bimodality`
+(this tick's Sarle coefficient, wherever the camp split is already computed)
+and `affect_gated` (whether the affect op actually ran), both built from a
+new `dynamics.drift.affect_gate_active` — the single function `apply_drift`
+itself now calls to decide, so the instrumentation cannot silently disagree
+with the mechanism the way two independently-maintained copies of the same
+gate condition eventually do. `bimodality` deliberately does NOT reuse the
+existing `camp_bimodality` column's value: that column is captured before
+`TickEngine.step`'s own `_refresh_camps()` call and so reports the
+PREVIOUS tick's coefficient — fine for its original purpose, wrong for
+auditing whether a run's bimodality crossed the gate mid-run, which is
+what V7.1 exists to do. Wave A's own 135-row CSV could not be re-audited
+against this instrumentation in this session — the underlying cached run
+directories (`dlab/runs/...`) are gitignored and were not present in this
+checkout — but the columns are in place for Wave A′ or any future run.
+
+**V7.2 — checked, and mostly already true.** Read closely,
+`experiment03_bubble_intervention._ideo_decomposition` was ALREADY
+differencing `toward_other_camp`/`toward_mean`/`toward_own_pole` against
+the `none` arm's own movement (`net = _movement(stance1_arm) -
+_movement(stance1_none)`), confirmed by the pre-existing
+`test_ideo_components_are_net_of_the_none_arms_own_movement`, which passes
+unmodified. The spec's warrant describes an absolute-level bug that the
+code, as it stands, does not have. What genuinely was missing: the `none`
+arm's own absolute movement was computed and then only ever used as a
+subtrahend, never reported — so "toward_own_pole positive in 113/120
+cells" could not be told apart from "the none arm does this too" without
+re-deriving it by hand. `DeltaIdeo` gains `ideo_level_toward_other_camp` /
+`ideo_level_toward_mean` / `ideo_level_toward_own_pole` (the `none` arm's
+own `_movement` output, retained rather than only differenced away), and
+`run_design_point`'s CSV rows carry them.
+
+**V7.3 — the mechanism change.** `dynamics.affect_drive` (`"camp"` |
+`"distance"`) on `affect_delta`/`affect_update`/`apply_drift`. `"distance"`
+replaces `outgroup = camps[u] != camps[author]` with `phi(d) = d / (d +
+affect_d0)` on the dyad's stance distance — the SAME per-exposure array
+(`-features["agreement"]`) V3's `assign_valence_endogenous` already uses
+for `P(agree)`, threaded through `TickEngine.step` into `apply_drift` as
+`stance_distance` rather than recomputed, so the two mechanisms cannot
+drift apart on what "distance" means. `identification`'s multiplier is
+`1 - phi(d)`, the continuous analogue of the binary's `1 - outgroup` — not
+spelled out in the spec's own `h_i` formula (written for the animus term
+only), and the natural structural generalisation once one is needed for
+symmetry. `camps` stayed in `apply_drift`'s signature rather than being
+removed (the spec's literal "`camps` leaves `apply_drift`'s signature"):
+`"camp"` mode still needs it, TickEngine already computes it every tick for
+the kernel's own camp features, and threading it through costs nothing
+`"distance"` mode doesn't already pay for by ignoring it. Tested at the
+mechanism level (isolated from a live feedback loop's chaotic RNG
+divergence — see test_change_spec_v7.py's own note on why the full-engine
+correlation check needed the SAME exposures/actions held fixed): `"camp"`
+with `camps=None` produces exactly zero animus movement; `"distance"` on
+the identical exposures does not. On a controlled bimodal fixture (distance
+cleanly tracking camp membership) the two formulas' per-user animus deltas
+correlate above 0.95; on the full engine over a realistic `bimodal_normal`
+population, so does final per-user animus after 60 ticks. `affect_d0=1.0`
+is calibrated for a ONE-AXIS standard-normal population specifically (per
+the spec); at Experiment 03's actual D=3, a raw multi-axis distance
+saturates `phi` for same- and cross-camp dyads alike, which is a real scale
+property of a fixed constant against a higher-dimensional geometry, not a
+mechanism defect — recorded here rather than quietly re-tuned.
+
+**V7.4 — cross-camp-restricted denominator.** `DeltaAff.per_cross_contact`,
+normalized by an engagement/trait/post stance join (`_cross_contact_from_
+frames`, a pure-frame core over polars DataFrames for the same
+testability-without-a-run reason `_aff_from_arrays`/`_ideo_decomposition`
+already split themselves out) classifying an event as cross-contact when
+its dyad distance exceeds `d_cross = dynamics.affect_d0` — V7.3's own
+saturation midpoint, so the two thresholds cannot drift apart as the spec
+requires. `per_contact` (total-volume) is left exactly as it was;
+`per_cross_contact` is NaN when the join's persistence targets (`traits`,
+`posts`) are unavailable, never silently wrong.
+
+**V7.5 — BIC margin.** `emergent_camps` returns `bic_margin` (the runner-up
+k's BIC minus the selected k's, normalized by `|selected|`; NaN when fewer
+than two k were fit). `DeltaIdeo.delta_bic_margin` joins the outcome set,
+differenced like `delta_k` and — like `delta_k` — never NaN-gated on the
+pre-period bimodality check the three camp-relative `toward_*` columns are.
+On a synthetic population morphed from two clusters toward a third (fixed
+within-cluster noise, only the separation parameter swept, so a wobble
+cannot be resampling noise pretending to be non-monotonicity), the margin
+fell monotonically while k held at 2, then k jumped to 3.
+
+**V7.6 — re-gate, and a real gap it surfaced.** `GATE_ROWS` is now
+`("reciprocity",)`; `attention_gini` and `clustering_ratio` are still
+measured and still reported (`GateReport.rows`, `stylized_facts_report`'s
+`in_range` flag), just no longer block. This is a demotion of a check that
+could not be met, not a loosening of one that could: `attention_gini`'s
+[0.8, 0.95] band is reachable only under `bandwagon` (`FINDINGS.md` above:
+other kernels read 0.6-0.75, or ~0.97 once C3a's behaviour reinforcement
+compounds it under `drift="full"`), and Experiment 03 runs `outrage`.
+
+Actually running `stylized_gate` at "the Experiment 03 substrate" (the
+Wave-A-background dial point, 0.7/0.7/0.7) for the first time — it had
+never been gated before; Wave A's own module never calls `stylized_gate` —
+surfaced a real, pre-existing gap unrelated to V7.3's mechanism at all:
+reciprocity measured 0.065 against the [0.2, 0.4] band, because
+`graph.sbm_mirror_p` (the SBM generator's OWN reciprocity top-up —
+`network/sbm.py::sbm_graph` never reads the shared `graph.mirror_p` field
+at all, contrary to `GraphConfig.mirror_p`'s own docstring) defaults to
+0.0 and `dial_config` never set it. Calibrated empirically, the same way
+`experiments/gate.py::calibrated_gate_config` calibrated its own
+`mirror_p` (`network/reciprocity.py`'s "mirror_p is NOT the reciprocity you
+then measure" applies here too): `sbm_mirror_p=0.15` measures reciprocity
+at 0.289-0.301 across N=2,000 and N=10,000, comfortably mid-band, now
+`dial_config`'s own default. Confirmed separately that `affect_drive` moves
+nothing structural: reciprocity and clustering_ratio read identically
+under `"camp"` and `"distance"` at a fixed seed, as they must — nothing in
+graph generation reads `dynamics.affect_drive`.
+
+With the gate passing, `DynamicsConfig.affect_drive` now defaults to
+`"distance"`; `"camp"` remains available to reproduce a pre-V7.3 result
+(Experiment 01's SBM finding among them) under the exact mechanism it was
+measured with.
+
+**Two regressions from this landing, fixed, not papered over.**
+`test_c1_animus_rises_under_outrage_and_not_under_null`'s `1e-4` margin
+between `outrage` and `null` kernel animus growth was calibrated against
+`"camp"` mode's sharp contrast (a same-camp `null` engagement contributes
+EXACTLY zero under `"camp"`; under `"distance"` it contributes a small but
+non-zero `phi(d)`, narrowing — not reversing — the gap to 6.7e-5,
+under the threshold). This is a pre-V7.3 mechanism conformance test, so it
+now pins `affect_drive="camp"` explicitly rather than inheriting whatever
+the default happens to be; the distance-mode analogue of the same claim is
+one of test_change_spec_v7.py's own V7.3 tests.
+
+`test_gate_passes_on_the_calibration_of_record_and_warns_off_gate`'s
+off-gate probe was `dynamics.ranker="chronological"`, chosen specifically
+because it lands attention Gini far below band — a row that no longer
+blocks. Measured directly: `chronological` still PASSES the gate now that
+only reciprocity is graded (reciprocity 0.230-0.233, in-band; Gini
+0.630-0.641, now merely reported). The probe is now `graph.mirror_p=0.0`
+on `calibrated_gate_config()`, which removes the shared reciprocity
+top-up and lands reciprocity at 0.156-0.159 — under band, matching
+`network/reciprocity.py`'s own documented ~0.157 chance-reciprocity
+baseline for this generator with the mirroring pass off.
+
+**What this is not.** Wave A′ (the sequencing table's step 7 — "sign screen
+repeated over the full dial range, previously-gated region included") is
+not run in this session, matching how this project has previously kept
+"build the infrastructure" and "run the experiment" as separate steps
+(Experiment 03's own infrastructure and Wave A run were two commits, not
+one). `dial_config`'s `sbm_mirror_p=0.15` addition means a Wave A′ run is
+not directly comparable to Wave A's own `results/experiment03/wave_a.csv`
+on structural grounds ALONE, on top of the mechanism change `affect_drive`
+already implies — worth stating plainly before either is read as a
+straightforward "re-run."

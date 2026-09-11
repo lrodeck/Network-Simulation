@@ -29,9 +29,16 @@ Change-spec stages wired here, executed in this order each tick:
     perception          unchanged blend; its output is what C7 gates on
                         NEXT tick (perceived climate, not global state)
     cascade             unchanged
-    drift               C1.3 affect_update op, C3a behavior-gradient,
-                        C6 repulsion-ablatable channel-2 weights
+    drift               C1.3 affect_update op (V7.3: camp-binary or
+                        continuous-distance drive, `dynamics.affect_drive`),
+                        C3a behavior-gradient, C6 repulsion-ablatable
+                        channel-2 weights
     rewire              C2.2 slow follow/unfollow on accumulated valence
+
+V7.1 adds two per-tick metrics columns, `bimodality` and `affect_gated`,
+built from the exact same gate `apply_drift`'s affect op itself checks
+(`dynamics.drift.affect_gate_active`) — instrumentation only, so a run can
+be audited for whether the op silently sat idle without re-running it.
 """
 
 from __future__ import annotations
@@ -44,7 +51,7 @@ import numpy as np
 from discourse_lab.config import Config, effective_dynamics
 from discourse_lab.dynamics.cascade import BRANCHING_ACTIONS, CascadeState, derive_posts, r_eff
 from discourse_lab.dynamics.discourse_state import update_discourse
-from discourse_lab.dynamics.drift import DriftState, apply_drift
+from discourse_lab.dynamics.drift import DriftState, affect_gate_active, apply_drift
 from discourse_lab.dynamics.expression import ExpressionMap
 from discourse_lab.dynamics.hawkes import (
     HawkesThreads,
@@ -700,10 +707,28 @@ class TickEngine:
             tick_posts = None
         self.s, self.sigma = update_discourse(self.s, self.sigma, tick_posts, cfg.rho_s, cfg.rho_sigma)
 
+        # V7.3: the SAME per-exposure distance V3's endogenous valence reads
+        # off `agreement` (imported, not recomputed), so the affect channel's
+        # "distance" mode and the valence-assignment mechanism can never
+        # silently disagree on how far apart a dyad is.
+        stance_distance_e = None if features_e is None else -features_e["agreement"]
         apply_drift(
             self.cfg, self.pop, self.expr, self.drift_state, rngs["drift"], t,
             posts_e, None if delta_e is None else delta_e.astype(float), exposures_e, actions_e,
-            camps=self.camps, valence=valence_e,
+            camps=self.camps, valence=valence_e, stance_distance=stance_distance_e,
+        )
+        # V7.1: instrumentation only, built from the exact inputs apply_drift
+        # just consumed, via the same `affect_gate_active` the mechanism
+        # itself calls — so this can never silently disagree with whether
+        # the op actually ran. Unlike `camp_bimodality` above (captured
+        # BEFORE this tick's `_refresh_camps`, so it reports the PREVIOUS
+        # tick's coefficient), `bimodality` reports THIS tick's freshly
+        # recomputed one: V7.1 exists to audit whether a run's bimodality
+        # crossed the gate mid-run, so it must not carry that pre-existing
+        # one-tick lag.
+        metrics["bimodality"] = float(self.camp_bimodality) if np.isfinite(self.camp_bimodality) else float("nan")
+        metrics["affect_gated"] = not affect_gate_active(
+            self.cfg, self.pop, self.camps, stance_distance_e, exposures_e, actions_e, posts_e
         )
         self.activity = self.pop.X_used[:, self.pop.trait_names.index("activity")]
 
