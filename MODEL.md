@@ -905,6 +905,8 @@ different run; change none and `cached_run` returns the existing one.
 | `affect_weights_hostility` | see `drift.py` | C1.3's per-action MAGNITUDE only as of V2 (every entry >= 0; `report` removed) |
 | `affect_weights_support` | see `drift.py` | C1.3's identification table — untouched by V2, action-keyed only |
 | `affect_valence_signs` | see `drift.py` | V2: the (action, valence) table's SIGN, keyed on the four `{agree,disagree}_{civil,hostile}` cells |
+| `affect_drive` | `distance` | V7.3: `camp` (pre-V7.3 binary, gated on Sarle bimodality) \| `distance` (continuous `phi(d)`, no gate — default since V7.6's re-gate passed) |
+| `affect_d0` | 1.0 | V7.3's `phi(d) = d / (d + affect_d0)` saturation constant; also V7.4's `d_cross` cross-contact threshold |
 | `civility_prob` / `force_agree` / `force_civil` | 0.5 / None / None | V1's exogenous valence: civil/hostile coin flip; force_* pin an axis for fixtures |
 | `valence_mode` | `exogenous` | V1/V2's coin flip, or `endogenous` (V3: per-user logits on animus/identification/distance) |
 | `valence_beta0/_beta_dist/_beta_ident/_noise_agree` | 0 / -1 / -0.3 / 1 | V3's P(agree) logit — see `EndogenousValenceParams` for the fixed signs |
@@ -1024,6 +1026,31 @@ sequencing, so that four of its five assertions were red before V1 landed.
 V6's group-directed (vector) animus is explicitly deferred in the spec
 itself — scalar animus stays "generalized out-group hostility" for now.
 
+### V7: continuous affect drive
+
+One mechanism ("Change Spec V7 — Continuous Affect Drive"), diagnosing and
+then closing the coupling V1-V6 left standing: the C1.3 affect op's
+`camps is not None` gate froze animus/identification for every arm below
+the Sarle bimodality threshold, not only for the camp-conditional kernel
+features — so "does an intervention change affective hostility" was not
+merely hard to detect below the gate, it was not measurable at all.
+
+| Mechanism | Warrant | Dial | Default |
+|---|---|---|---|
+| **V7.1 gate instrumentation** | Nothing recorded whether the affect op was skipped on a given tick; a run's own consistency could be the signature of a bimodality-gate switch as much as of a genuine dose-response | `metrics.parquet` columns `bimodality`, `affect_gated`; `dynamics.drift.affect_gate_active` | always on (instrumentation, no behaviour change) |
+| **V7.3 continuous drive** | The camp label is a binary median-split projection artifact below the gate; V6(1) already moved the kernel's own agreement feature onto continuous per-axis stance distance, and the affect op was the last consumer of the camp label left in the mechanism path | `dynamics.affect_drive` (`camp`\|`distance`), `affect_d0` | **distance** (flipped from `camp` once V7.6's re-gate passed — FINDINGS.md) |
+| **V7.5 BIC margin** | `delta_k` is a step function — a population drifting steadily toward a k-change is indistinguishable from a flat null until the argmax flips | `metrics.polarization.emergent_camps`'s `bic_margin` | measurement only, not wired into dynamics |
+
+V7.2 and V7.4 are analysis-only additions to `experiments/
+experiment03_bubble_intervention.py` (retaining the `none` arm's own
+absolute ideological movement as `ideo_level_*`, and a cross-camp-restricted
+contact denominator for `delta_aff`) — no dial, since neither touches a
+mechanism. V7.6 re-gated Experiment 03's own substrate under the new
+mechanism (the first time it had been gated at all — see FINDINGS.md) and
+demoted `attention_gini` out of the blocking `GATE_ROWS` into a reported
+diagnostic: its [0.8, 0.95] band is reachable only under the `bandwagon`
+kernel, and Experiment 03 runs `outrage`.
+
 ### The affect block, in one equation
 
 Two new trait columns — `identification` (attachment to own camp, logit) and
@@ -1040,6 +1067,12 @@ raises animus while being stance-repulsive):
 Δanimus_u         = lr_affect · mean_over_exposures( outgroup · hostility_weight(action) · valence_sign(cell) )
 Δidentification_u = lr_affect · mean_over_exposures( ingroup  · support_weight(action) )
 ```
+
+`outgroup`/`ingroup` are `dynamics.affect_drive`-dependent (V7.3): the binary
+camp label above under `"camp"`, or `phi(d(s_i, s_j)) = d / (d + affect_d0)`
+and its complement under the default `"distance"` — a saturating function of
+the dyad's continuous per-axis stance distance that needs no camp label and
+so never gates on bimodality at all.
 
 The `valence_sign(cell)` factor is V2 (below): pre-V2, `hostility_weight`
 alone was always >= 0, so animus was monotone non-decreasing and no

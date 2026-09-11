@@ -374,6 +374,26 @@ class DynamicsConfig(Hashable):
         ("disagree_hostile", 1.0), ("disagree_civil", -1.0),
         ("agree_civil", -0.3), ("agree_hostile", 1.2),
     )
+    # V7.3 (continuous affect drive): the affect op's drive term. "camp" is
+    # the pre-V7.3 mechanism, byte-identical to before — keyed on the binary
+    # in/out-group label from `camps_and_bimodality`, which is undefined (and
+    # so gates the whole op off) below the Sarle bimodality threshold.
+    # "distance" (the default since V7.6's re-gate passed — FINDINGS.md)
+    # replaces the binary with a saturating function of continuous per-axis
+    # stance distance (see `dynamics/drift.py::affect_delta`) and never gates
+    # on bimodality, so a population that has not yet sorted into two camps
+    # still has a measurable affect channel. Set back to "camp" to reproduce
+    # a pre-V7.3 result (e.g. Experiment 01's SBM finding) under the exact
+    # mechanism it was measured with.
+    affect_drive: str = "distance"      # camp | distance
+    # V7.3: the saturation constant in phi(d) = d / (d + affect_d0). Fixed at
+    # the (approximate) median pairwise stance distance of a standard-normal
+    # one-axis population, not calibrated per-run like `agree_delta` — a
+    # deliberately simple constant, carried in the C10-style sensitivity
+    # sweep rather than tuned. Also V7.4's `d_cross` threshold, so the two
+    # cannot drift apart.
+    affect_d0: float = 1.0
+
     # V1: the two valence axes assigned at the moment of engagement.
     # agree/disagree is derived from the kernel's own `agreement` feature
     # (thresholded against each tick's own median, so the split needs no

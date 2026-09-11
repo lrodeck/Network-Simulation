@@ -29,6 +29,12 @@ they appear together in the per-op contribution-norm diagnostic
   hard-to-identify support). `repulsion=False` zeroes the negative weights
   outright; it does NOT clamp deltas to non-negative — clamping introduces a
   rectification nonlinearity, which is a different model, not an ablation.
+- **V7.3 (change-spec-v7-continuous-affect.md)** — C1.3's drive term keyed
+  on continuous per-axis stance distance instead of the `camps` binary,
+  `dynamics.affect_drive="distance"`. The pre-V7.3 `"camp"` mechanism stays
+  the default (byte-identical) until V7.6's re-gate passes; either way the
+  op remains additive and shows up in `op_norms["affect"]`. See
+  `affect_delta`'s own docstring for the two modes.
 """
 
 from __future__ import annotations
@@ -329,6 +335,9 @@ def affect_delta(
     support_weights: dict[str, float] | None = None,
     valence_signs: dict[str, float] | None = None,
     report_animus_increment: float = 0.0,
+    mode: str = "camp",
+    stance_distance: np.ndarray | None = None,
+    affect_d0: float = 1.0,
 ) -> np.ndarray:
     """C1.3 `affect_update`, registered as a drift op below so it composes
     additively with the other channels and shows up in the op-norm diagnostic.
@@ -352,16 +361,45 @@ def affect_delta(
     `affect_weights(cfg)` / `affect_valence_signs(cfg)` — separate from
     channel 2's, see the module docstring. Returns the full-width
     (n, n_traits) gain block, zero outside the affect columns.
+
+    `mode` (change spec V7.3, `dynamics.affect_drive`) picks how `outgroup`/
+    `ingroup` — the two multipliers on the animus/identification terms above
+    — are derived:
+
+    - `"camp"` (default): the pre-V7.3 binary, `camps[u] != camps[author]`.
+      Requires `camps` (None below the Sarle bimodality gate — see
+      `metrics/polarization.py::camps_and_bimodality` — freezes the whole
+      op, which is exactly the coupling V7.1's `affect_gated` instruments).
+    - `"distance"`: `outgroup = phi(d(s_i, s_j))`, `phi(d) = d / (d + d0)`,
+      a saturating monotone map of the dyad's full per-axis stance distance
+      (`stance_distance`, the SAME per-exposure array V3's
+      `assign_valence_endogenous` uses for `P(agree)` — imported via the
+      caller, not recomputed here, so the two mechanisms can never silently
+      disagree on distance). `ingroup = 1 - phi(d)` is the natural
+      continuous analogue of the binary's `1 - outgroup`: a close dyad
+      reads as in-group-like, a distant one as out-group-like, with no
+      camp label and no bimodality gate anywhere in this branch — a
+      population that has not yet sorted into two camps still has a
+      measurable affect channel under this mode.
     """
     n = pop.X_stored.shape[0]
     names = pop.trait_names
     affect_cols = [i for i, nm in enumerate(names) if nm in ("identification", "animus")]
     delta = np.zeros((n, len(names)))
-    if camps is None or len(exposures) == 0 or not pop.has_affect or not affect_cols:
+    if len(exposures) == 0 or not pop.has_affect or not affect_cols:
         return delta
 
     u = exposures.user_id
-    outgroup = (camps[u] != camps[posts.author[exposures.post_idx]]).astype(float)
+    if mode == "distance":
+        if stance_distance is None:
+            return delta
+        outgroup = stance_distance / (stance_distance + affect_d0)
+    elif mode == "camp":
+        if camps is None:
+            return delta
+        outgroup = (camps[u] != camps[posts.author[exposures.post_idx]]).astype(float)
+    else:
+        raise ValueError(f"unknown affect_drive mode {mode!r}; expected 'camp' or 'distance'")
     ingroup = 1.0 - outgroup
 
     host_w = _action_weights(actions, hostility_weights or AFFECT_HOSTILITY_WEIGHTS)
@@ -399,6 +437,9 @@ def affect_update(ctx: dict) -> np.ndarray:
         support_weights=ctx.get("support_weights"),
         valence_signs=ctx.get("valence_signs"),
         report_animus_increment=ctx.get("report_animus_increment", 0.0),
+        mode=ctx.get("mode", "camp"),
+        stance_distance=ctx.get("stance_distance"),
+        affect_d0=ctx.get("affect_d0", 1.0),
     )
 
 
@@ -420,6 +461,40 @@ def drift_op_names() -> list[str]:
     return names("drift_op")
 
 
+def affect_gate_active(
+    cfg: Config,
+    pop: Population,
+    camps: np.ndarray | None,
+    stance_distance: np.ndarray | None,
+    exposures: Exposures | None,
+    actions: np.ndarray | None,
+    posts: PostBatch | None,
+) -> bool:
+    """Whether the C1.3 affect op will actually run this tick — mirrors
+    `apply_drift`'s own gate exactly, as a single source of truth so the two
+    cannot silently drift apart. Used two ways: `apply_drift` itself, and
+    change spec V7.1's `affect_gated` per-tick metric (instrumentation only,
+    computed from the same inputs `apply_drift` receives, never changing
+    behaviour).
+
+    Under `affect_drive="camp"` (change spec V7.3) the op is gated on
+    `camps is not None`, i.e. on Sarle bimodality — this is the coupling
+    V7.1 exists to make visible: a population below the gate freezes animus
+    for every arm, "does popping the bubble help" is not measurable rather
+    than merely hard to detect. Under `"distance"` the op runs on any tick
+    with exposures, independent of bimodality.
+    """
+    if cfg.dynamics.drift == "none":
+        return False
+    if exposures is None or actions is None or posts is None or len(exposures) == 0:
+        return False
+    if not (cfg.population.affect and pop.has_affect):
+        return False
+    if cfg.dynamics.affect_drive == "distance":
+        return stance_distance is not None
+    return camps is not None
+
+
 def apply_drift(
     cfg: Config,
     pop: Population,
@@ -433,17 +508,25 @@ def apply_drift(
     actions: np.ndarray | None,
     camps: np.ndarray | None = None,
     valence: EngagementValence | None = None,
+    stance_distance: np.ndarray | None = None,
 ) -> None:
     """Mutates `pop.X_stored` (and the derived `pop.X_used`) in place, plus
     `state.Bs`, per spec §2.9's composition. `cfg.dynamics.drift`: "none"
     skips everything, "social" runs channel 2 only, "full" runs both.
     `posts`/`engagement_delta` (channel 1) and `exposures`/`actions`
     (channel 2) all reference the same tick's active-post pool. `camps`
-    (C1.3) enables the affect op when the population has the affect block;
-    `valence` (V1, change spec V1-V6) is required whenever that op actually
-    runs — every engagement is assigned one upstream, at the moment of
-    engagement (`dynamics/valence.py`), because the affect op's hostility
-    term is keyed on (action, valence), not action alone.
+    (C1.3) enables the affect op's `"camp"` mode when the population has the
+    affect block; `stance_distance` (V7.3, `dynamics.affect_drive=
+    "distance"`) is the per-exposure dyad distance that mode uses instead —
+    aligned with `exposures`, and expected to be the SAME array the caller's
+    engagement-kernel `agreement` feature already produced (imported, not
+    recomputed, so the affect channel and V3's endogenous valence can never
+    silently disagree on distance). `valence` (V1, change spec V1-V6) is
+    required whenever the affect op actually runs — every engagement is
+    assigned one upstream, at the moment of engagement
+    (`dynamics/valence.py`), because the affect op's hostility term is keyed
+    on (action, valence), not action alone. `affect_gate_active` is the
+    single source of truth for whether the op will run; see its docstring.
     """
     mode = cfg.dynamics.drift
     if mode == "none":
@@ -481,10 +564,12 @@ def apply_drift(
         gain[:, stance_cols] += cfg.dynamics.drift_lr_social * ramp * soc
         state.op_norms["social"] = float(np.linalg.norm(gain[:, stance_cols]))
 
-        # C1.3: the affect op composes here, from the registry, only when the
-        # population actually carries the affect block and camps are defined;
-        # its weight tables come from config, like channel 2's (C6's pattern)
-        if cfg.population.affect and pop.has_affect and camps is not None:
+        # C1.3: the affect op composes here, from the registry, only when
+        # `affect_gate_active` says it will fire — V7.3's `affect_drive`
+        # picks whether that gate is the camp/bimodality one or the
+        # exposures-only one; its weight tables come from config, like
+        # channel 2's (C6's pattern)
+        if affect_gate_active(cfg, pop, camps, stance_distance, exposures, actions, posts):
             if valence is None:
                 raise ValueError(
                     "cfg.population.affect is on but apply_drift got no valence — "
@@ -500,6 +585,9 @@ def apply_drift(
                 "hostility_weights": aff_host, "support_weights": aff_supp,
                 "valence_signs": aff_signs,
                 "report_animus_increment": cfg.dynamics.report_animus_increment,
+                "mode": cfg.dynamics.affect_drive,
+                "stance_distance": stance_distance,
+                "affect_d0": cfg.dynamics.affect_d0,
             })
             aff_cols = [i for i, nm in enumerate(names) if nm in ("identification", "animus")]
             gain[:, aff_cols] += ramp * aff[:, aff_cols]

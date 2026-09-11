@@ -38,6 +38,16 @@ ACTIONS = ("like", "reply", "repost", "quote", "report")
 # show it also drives engagement, so omitting it would bias toward a
 # pure-animosity story. All three need `camps` from the caller; the latter
 # two additionally need the affect block.
+#
+# Experiment 03 (experiment03-bubble-intervention.md §4's `targeting_mode`):
+# `cross_distance` is the camp-agnostic analogue of `outgroup` -- a
+# saturating function of the SAME continuous dyad distance `agreement`
+# already carries, so a kernel_theta override on it can promote
+# far-from-self content without needing `camps` at all. Unconditional, like
+# `agreement`: Wave A' (FINDINGS.md) found that an `outgroup`-based
+# intervention is a complete no-op below the Sarle bimodality gate (the
+# feature simply is not in this dict there), which is exactly the gap this
+# closes for a `targeting_mode="distance"` arm.
 FEATURES = (
     "intercept",
     "affinity",
@@ -46,6 +56,7 @@ FEATURES = (
     "arousal_x_neu",
     "provoc_x_con",
     "disagree_x_con",
+    "cross_distance",
     "outgroup",
     "outgroup_x_animus",
     "ingroup_x_ident",
@@ -165,6 +176,7 @@ def compute_features(
     t_current: int,
     agreement_metric: str = "rms",
     camps: np.ndarray | None = None,
+    cross_distance_d0: float = 1.0,
 ) -> dict[str, np.ndarray]:
     names_ = pop.trait_names
     topic_cols = [i for i, n in enumerate(names_) if n.startswith("topic_affinity_")]
@@ -196,6 +208,14 @@ def compute_features(
     prominence_author = pop.X_used[author, names_.index("prominence")]
 
     arousal = posts.arousal[p]
+    # `cross_distance` (Experiment 03 `targeting_mode="distance"`): the same
+    # saturating map V7.3 uses for the affect channel's `phi(d)`, reusing
+    # `cross_distance_d0` (the caller passes `dynamics.affect_d0`) so the
+    # two thresholds cannot drift apart, per that change spec's own
+    # discipline. Unconditional -- `dist` is already computed for
+    # `agreement` above, no camps or bimodality gate involved.
+    dist = -agreement
+    cross_distance = dist / (dist + cross_distance_d0)
     features = {
         "intercept": np.ones(len(u)),
         "affinity": affinity,
@@ -204,6 +224,7 @@ def compute_features(
         "arousal_x_neu": arousal * neuroticism,
         "provoc_x_con": posts.provocativeness[p] * contrarianism,
         "disagree_x_con": (-agreement) * contrarianism,
+        "cross_distance": cross_distance,
         "prominence": np.log1p(prominence_author),
         "social_proof": np.log1p(posts.engagement_count[p]),
         "tie_strength": is_follower.astype(float),
@@ -245,6 +266,7 @@ def kernel_names() -> list[str]:
 FEATURE_GROUPS: dict[str, tuple[str, ...]] = {
     "agreement": ("agreement", "disagree_x_con"),
     "outgroup": ("outgroup", "outgroup_x_animus", "ingroup_x_ident"),
+    "cross_distance": ("cross_distance",),
     "arousal": ("arousal", "arousal_x_neu"),
     "social_proof": ("social_proof", "prominence", "tie_strength"),
     "recency": ("recency",),

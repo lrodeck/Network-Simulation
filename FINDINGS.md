@@ -691,3 +691,372 @@ the viewpoint-diversity floor's number, corpus-or-swept-anchored-group,
 and the intervention target under emergent k — are exactly as open as
 before this session; none of them blocked Wave A, but all of them block
 Wave B.
+
+## Change spec V7 — continuous affect drive: implemented, substrate re-gated
+
+V7.1-V7.6 (change-spec-v7-continuous-affect.md), landed together per this
+project's V1-V6 precedent. The spec's own diagnosis was correct: the C1.3
+affect op's `camps is not None` gate froze animus/identification for every
+arm below the Sarle bimodality threshold, which is exactly the region
+Experiment 03's H1 crossing would have to sit in if it exists.
+
+**V7.1 — gate-state instrumentation.** `metrics.parquet` gains `bimodality`
+(this tick's Sarle coefficient, wherever the camp split is already computed)
+and `affect_gated` (whether the affect op actually ran), both built from a
+new `dynamics.drift.affect_gate_active` — the single function `apply_drift`
+itself now calls to decide, so the instrumentation cannot silently disagree
+with the mechanism the way two independently-maintained copies of the same
+gate condition eventually do. `bimodality` deliberately does NOT reuse the
+existing `camp_bimodality` column's value: that column is captured before
+`TickEngine.step`'s own `_refresh_camps()` call and so reports the
+PREVIOUS tick's coefficient — fine for its original purpose, wrong for
+auditing whether a run's bimodality crossed the gate mid-run, which is
+what V7.1 exists to do. Wave A's own 135-row CSV could not be re-audited
+against this instrumentation in this session — the underlying cached run
+directories (`dlab/runs/...`) are gitignored and were not present in this
+checkout — but the columns are in place for Wave A′ or any future run.
+
+**V7.2 — checked, and mostly already true.** Read closely,
+`experiment03_bubble_intervention._ideo_decomposition` was ALREADY
+differencing `toward_other_camp`/`toward_mean`/`toward_own_pole` against
+the `none` arm's own movement (`net = _movement(stance1_arm) -
+_movement(stance1_none)`), confirmed by the pre-existing
+`test_ideo_components_are_net_of_the_none_arms_own_movement`, which passes
+unmodified. The spec's warrant describes an absolute-level bug that the
+code, as it stands, does not have. What genuinely was missing: the `none`
+arm's own absolute movement was computed and then only ever used as a
+subtrahend, never reported — so "toward_own_pole positive in 113/120
+cells" could not be told apart from "the none arm does this too" without
+re-deriving it by hand. `DeltaIdeo` gains `ideo_level_toward_other_camp` /
+`ideo_level_toward_mean` / `ideo_level_toward_own_pole` (the `none` arm's
+own `_movement` output, retained rather than only differenced away), and
+`run_design_point`'s CSV rows carry them.
+
+**V7.3 — the mechanism change.** `dynamics.affect_drive` (`"camp"` |
+`"distance"`) on `affect_delta`/`affect_update`/`apply_drift`. `"distance"`
+replaces `outgroup = camps[u] != camps[author]` with `phi(d) = d / (d +
+affect_d0)` on the dyad's stance distance — the SAME per-exposure array
+(`-features["agreement"]`) V3's `assign_valence_endogenous` already uses
+for `P(agree)`, threaded through `TickEngine.step` into `apply_drift` as
+`stance_distance` rather than recomputed, so the two mechanisms cannot
+drift apart on what "distance" means. `identification`'s multiplier is
+`1 - phi(d)`, the continuous analogue of the binary's `1 - outgroup` — not
+spelled out in the spec's own `h_i` formula (written for the animus term
+only), and the natural structural generalisation once one is needed for
+symmetry. `camps` stayed in `apply_drift`'s signature rather than being
+removed (the spec's literal "`camps` leaves `apply_drift`'s signature"):
+`"camp"` mode still needs it, TickEngine already computes it every tick for
+the kernel's own camp features, and threading it through costs nothing
+`"distance"` mode doesn't already pay for by ignoring it. Tested at the
+mechanism level (isolated from a live feedback loop's chaotic RNG
+divergence — see test_change_spec_v7.py's own note on why the full-engine
+correlation check needed the SAME exposures/actions held fixed): `"camp"`
+with `camps=None` produces exactly zero animus movement; `"distance"` on
+the identical exposures does not. On a controlled bimodal fixture (distance
+cleanly tracking camp membership) the two formulas' per-user animus deltas
+correlate above 0.95; on the full engine over a realistic `bimodal_normal`
+population, so does final per-user animus after 60 ticks. `affect_d0=1.0`
+is calibrated for a ONE-AXIS standard-normal population specifically (per
+the spec); at Experiment 03's actual D=3, a raw multi-axis distance
+saturates `phi` for same- and cross-camp dyads alike, which is a real scale
+property of a fixed constant against a higher-dimensional geometry, not a
+mechanism defect — recorded here rather than quietly re-tuned.
+
+**V7.4 — cross-camp-restricted denominator.** `DeltaAff.per_cross_contact`,
+normalized by an engagement/trait/post stance join (`_cross_contact_from_
+frames`, a pure-frame core over polars DataFrames for the same
+testability-without-a-run reason `_aff_from_arrays`/`_ideo_decomposition`
+already split themselves out) classifying an event as cross-contact when
+its dyad distance exceeds `d_cross = dynamics.affect_d0` — V7.3's own
+saturation midpoint, so the two thresholds cannot drift apart as the spec
+requires. `per_contact` (total-volume) is left exactly as it was;
+`per_cross_contact` is NaN when the join's persistence targets (`traits`,
+`posts`) are unavailable, never silently wrong.
+
+**V7.5 — BIC margin.** `emergent_camps` returns `bic_margin` (the runner-up
+k's BIC minus the selected k's, normalized by `|selected|`; NaN when fewer
+than two k were fit). `DeltaIdeo.delta_bic_margin` joins the outcome set,
+differenced like `delta_k` and — like `delta_k` — never NaN-gated on the
+pre-period bimodality check the three camp-relative `toward_*` columns are.
+On a synthetic population morphed from two clusters toward a third (fixed
+within-cluster noise, only the separation parameter swept, so a wobble
+cannot be resampling noise pretending to be non-monotonicity), the margin
+fell monotonically while k held at 2, then k jumped to 3.
+
+**V7.6 — re-gate, and a real gap it surfaced.** `GATE_ROWS` is now
+`("reciprocity",)`; `attention_gini` and `clustering_ratio` are still
+measured and still reported (`GateReport.rows`, `stylized_facts_report`'s
+`in_range` flag), just no longer block. This is a demotion of a check that
+could not be met, not a loosening of one that could: `attention_gini`'s
+[0.8, 0.95] band is reachable only under `bandwagon` (`FINDINGS.md` above:
+other kernels read 0.6-0.75, or ~0.97 once C3a's behaviour reinforcement
+compounds it under `drift="full"`), and Experiment 03 runs `outrage`.
+
+Actually running `stylized_gate` at "the Experiment 03 substrate" (the
+Wave-A-background dial point, 0.7/0.7/0.7) for the first time — it had
+never been gated before; Wave A's own module never calls `stylized_gate` —
+surfaced a real, pre-existing gap unrelated to V7.3's mechanism at all:
+reciprocity measured 0.065 against the [0.2, 0.4] band, because
+`graph.sbm_mirror_p` (the SBM generator's OWN reciprocity top-up —
+`network/sbm.py::sbm_graph` never reads the shared `graph.mirror_p` field
+at all, contrary to `GraphConfig.mirror_p`'s own docstring) defaults to
+0.0 and `dial_config` never set it. Calibrated empirically, the same way
+`experiments/gate.py::calibrated_gate_config` calibrated its own
+`mirror_p` (`network/reciprocity.py`'s "mirror_p is NOT the reciprocity you
+then measure" applies here too): `sbm_mirror_p=0.15` measures reciprocity
+at 0.289-0.301 across N=2,000 and N=10,000, comfortably mid-band, now
+`dial_config`'s own default. Confirmed separately that `affect_drive` moves
+nothing structural: reciprocity and clustering_ratio read identically
+under `"camp"` and `"distance"` at a fixed seed, as they must — nothing in
+graph generation reads `dynamics.affect_drive`.
+
+With the gate passing, `DynamicsConfig.affect_drive` now defaults to
+`"distance"`; `"camp"` remains available to reproduce a pre-V7.3 result
+(Experiment 01's SBM finding among them) under the exact mechanism it was
+measured with.
+
+**Two regressions from this landing, fixed, not papered over.**
+`test_c1_animus_rises_under_outrage_and_not_under_null`'s `1e-4` margin
+between `outrage` and `null` kernel animus growth was calibrated against
+`"camp"` mode's sharp contrast (a same-camp `null` engagement contributes
+EXACTLY zero under `"camp"`; under `"distance"` it contributes a small but
+non-zero `phi(d)`, narrowing — not reversing — the gap to 6.7e-5,
+under the threshold). This is a pre-V7.3 mechanism conformance test, so it
+now pins `affect_drive="camp"` explicitly rather than inheriting whatever
+the default happens to be; the distance-mode analogue of the same claim is
+one of test_change_spec_v7.py's own V7.3 tests.
+
+`test_gate_passes_on_the_calibration_of_record_and_warns_off_gate`'s
+off-gate probe was `dynamics.ranker="chronological"`, chosen specifically
+because it lands attention Gini far below band — a row that no longer
+blocks. Measured directly: `chronological` still PASSES the gate now that
+only reciprocity is graded (reciprocity 0.230-0.233, in-band; Gini
+0.630-0.641, now merely reported). The probe is now `graph.mirror_p=0.0`
+on `calibrated_gate_config()`, which removes the shared reciprocity
+top-up and lands reciprocity at 0.156-0.159 — under band, matching
+`network/reciprocity.py`'s own documented ~0.157 chance-reciprocity
+baseline for this generator with the mirroring pass off.
+
+## Wave A′ — the full dial range, and a second camp-gate V7.3 didn't reach
+
+Run per experiment03-bubble-intervention.md §5.4's "required" row and
+change-spec-v7-continuous-affect.md's own closing "Unlocks": Wave A's
+design repeated at the same scale (N=1,000, 60 burn-in + 100 post ticks,
+3 dials × {0.1, 0.5, 0.9} × 5 seeds, 45 design points, 135 rows), under
+the now-default `affect_drive="distance"`, background moved from Wave A's
+0.7 to the neutral 0.5 (`run_wave_a_prime`, `results/experiment03/
+wave_a_prime.csv`). ~17 minutes wall clock at ~25s/design-point — close
+to the ~14s/design-point at N=800/80-ticks this module's own calibration
+recorded, scaled to this run's larger N and tick count.
+
+**H3 holds more cleanly than in Wave A, over the full range.** `composition`
+is negative in all 45/45 cells (delta_aff_plateau -0.0158 to -0.0040);
+`engagement` is positive in all 40 cells where its mechanism is active (see
+below) and never negative. Wave A's own 40/40 was measured over a slice
+that excluded the low ideological end entirely; this is the same finding,
+now confirmed on ground Wave A could not reach.
+
+**A second, unrelated camp-gate — the reaction kernel's own — makes the
+`engagement` arm a complete no-op below the SAME bimodality threshold,
+independent of `affect_drive`.** At ideological=0.1, `engagement`'s
+`delta_aff_plateau`, `delta_aff_per_contact`, `delta_aff_per_cross_contact`,
+`delta_k` and `delta_bic_margin` are all exactly `0.0` (not small — exactly
+zero) and every camp-relative `toward_*`/`ideo_level_*` column is `nan`, for
+all 5 seeds. Confirmed directly: at this design point `camps_and_bimodality`
+returns `None` (bimodality 0.355, same population `dynamics/drift.py`'s
+old gate would have frozen). The `engagement` arm's entire manipulation is
+a `kernel_theta` SET override on the `outgroup` feature
+(`exposure/kernel.py::compute_features`) — a DIFFERENT, still-standing
+consumer of the camp label than the one V7.3 touched. `compute_features`
+only adds `outgroup`/`outgroup_x_animus`/`ingroup_x_ident` `if camps is not
+None`, and `apply_kernel`'s theta loop silently skips any entry naming a
+feature that is not present — so below the gate, `engagement`'s config
+differs from `none`'s in an override that never fires, and the run is
+bit-identical to `none` down to the same-seed RNG draws. **V7.3's own
+warrant — "the affect op is the last consumer of the camp label in the
+mechanism path" — is not quite right; this is a second one, and it was not
+in V7's scope.**
+
+`composition` and `exposure` stay measurable at ideological=0.1 precisely
+because neither depends on that feature for its OWN effect: `composition`
+adds `valence_gamma0=2.5` (a platform-wide civility shift, independent of
+camps) on top of the same `kernel_theta` override, and that shift alone —
+interacting with the now-continuous affect channel — produces a real,
+seed-consistent de-escalation (-0.00598 to -0.00460 across the 5 seeds at
+this cell, versus exactly 0.0 for `engagement` on the identical population).
+`exposure` (`inject_k`) never touches camp features at all. This is a
+genuine, nameable methodological finding rather than a defect to route
+around silently: **a camp-*aware* intervention (this codebase's only
+implementation of "promote cross-camp engagement") cannot act on a
+population that has not yet structurally sorted into visible camps, even
+though the OUTCOME it would be judged on is now measurable there.** The
+experiment03-bubble-intervention.md brief's own §4 `targeting_mode ∈
+{distance, camp_pair}` factor is the fix this points at — a `distance`
+targeting mode would promote engagement by continuous stance distance
+instead of a camp label, exactly as V7.3 did for the affect channel — but
+it is not built; the current `engagement`/`composition` arms are what the
+brief would call `camp_pair` targeting, unswept and unlabelled as such.
+
+**H1 is still neither confirmed nor falsified, now with the previously-inert
+region included.** No sign flip for `composition` or `engagement` anywhere
+across the full range on any of the 3 one-factor-at-a-time slices. The one
+nominal sign change (`exposure`, sweeping `ideological`: mean -3.4e-5 at
+0.1 vs positive at 0.5/0.9) is not a real crossing — per-seed values at that
+cell are `[-3.8e-5, -2.1e-4, +3.6e-5, +1.5e-5, +3.3e-5]`, the same
+small-and-seed-inconsistent pattern Wave A already reported for `exposure`
+generally (37/40), not a new one. A true response-surface search (Wave B)
+over the interior of the 3-dial volume is still what H1 needs.
+
+**H2, resolved: the "hardening under every arm" reading was overwhelmingly
+background, exactly as V7.2 predicted.** `ideo_level_toward_own_pole`
+(`none`'s own absolute movement) ranges from -0.0004 to +0.0262 across the
+sweep — an ~65x span driven by tribalization level, most visible on the
+affective dial (0.0016 at level 0.1 rising to 0.0233 at level 0.9).
+`composition`'s OWN net contribution (`toward_own_pole`, differenced) is an
+order of magnitude smaller and roughly flat across levels (-0.0005 to
++0.0026) — it does not track tribalization the way the background does. Its
+animus benefit (`delta_aff_plateau`) DOES scale with tribalization (-0.0040
+at the low end to -0.0158 at the high end on the affective sweep). So the
+named pattern survives measurement, refined rather than debunked:
+composition's de-escalation grows with tribalization while its own
+ideological cost stays small and roughly constant — a different, more
+precise claim than Wave A's raw numbers supported.
+
+**H5's falsifier looks like it holds at this scale, more informatively than
+Wave A's flat `delta_k=0.0` could show.** `delta_k` is exactly 0.0 on all
+135 rows again. `delta_bic_margin` is no longer identically flat (it can — 
+it is a continuous quantity), but its movement is small (order 1e-4) and
+non-monotonic across levels, reading as noise around zero rather than a
+directional signal — closer to "the binary frame is adequate at this scale"
+than to a gradient precursor of a real k-change.
+
+**What Wave A′ does not do.** It reuses Wave A's 4-arm design as-is;
+`targeting_mode`, the diversity-floor sweep, named scenarios, and hysteresis
+(experiment03-bubble-intervention.md §§2.3-3-4-5.2-5.3) are Wave B/C
+territory and required infrastructure this session had not yet built (built
+and run below). Not comparable to `wave_a.csv` line-for-line: different
+mechanism (`affect_drive`), different structural substrate
+(`sbm_mirror_p=0.15`), different background (0.5 vs 0.7) — a fresh
+measurement, not a correction of the old one.
+
+## Wave B/C — targeting_mode, the diversity floor, named scenarios, hysteresis
+
+Built to answer Wave A′'s own closing finding (the `engagement`/
+`composition` arms' `kernel_theta` reads `CONDITIONAL_FEATURES` and is a
+complete no-op below the bimodality gate, independent of `affect_drive`)
+and to run experiment03-bubble-intervention.md's §§2.3/3/5.2/5.3
+(the diversity floor, named scenarios + LHS, hysteresis) for the first
+time. Infrastructure (`targeting_mode`/`arms_for`, `dispersion`/
+`diversity_ratio`/`diversity_floor_break_even`, `SCENARIOS`/
+`lhs_design_points`, `run_hysteresis`/`run_wave_c`) and its conformance
+tests (tests/test_experiment03.py) landed in one commit; this section is
+the first RUN of it, against the full 364-test suite passing throughout.
+
+**Wave B design, reduced the same way Wave A was reduced from a true
+Morris design (module docstring): 3 named scenarios
+(`consolidated_two_camp`, `cross_cut`, `low_tribalization`) × 6 Latin
+Hypercube points per scenario (radius 0.25 around its dial preset) × both
+`targeting_mode`s × 2 seeds — 72 design points, 216 rows
+(`results/experiment03/wave_b.csv`), 1435s (~24 min) wall clock.** Per
+design point cost ~26s for `targeting_mode="camp_pair"` and ~14s for
+`"distance"` at the SAME (scenario, LHS point, seed) — not a
+`targeting_mode` performance difference but `run_wave_b`'s own loop order:
+the `none` arm never depends on `targeting_mode`, so the second mode's
+`none` run at a given point is a `cached_run` hit. Sanity check before
+anything else: the `exposure` arm is bit-identical across `targeting_mode`
+in all 72 of its rows (`arms_for(...)["exposure"]` never references
+`kernel_theta`, so its whole trajectory — same seed — is unaffected by
+which theta table `targeting_mode` would otherwise select) — the factor is
+wired where intended and nowhere else.
+
+**H3b: `targeting_mode` moves `engagement` uniformly and `composition` by
+regime, in OPPOSITE directions from each other.** Paired within every
+(scenario, LHS point, seed) cell, `camp_pair`'s `delta_aff_plateau` is
+LOWER than `distance`'s for `engagement` in all 36/36 cells in every one of
+the 3 scenarios (mean gap -0.0178 `consolidated_two_camp`, -0.0091
+`cross_cut`, -0.0011 `low_tribalization`) — `distance` targeting always
+produces MORE hostility increase than `camp_pair` there, not only in the
+cells where `camp_pair` is gated off. For `composition` the interaction
+flips sign by regime: in `consolidated_two_camp` (strongly, structurally
+tribalized) `camp_pair` reduces hostility MORE than `distance` (mean gap
+-0.0081, 8/12 cells favor `camp_pair`); in `low_tribalization` `distance`
+reduces it slightly more, with total consistency (12/12 cells, mean gap
++0.0010); `cross_cut` is weaker and less consistent (8/12 cells favor
+`distance`, mean gap +0.0005). Camp-based and distance-based targeting are
+not interchangeable implementations of "the same" manipulation — which one
+does more, in which direction, depends on how structurally sorted the
+population already is.
+
+**H1: still no sign flip anywhere Wave B sampled.** `composition` is
+negative and `engagement` is non-negative (zero only in the
+now-well-understood gated cells) across all 216 rows, 3 scenarios, both
+targeting modes — extending, not just repeating, Wave A′'s 45/45.
+`exposure` stays small and sign-varies by scenario (positive in
+`consolidated_two_camp`, ~0 elsewhere) but never crosses within a scenario.
+H1's falsifier has still not fired anywhere this project has looked.
+
+**The diversity floor rarely gets tested at this scale, because dispersion
+barely moves.** 90/216 rows reduced hostility at all (`composition`
+70/72, `exposure` 20/72, `engagement` 0/72 — it never once reduces
+hostility in this run). Among the 90, `diversity_floor_break_even` — SS2.3's
+break-even ratio `f` — ranges 0.997 to 1.024: post-intervention viewpoint
+dispersion sits within ~2.4% of its pre-intervention level in EVERY
+hostility-reducing cell measured, including the 34/90 where it moved in
+the "wrong" (shrinking) direction. SS2.3's central question — is civility
+worth a diversity cost — does not yet have a real dilemma to adjudicate
+here: the two outcomes are close to orthogonal at this population size and
+this 100-tick post-intervention horizon. A longer horizon or a stronger
+intervention could change that; this run tests neither.
+
+**Ideological movement stays dissociated from the affective outcome,
+consistent with Wave A′'s H2 finding.** Where camp is defined
+(`consolidated_two_camp`, `cross_cut`; `low_tribalization`'s 72 rows are
+correctly NaN-gated, its pre-period being unimodal), `toward_other_camp` is
+negative for every arm in both scenarios — the population moves AWAY from
+the other camp's pre-period centroid regardless of arm, `composition`
+included, even in the same cells where `composition` is reducing animus.
+`delta_k` is exactly 0.0 on all 216 rows (`cross_cut`'s own documented
+no-k>2-generator limitation) and `delta_bic_margin` is small and
+non-directional (mean -0.00017 to +0.00005 by arm) — no fragmentation
+signal at this scale, matching Wave A′.
+
+**Wave C: hysteresis on the 3 largest Wave B effects — all in the
+direction where the intervention makes things worse.**
+`select_hysteresis_points` (seed-averaged `|delta_aff_plateau|`, top 3)
+picked `engagement`/`targeting_mode="distance"` at all 3 points — 2 in
+`consolidated_two_camp` (LHS 1 and 5), 1 in `cross_cut` (LHS 0) — because
+`engagement`'s hostility INCREASE under `distance` targeting is larger in
+magnitude than `composition`'s hostility decrease anywhere in this run.
+Run at N=1,000, 60 burn-in + 60 pre-withdrawal + 60 post-withdrawal ticks,
+5 seeds per point (15 hysteresis runs, `results/experiment03/wave_c.csv`,
+195s). **Recovery is partial and strikingly consistent across all 3
+points: `recovery_fraction` 0.575-0.658 per run** (mean 0.628 ±0.027 at
+`consolidated_two_camp` LHS1, 0.635 ±0.025 at LHS5, 0.612 ±0.023 at
+`cross_cut` LHS0) **— roughly 61-64% of the peak animus gap closes in the
+60 ticks after withdrawal, leaving 36-39% persistent.** Neither H4 extreme
+holds cleanly: not fully sticky (0%), not fully reversed (100%), at a 1:1
+withdrawal-to-intervention tick ratio. The tightness of the cluster across
+two scenarios and 3 dial points — despite peak gaps varying 2.5x (0.0151 to
+0.0371) — reads as evidence for a roughly fixed relaxation timescale in the
+animus dynamics rather than a scenario-specific property, but this run
+samples only one arm/mode/direction and does not test that hypothesis
+directly.
+
+**What Wave C here does not test: whether `composition`'s CIVILITY gain is
+equally (a)symmetric.** Point-selection is by raw effect magnitude, and
+`engagement`'s hostility-increasing effect outsized `composition`'s
+hostility-decreasing effect everywhere sampled, so all 3 selected points
+test withdrawal from a HARM, not from a BENEFIT — the brief's own H4 framing
+("the hostile regime is stickier than the civil one") compares the two, and
+this run only has one side of that comparison at meaningful magnitude. A
+`run_wave_c`-style call seeded with `composition` points specifically
+(bypassing `select_hysteresis_points`'s magnitude ranking) would be needed
+to complete it.
+
+**Scope, same discipline as Wave A/A′.** 2 seeds × 6 LHS points per
+scenario here vs. the brief's own §5.3 default (~30 points, 10 seeds) — a
+~1/20 reduction matching Wave A's own precedent, stated as such in
+`run_wave_b`'s own docstring. No response-surface regression fit over the
+LHS points (the points are collected; fitting one is a separate,
+not-yet-built analysis step). No calibration against a real corpus (SS8),
+still out of scope.
