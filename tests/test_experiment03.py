@@ -31,6 +31,7 @@ from discourse_lab.experiments.experiment03_bubble_intervention import (
     dispersion,
     lhs_design_points,
     run_arm,
+    select_hysteresis_points,
 )
 
 
@@ -466,3 +467,39 @@ def test_hysteresis_recovery_fraction_is_nan_when_there_is_no_peak_gap_to_recove
     result = _hysteresis_from_arrays(zeros, zeros, zeros, zeros)
     assert result["peak_gap"] == 0.0
     assert np.isnan(result["recovery_fraction"])
+
+
+def test_select_hysteresis_points_arm_filter_finds_a_smaller_effect_the_default_would_skip():
+    """Real Wave B data has exactly this shape: `engagement`'s largest
+    |delta_aff_plateau| outsizes `composition`'s everywhere sampled, so the
+    unrestricted top-N is always all-`engagement` -- H4's own framing needs
+    the benefit side too, which only `arm=` can surface."""
+    df = pl.DataFrame({
+        "arm": ["engagement", "engagement", "composition", "composition"],
+        "scenario": ["s1", "s2", "s1", "s2"],
+        "lhs_index": [0, 0, 0, 0],
+        "targeting_mode": ["distance"] * 4,
+        "affective": [0.5] * 4, "ideological": [0.5] * 4, "structural": [0.5] * 4,
+        "seed": [0, 0, 0, 0],
+        "delta_aff_plateau": [0.05, 0.03, -0.02, -0.01],
+    })
+
+    unrestricted = select_hysteresis_points(df, n_points=1)
+    assert unrestricted["arm"].to_list() == ["engagement"], (
+        "test setup: engagement's magnitude should dominate the unrestricted ranking"
+    )
+
+    composition_only = select_hysteresis_points(df, n_points=1, arm="composition")
+    assert composition_only["arm"].to_list() == ["composition"]
+    assert composition_only["scenario"].to_list() == ["s1"], "still the larger-magnitude composition row"
+
+
+def test_select_hysteresis_points_arm_filter_still_drops_none():
+    df = pl.DataFrame({
+        "arm": ["none", "composition"],
+        "scenario": ["s1", "s1"], "lhs_index": [0, 0], "targeting_mode": ["camp_pair"] * 2,
+        "affective": [0.5] * 2, "ideological": [0.5] * 2, "structural": [0.5] * 2,
+        "seed": [0, 0], "delta_aff_plateau": [0.0, -0.02],
+    })
+    result = select_hysteresis_points(df, n_points=5, arm="composition")
+    assert result["arm"].to_list() == ["composition"]

@@ -1025,17 +1025,28 @@ def run_hysteresis(
     }
 
 
-def select_hysteresis_points(wave_b_df: pl.DataFrame, n_points: int = 3) -> pl.DataFrame:
+def select_hysteresis_points(wave_b_df: pl.DataFrame, n_points: int = 3, arm: str | None = None) -> pl.DataFrame:
     """SS5.2: 'Only run this where phase 2 produced a significant effect' --
     the `n_points` (scenario, lhs_index, targeting_mode, arm) cells with the
     largest seed-averaged |delta_aff_plateau| (averaging first so a single
     lucky seed cannot buy a slot). `arm="none"` is dropped: there is no
     intervention to withdraw from it.
+
+    `arm`, when given, restricts the ranking to that one arm's own rows --
+    the default (any intervention arm) always surfaces whichever arm has
+    the single largest-magnitude effect in the whole sweep (empirically,
+    `engagement`, whose hostility-INCREASING effect outsizes `composition`'s
+    decrease everywhere Wave B sampled), which means H4's own framing
+    ("the hostile regime is stickier than the civil one") only ever gets
+    tested from the harm side unless a caller asks for the benefit side by
+    name.
     """
     keys = ["scenario", "lhs_index", "targeting_mode", "arm", "affective", "ideological", "structural"]
+    frame = wave_b_df.filter(pl.col("arm") != "none")
+    if arm is not None:
+        frame = frame.filter(pl.col("arm") == arm)
     return (
-        wave_b_df
-        .filter(pl.col("arm") != "none")
+        frame
         .group_by(keys)
         .agg(pl.col("delta_aff_plateau").mean().alias("delta_aff_plateau_mean"))
         .sort(pl.col("delta_aff_plateau_mean").abs(), descending=True)
@@ -1051,6 +1062,7 @@ def run_wave_c(
     n_ticks_pre_withdrawal: int = 60,
     n_ticks_post_withdrawal: int = 60,
     seeds: Sequence[int] = (0, 1, 2, 3, 4),
+    arm: str | None = None,
 ) -> pl.DataFrame:
     """SS5.2's hysteresis phase, run ONLY on the `n_points` design points
     Wave B measured the largest |delta_aff_plateau| at (`select_hysteresis_
@@ -1058,11 +1070,16 @@ def run_wave_c(
     takes `wave_b_df` as an argument rather than a dial/arm/mode triple:
     which points qualify is an empirical question Wave B has to answer
     first, not a choice made here.
+
+    `arm`, passed straight through to `select_hysteresis_points`, restricts
+    which arm's points are eligible -- e.g. `arm="composition"` for the
+    benefit-side half of H4's own comparison, since the unrestricted
+    default always surfaces `engagement`'s larger-magnitude harm instead.
     """
     intervention_tick = n_ticks_burn_in
     withdrawal_tick = intervention_tick + n_ticks_pre_withdrawal
     n_ticks_total = withdrawal_tick + n_ticks_post_withdrawal
-    points = select_hysteresis_points(wave_b_df, n_points)
+    points = select_hysteresis_points(wave_b_df, n_points, arm=arm)
 
     rows: list[dict] = []
     for point in points.iter_rows(named=True):

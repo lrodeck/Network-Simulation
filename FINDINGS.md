@@ -922,13 +922,17 @@ composition's de-escalation grows with tribalization while its own
 ideological cost stays small and roughly constant — a different, more
 precise claim than Wave A's raw numbers supported.
 
-**H5's falsifier looks like it holds at this scale, more informatively than
-Wave A's flat `delta_k=0.0` could show.** `delta_k` is exactly 0.0 on all
-135 rows again. `delta_bic_margin` is no longer identically flat (it can — 
-it is a continuous quantity), but its movement is small (order 1e-4) and
-non-monotonic across levels, reading as noise around zero rather than a
-directional signal — closer to "the binary frame is adequate at this scale"
-than to a gradient precursor of a real k-change.
+**H5's `delta_k` component is untestable here, not falsified.** `delta_k`
+is exactly 0.0 on all 135 rows again — a STRUCTURAL consequence of this
+codebase having no population generator that produces more than two
+ideological modes, true regardless of what any intervention does, not
+evidence that fragmentation fails to respond to one. "Not supported" would
+overclaim a look that never happened; there is no signal to read either
+way. `delta_bic_margin` is the part that actually can speak, since it is a
+continuous quantity NOT pinned to zero by the same limitation: it moves by
+only order 1e-4 and non-monotonically across levels, closer to noise around
+zero than to a directional signal — a weak lean toward "no gradient
+precursor detected" on 135 rows at 5 seeds each, not a resolved result.
 
 **What Wave A′ does not do.** It reuses Wave A's 4-arm design as-is;
 `targeting_mode`, the diversity-floor sweep, named scenarios, and hysteresis
@@ -1015,10 +1019,58 @@ correctly NaN-gated, its pre-period being unimodal), `toward_other_camp` is
 negative for every arm in both scenarios — the population moves AWAY from
 the other camp's pre-period centroid regardless of arm, `composition`
 included, even in the same cells where `composition` is reducing animus.
-`delta_k` is exactly 0.0 on all 216 rows (`cross_cut`'s own documented
-no-k>2-generator limitation) and `delta_bic_margin` is small and
-non-directional (mean -0.00017 to +0.00005 by arm) — no fragmentation
-signal at this scale, matching Wave A′.
+`delta_k` is exactly 0.0 on all 216 rows — structurally, not empirically:
+`cross_cut`'s own documented no-k>2-generator limitation guarantees this
+regardless of what the interventions do, so it is untestable here rather
+than a finding of no effect. `delta_bic_margin`, which is NOT pinned by
+that limitation, is small and non-directional (mean -0.00017 to +0.00005 by
+arm) — the actual (weak) signal, matching Wave A′.
+
+**The response surface itself — a revised target, not abandoned work.**
+experiment03-bubble-intervention.md's §5.3 names a response-surface fit
+over the LHS points as the deliverable, and it was not built: 6 points x 2
+seeds per scenario cannot support fitting one, let alone the ~30-point,
+10-seed design the brief itself specifies. But H1's falsifier having fired
+nowhere across Wave A, Wave A′, AND Wave B (no sign flip anywhere any of
+the three waves swept) changes what the surface is FOR. It was originally
+going to locate a crossing (H1); there is none to locate. What is left, and
+is a smaller, tractable ask on exactly the same LHS points, is mapping HOW
+`composition`'s hostility reduction scales across the 3 dials, rather than
+reporting Wave A′'s two `affective`-sweep endpoints (-0.0040 at level 0.1,
+-0.0158 at level 0.9, a ~4x range) as if they were the whole shape.
+
+A plain linear surface (`delta_aff_plateau ~ affective + ideological +
+structural`, OLS, no interaction terms — 18 LHS points is not enough
+degrees of freedom to support them), fit separately per `targeting_mode`
+since H3b already found the two are not interchangeable:
+
+  `camp_pair`: intercept -0.0001, affective -0.0170, ideological -0.0102,
+  structural +0.0084, R^2 = 0.908.
+  `distance`:  intercept -0.0054, affective +0.0084, ideological -0.0199,
+  structural +0.0122, R^2 = 0.415.
+
+`camp_pair`'s surface is a genuinely good linear fit (R^2 = 0.91) — the
+`affective` coefficient (-0.017 per unit) is close to the ~-0.0148/unit
+slope Wave A′'s own one-factor affective sweep measured independently
+(-0.0118 over 0.8 units), an out-of-sample cross-check the fit was not
+built to satisfy. Its sign pattern is new information Wave A′'s
+one-factor-at-a-time design could not show on its own: MORE affective and
+ideological tribalization make `composition` do MORE (steeper negative
+slope on both), but MORE structural sorting makes it do LESS (positive
+slope) — holding the other two fixed, which one-factor-at-a-time sweeps
+from a single fixed background cannot separate from each other.
+`distance`'s surface is NOT well described by a plane (R^2 = 0.42) — a
+plain, honest negative result, not a fit worth reporting coefficients for:
+consistent with H3b's own finding that `distance` targeting's effect on
+`composition` changes SIGN between regimes (`consolidated_two_camp` vs
+`low_tribalization`), which a single hyperplane cannot represent.
+
+Caveat this fit shares with everything else built on Wave B: 18 points
+sitting in 3 tight, radius-0.25 neighborhoods around 3 centers is not a
+space-filling design over the cube, so this is a coarse global trend
+across the sampled region, not a validated interpolant between it —
+adding interaction or quadratic terms would need more points than this
+run has, not a modeling choice deferred out of laziness.
 
 **Wave C: hysteresis on the 3 largest Wave B effects — all in the
 direction where the intervention makes things worse.**
@@ -1036,22 +1088,79 @@ points: `recovery_fraction` 0.575-0.658 per run** (mean 0.628 ±0.027 at
 60 ticks after withdrawal, leaving 36-39% persistent.** Neither H4 extreme
 holds cleanly: not fully sticky (0%), not fully reversed (100%), at a 1:1
 withdrawal-to-intervention tick ratio. The tightness of the cluster across
-two scenarios and 3 dial points — despite peak gaps varying 2.5x (0.0151 to
-0.0371) — reads as evidence for a roughly fixed relaxation timescale in the
-animus dynamics rather than a scenario-specific property, but this run
-samples only one arm/mode/direction and does not test that hypothesis
-directly.
+two scenarios and 3 dial points, despite peak gaps varying 2.5x (0.0151 to
+0.0371), is not a pattern to hypothesize about — this codebase already
+specifies the mechanism it comes from, and checking it against the actual
+numbers is cheap.
 
-**What Wave C here does not test: whether `composition`'s CIVILITY gain is
-equally (a)symmetric.** Point-selection is by raw effect magnitude, and
-`engagement`'s hostility-increasing effect outsized `composition`'s
-hostility-decreasing effect everywhere sampled, so all 3 selected points
-test withdrawal from a HARM, not from a BENEFIT — the brief's own H4 framing
-("the hostile regime is stickier than the civil one") compares the two, and
-this run only has one side of that comparison at meaningful magnitude. A
-`run_wave_c`-style call seeded with `composition` points specifically
-(bypassing `select_hysteresis_points`'s magnitude ranking) would be needed
-to complete it.
+**Checked, not just hypothesized: the recovery IS the OU mean-reversion
+rate `dynamics.affect_ou_k`, arithmetic away.** `apply_drift`
+(`dynamics/drift.py`) updates animus each tick as `X_{t+1} = X_t + gain -
+k*(X_t - Bs_t) + noise`, `Bs_{t+1} = Bs_t + k_b*(X_t - Bs_t)`, with
+`k = affect_ou_k = 0.02` and `k_b = k/10` (`block_rates`). After
+`withdrawal_tick` both arm and none runs share the identical schedule, so
+their exogenous `gain` terms are the same process and cancel in the
+DIFFERENCE — the gap `(Delta, DeltaBs) = (X_arm - X_none, Bs_arm - Bs_none)`
+then evolves by the pure LINEAR, homogeneous 2x2 recursion `v_{t+1} = M
+v_t`, `M = [[1-k, k], [k_b, 1-k_b]]`, with no free parameters beyond the
+two the config already names.
+
+The single-timescale shortcut (treat `Bs` as fixed, `Delta_t = (1-k)^t
+Delta_0`) predicts recovery `1 - (1-k)^60 = 0.7024` at the 60-tick
+withdrawal window — noticeably ABOVE all 3 observed values (0.605-0.635),
+which is itself informative: FINDINGS.md already documents (V3 section)
+that `Bs` drifting toward `X_stored` at `k_b` is what removes the
+self-reinforcement loop's stable fixed point, i.e. `Bs` is never really
+fixed on the timescales this codebase's own dynamics operate at. Fitting
+the FULL 2-state recursion instead — `Delta_120` fixed at the measured
+peak gap, `DeltaBs_120` (the `Bs` gap already accumulated by the time of
+withdrawal — not directly observable, since `Bs` is engine-internal state,
+never persisted) as the ONE free parameter, least-squares against each
+point's own full 60-tick post-withdrawal trajectory (mean of the same 5
+seeds `run_wave_c` used) — recovers a small, physically sensible
+`DeltaBs_120` at all 3 points (5-9% of that point's own peak gap, the right
+order of magnitude given `k_b` is 10x slower than `k`) and an R^2 above
+0.999 at every point. The 2-state model's own predicted recovery —
+0.6296, 0.6321, 0.6047 — lands within 0.001-0.008 of the actually observed
+0.6217, 0.6271, 0.6059. That gap is within what 5-seed averaging noise
+alone would produce. So: not a fixed-timescale coincidence needing
+further explanation, and not quite the naive single-exponential either —
+recovery here is the two known OU constants this experiment never
+touched, doing exactly what `drift.py` says they do.
+
+**The other side of H4's own comparison: `composition`'s benefit recovers at
+the SAME rate as `engagement`'s harm — no asymmetry.**
+`select_hysteresis_points` now takes an `arm` filter (previously it always
+surfaced whichever arm had the single largest-magnitude effect, which was
+`engagement` in every one of Wave B's 216 rows) precisely so H4's
+"stickier hostile than civil" claim could be checked on its own intended
+BENEFIT side, not inferred from having only measured the harm side. Top-3
+`composition` points by |delta_aff_plateau| (`select_hysteresis_points
+(wave_b, n_points=3, arm="composition")`) are all in `cross_cut` (LHS 0
+camp_pair, LHS 4 camp_pair, LHS 4 distance) — the scenario where
+`composition`'s own effect happens to be largest, unlike `engagement`'s
+top-3 which spanned two scenarios. Same run shape as before (N=1,000,
+60/60/60 burn-in/pre/post-withdrawal ticks, 5 seeds,
+`results/experiment03/wave_c_composition.csv`, 214s):
+
+  `composition` (benefit): recovery_fraction mean 0.6078, SD 0.0270, range
+  0.559-0.664 (n=15).
+  `engagement` (harm, `wave_c.csv`): recovery_fraction mean 0.6250, SD
+  0.0253, range 0.575-0.658 (n=15).
+
+The two distributions overlap almost completely — a ~0.017 difference in
+means against a ~0.026 SD on each side is noise, not an effect. **This is
+expected, not merely unremarked, given the mechanism check above**: the
+`(Delta, DeltaBs)` recursion `drift.py`'s OU reversion produces is LINEAR
+and sign-symmetric in the gap — `k`/`k_b` do not know or care whether
+`Delta` is positive (harm) or negative (benefit), so a model where recovery
+comes from that mechanism predicts equal recovery rates in both directions,
+which is exactly what both runs show. **H4's own asymmetry claim ("the
+hostile regime is stickier than the civil one") is therefore NOT supported
+by this codebase's dynamics specifically** — partial persistence (the
+non-asymmetry-specific half of H4) holds in both directions, at a rate this
+project can now name from the OU constants alone rather than measure arm by
+arm.
 
 **Scope, same discipline as Wave A/A′.** 2 seeds × 6 LHS points per
 scenario here vs. the brief's own §5.3 default (~30 points, 10 seeds) — a
