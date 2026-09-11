@@ -506,6 +506,7 @@ class TickEngine:
                         exposures, posts, self.pop, exposures.is_follower, t,
                         agreement_metric=cfg.agreement_metric,
                         camps=self.camps,
+                        cross_distance_d0=cfg.affect_d0,
                     )
 
                     # C2.1: the selection stage — content-conditional

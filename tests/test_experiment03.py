@@ -13,12 +13,24 @@ import polars as pl
 import pytest
 
 from discourse_lab.experiments.experiment03_bubble_intervention import (
+    DIAL_NAMES,
+    ENGAGEMENT_KERNEL_THETA_CAMP_PAIR,
+    ENGAGEMENT_KERNEL_THETA_DISTANCE,
     DeltaAff,
     DeltaIdeo,
     _aff_from_arrays,
     _cross_contact_from_frames,
     _fixed_axis,
+    _hysteresis_from_arrays,
     _ideo_decomposition,
+    _stance_and_animus_at,
+    base_config,
+    dial_config,
+    diversity_floor_break_even,
+    diversity_ratio,
+    dispersion,
+    lhs_design_points,
+    run_arm,
 )
 
 
@@ -313,3 +325,144 @@ def test_v7_5_bic_margin_decreases_monotonically_then_k_jumps():
         f"bic_margin did not fall monotonically before the k jump at index {jump}: {pre_jump}"
     )
     assert ks[:jump] == [2] * jump, f"k moved before the margin-based jump point: {ks}"
+
+
+# --------------------------------------------------------------------------
+# Wave B/C infrastructure: targeting_mode (H3b), the diversity floor (SS2.3),
+# LHS sampling (SS5.3), and hysteresis (SS5.2, H4)
+# --------------------------------------------------------------------------
+
+
+def test_targeting_mode_camp_pair_theta_is_skipped_entirely_when_outgroup_is_absent():
+    """H3b, isolated at the kernel-application layer (no simulation): a
+    `features` dict that lacks `"outgroup"` entirely -- `exposure/kernel.py
+    ::compute_features`'s own shape whenever `camps is None`, the below-the-
+    gate case -- but DOES carry `"cross_distance"` (unconditional, always
+    present). Wave A' (FINDINGS.md) found `ENGAGEMENT_KERNEL_THETA_CAMP_PAIR`
+    is a complete no-op there, root-caused to `apply_kernel`'s own
+    `CONDITIONAL_FEATURES` skip; `ENGAGEMENT_KERNEL_THETA_DISTANCE` was built
+    to not have that gate. Same `rng` seed for all three calls makes
+    `camp_pair`'s result and the empty-theta baseline's DIRECTLY comparable
+    (both consume the same number of draws from an identical state), not
+    just similar.
+    """
+    from discourse_lab.exposure.kernel import apply_kernel
+
+    m = 500
+    rng = np.random.default_rng(0)
+    features = {"intercept": np.ones(m), "cross_distance": rng.uniform(0.0, 1.0, m)}
+
+    actions_camp_pair = apply_kernel(ENGAGEMENT_KERNEL_THETA_CAMP_PAIR, features, np.random.default_rng(1))
+    actions_distance = apply_kernel(ENGAGEMENT_KERNEL_THETA_DISTANCE, features, np.random.default_rng(1))
+    baseline = apply_kernel((), features, np.random.default_rng(1))
+
+    assert (actions_camp_pair == baseline).all(), "camp_pair theta should be a complete no-op when outgroup is absent"
+    assert (actions_distance != baseline).any(), "distance theta should move outcomes even when outgroup is absent"
+
+
+def test_targeting_mode_camp_pair_engagement_arm_is_bit_identical_to_none_below_the_gate():
+    """Integration-level companion to the kernel-level test above, through
+    the ACTUAL `forked_config`/`run_arm` path this codebase's experiments
+    use: at a dial setting below the bimodality gate, the `engagement` arm
+    under `targeting_mode="camp_pair"` must match `none` bit-for-bit on
+    final animus, while `targeting_mode="distance"` must not."""
+    burn_in = dial_config(base_config(150, 40), affective=0.1, ideological=0.1, structural=0.1)
+    none_cfg, handle_none = run_arm(burn_in, "none", 0, intervention_tick=20, n_ticks_total=40)
+    camp_cfg, handle_camp_pair = run_arm(
+        burn_in, "engagement", 0, intervention_tick=20, n_ticks_total=40, targeting_mode="camp_pair",
+    )
+    dist_cfg, handle_distance = run_arm(
+        burn_in, "engagement", 0, intervention_tick=20, n_ticks_total=40, targeting_mode="distance",
+    )
+
+    _, animus_none = _stance_and_animus_at(handle_none, none_cfg, 39)
+    _, animus_camp_pair = _stance_and_animus_at(handle_camp_pair, camp_cfg, 39)
+    _, animus_distance = _stance_and_animus_at(handle_distance, dist_cfg, 39)
+
+    assert np.array_equal(animus_none, animus_camp_pair), "camp_pair engagement arm should be a no-op below the gate"
+    assert not np.array_equal(animus_none, animus_distance), "distance engagement arm should not be a no-op there"
+
+
+def test_dispersion_is_the_sum_of_per_axis_variance():
+    stance = np.array([[0.0, 0.0], [2.0, 0.0], [0.0, 4.0], [2.0, 4.0]])
+    assert dispersion(stance) == pytest.approx(5.0)  # var(axis0)=1.0, var(axis1)=4.0
+
+
+def test_diversity_ratio_tracks_a_uniform_shrink_of_the_populations_own_spread():
+    rng = np.random.default_rng(0)
+    stance0 = rng.normal(0.0, 2.0, size=(200, 2))
+    mean0 = stance0.mean(axis=0)
+    stance1 = mean0 + (stance0 - mean0) * 0.5  # spread halved per axis -> variance quartered
+    assert diversity_ratio(stance0, stance1) == pytest.approx(0.25)
+
+
+def test_diversity_ratio_is_nan_for_a_degenerate_zero_dispersion_pre_period():
+    stance0 = np.zeros((10, 2))
+    stance1 = np.ones((10, 2))
+    assert np.isnan(diversity_ratio(stance0, stance1))
+
+
+def test_diversity_floor_break_even_reports_the_ratio_only_when_hostility_fell():
+    """SS2.3's normative rule made concrete: justified for every floor at or
+    below the reported number, for an arm that actually reduced hostility;
+    NaN (never a misleading zero or the ratio itself) otherwise."""
+    assert diversity_floor_break_even(-0.5, 0.8) == pytest.approx(0.8)
+    assert np.isnan(diversity_floor_break_even(0.5, 0.8)), "an arm that raised hostility is never justified"
+    assert np.isnan(diversity_floor_break_even(0.0, 0.8)), "exactly zero change is not a reduction"
+
+
+def test_lhs_design_points_are_deterministic_given_the_same_seed():
+    a = lhs_design_points((0.5, 0.5, 0.5), radius=0.25, n_points=8, seed=7)
+    b = lhs_design_points((0.5, 0.5, 0.5), radius=0.25, n_points=8, seed=7)
+    assert a == b
+    c = lhs_design_points((0.5, 0.5, 0.5), radius=0.25, n_points=8, seed=8)
+    assert a != c
+
+
+def test_lhs_design_points_are_clipped_to_the_unit_cube_near_a_boundary():
+    """`center=(0.1, 0.1, 0.1)` with `radius=0.25` would put the lower edge
+    at -0.15 without clipping -- SS5.3's neighbourhood-around-a-named-
+    scenario intent, not a request to sample dial levels outside [0, 1]."""
+    points = lhs_design_points((0.1, 0.1, 0.1), radius=0.25, n_points=20, seed=0)
+    assert len(points) == 20
+    for p in points:
+        assert set(p) == set(DIAL_NAMES)
+        for dial in DIAL_NAMES:
+            assert 0.0 <= p[dial] <= 0.35 + 1e-9, f"{dial}={p[dial]} outside the clipped [0, 0.35] range"
+
+
+def test_hysteresis_recovery_fraction_is_one_when_the_gap_fully_closes():
+    result = _hysteresis_from_arrays(
+        animus_arm_peak=np.array([2.0, 2.0]), animus_none_peak=np.array([0.0, 0.0]),  # peak_gap = 2.0
+        animus_arm_final=np.array([1.0, 1.0]), animus_none_final=np.array([1.0, 1.0]),  # final_gap = 0.0
+    )
+    assert result["peak_gap"] == pytest.approx(2.0)
+    assert result["final_gap"] == pytest.approx(0.0)
+    assert result["recovery_fraction"] == pytest.approx(1.0)
+
+
+def test_hysteresis_recovery_fraction_is_zero_when_the_gap_is_unchanged_since_withdrawal():
+    result = _hysteresis_from_arrays(
+        animus_arm_peak=np.array([2.0]), animus_none_peak=np.array([0.0]),
+        animus_arm_final=np.array([2.5]), animus_none_final=np.array([0.5]),  # both drifted +0.5; gap still 2.0
+    )
+    assert result["recovery_fraction"] == pytest.approx(0.0)
+
+
+def test_hysteresis_recovery_fraction_is_negative_on_overshoot():
+    result = _hysteresis_from_arrays(
+        animus_arm_peak=np.array([2.0]), animus_none_peak=np.array([0.0]),
+        animus_arm_final=np.array([3.0]), animus_none_final=np.array([0.0]),  # gap WIDENED after withdrawal
+    )
+    assert result["recovery_fraction"] < 0.0
+
+
+def test_hysteresis_recovery_fraction_is_nan_when_there_is_no_peak_gap_to_recover_from():
+    """The exact `engagement`/`camp_pair`/below-gate no-op this codebase has
+    already found: a real design point could feed this function four
+    all-equal arrays, and the ratio must read as "not applicable", not as a
+    fake, noise-dominated number from dividing by zero."""
+    zeros = np.zeros(5)
+    result = _hysteresis_from_arrays(zeros, zeros, zeros, zeros)
+    assert result["peak_gap"] == 0.0
+    assert np.isnan(result["recovery_fraction"])

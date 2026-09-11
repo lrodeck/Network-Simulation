@@ -4,8 +4,11 @@ A counterfactual on an already-polarized population: does an intervention
 that increases cross-camp contact reduce affective hostility, deepen it, or
 split ideological movement from affective movement entirely? Full design in
 the uploaded brief ("Experiment 03 -- When Is Popping a Filter Bubble
-Defensible?"); this module is a first pass at the infrastructure it needs
-plus a reduced-scale Wave A (SS5.4) run, not the full multi-wave study.
+Defensible?"); this module is a first pass at the infrastructure the full
+brief needs. Wave A/A′ (SS5.4) have been run at reduced scale; Wave B
+(SS5.3/5.4, named scenarios + LHS) and Wave C (SS5.2, hysteresis) have the
+same driver infrastructure but are run selectively rather than at the
+brief's own scale -- not the full multi-wave study.
 
 Prerequisites this module assumes have landed (see FINDINGS.md):
   - Change spec V1-V6 (engagement valence, the de-escalation channel,
@@ -187,73 +190,112 @@ def dial_config(base: Config, *, affective: float, ideological: float, structura
 # --------------------------------------------------------------------------
 
 # `kernel_theta` SET overrides, not `theta_scale`: a multiplicative scale on
-# the `outgroup` feature flips sign depending on the base kernel's OWN
-# convention (homophily's outgroup weight is negative, outrage's is
-# positive -- exposure/kernel.py), so "scale it up" cannot reliably mean
-# "more cross-camp engagement" across different burn-in kernels. A direct
-# SET pins the intended direction regardless of the base kernel.
+# the `outgroup`/`cross_distance` feature flips sign depending on the base
+# kernel's OWN convention (homophily's outgroup weight is negative,
+# outrage's is positive -- exposure/kernel.py), so "scale it up" cannot
+# reliably mean "more cross-camp engagement" across different burn-in
+# kernels. A direct SET pins the intended direction regardless of the base
+# kernel.
 #
-# Wave A′ (FINDINGS.md): this is a CAMP-AWARE targeting choice -- the
-# `outgroup` feature it overrides only exists in `compute_features`'s
-# output `if camps is not None` (exposure/kernel.py), so below the Sarle
-# bimodality gate this override never fires and the `engagement` arm is a
-# complete, bit-identical no-op vs `none`. V7.3 (change-spec-v7-continuous-
-# affect.md) made the AFFECT channel's outcome measurable below that gate;
-# it did not touch this SEPARATE camp-conditional consumer, so an arm whose
-# only lever is this table stays inert exactly where the ideological dial's
-# low end now needs it to act. `composition` stays measurable there only
-# because `valence_gamma0` (below) does not depend on `outgroup` at all.
-# experiment03-bubble-intervention.md's own `targeting_mode="distance"`
-# (§4) -- promoting engagement by continuous stance distance instead of a
-# camp label -- is the fix; it is not built.
-ENGAGEMENT_KERNEL_THETA: tuple[tuple[str, str, float], ...] = (
+# Two tables, one per `targeting_mode` (experiment03-bubble-intervention.md
+# §4, H3b): `"camp_pair"` overrides `outgroup` (binary, `camps[u] !=
+# camps[author]`) -- matching how a platform would actually implement
+# "recommend cross-camp creators" once it has assigned users to sides.
+# `"distance"` overrides `cross_distance` instead (`phi(d(s_i,s_j))`,
+# exposure/kernel.py -- the SAME saturating map V7.3 uses for the affect
+# channel, camp-agnostic and unconditional).
+#
+# Wave A′ (FINDINGS.md) is why `"distance"` exists at all: `outgroup` only
+# exists in `compute_features`'s output `if camps is not None`, so below
+# the Sarle bimodality gate `"camp_pair"`'s override never fires and the
+# `engagement` arm is a complete, bit-identical no-op vs `none` -- V7.3
+# (change-spec-v7-continuous-affect.md) made the AFFECT channel's outcome
+# measurable below that gate but did not touch this separate,
+# camp-conditional consumer. `"distance"` targeting has no such gate.
+ENGAGEMENT_KERNEL_THETA_CAMP_PAIR: tuple[tuple[str, str, float], ...] = (
     ("like", "outgroup", 0.8),
     ("reply", "outgroup", 1.2),
     ("quote", "outgroup", 1.0),
 )
+ENGAGEMENT_KERNEL_THETA_DISTANCE: tuple[tuple[str, str, float], ...] = (
+    ("like", "cross_distance", 0.8),
+    ("reply", "cross_distance", 1.2),
+    ("quote", "cross_distance", 1.0),
+)
+TARGETING_MODES = ("camp_pair", "distance")
 
-ARMS: dict[str, tuple[tuple[str, object], ...]] = {
-    "none": (),
-    "exposure": (("inject_k", 20),),
-    "engagement": (("kernel_theta", ENGAGEMENT_KERNEL_THETA),),
-    # `valence_gamma0`, not `civility_prob`: `base_config` sets
-    # `valence_mode="endogenous"` (V3), under which civility comes from
-    # `dynamics/valence.py::assign_valence_endogenous`'s own logit
-    # (P(civil) = sigma(gamma0 + gamma_animus*animus_i + gamma_dist*dist)),
-    # and `civility_prob` is the EXOGENOUS (V1/V2) path's parameter --
-    # simply unread here (caught by exactly this: composition and
-    # engagement produced bit-identical smoke-test output before this fix).
-    # Raising the intercept from its 0.0 default (P(civil)=0.5 at animus=0)
-    # to 2.5 (sigma(2.5)=0.92) is the "friction on hostile replies /
-    # moderation" reading of the composition arm's civility shift, applied
-    # platform-wide rather than only to animus=0 users.
-    "composition": (("kernel_theta", ENGAGEMENT_KERNEL_THETA), ("valence_gamma0", 2.5)),
-}
+
+def _engagement_kernel_theta(targeting_mode: str) -> tuple[tuple[str, str, float], ...]:
+    if targeting_mode == "camp_pair":
+        return ENGAGEMENT_KERNEL_THETA_CAMP_PAIR
+    if targeting_mode == "distance":
+        return ENGAGEMENT_KERNEL_THETA_DISTANCE
+    raise ValueError(f"unknown targeting_mode {targeting_mode!r}; expected one of {TARGETING_MODES}")
+
+
+def arms_for(targeting_mode: str = "camp_pair") -> dict[str, tuple[tuple[str, object], ...]]:
+    """The 4 arms (SS3), parameterized by `targeting_mode` (H3b). `"none"`
+    is arm- AND targeting-mode-independent by construction (an empty
+    overrides tuple), which is what lets `forked_config`'s withdrawal entry
+    reuse it regardless of which mode an intervention arm ran under.
+    """
+    theta = _engagement_kernel_theta(targeting_mode)
+    return {
+        "none": (),
+        "exposure": (("inject_k", 20),),
+        "engagement": (("kernel_theta", theta),),
+        # `valence_gamma0`, not `civility_prob`: `base_config` sets
+        # `valence_mode="endogenous"` (V3), under which civility comes from
+        # `dynamics/valence.py::assign_valence_endogenous`'s own logit
+        # (P(civil) = sigma(gamma0 + gamma_animus*animus_i + gamma_dist*dist)),
+        # and `civility_prob` is the EXOGENOUS (V1/V2) path's parameter --
+        # simply unread here (caught by exactly this: composition and
+        # engagement produced bit-identical smoke-test output before this fix).
+        # Raising the intercept from its 0.0 default (P(civil)=0.5 at animus=0)
+        # to 2.5 (sigma(2.5)=0.92) is the "friction on hostile replies /
+        # moderation" reading of the composition arm's civility shift, applied
+        # platform-wide rather than only to animus=0 users.
+        "composition": (("kernel_theta", theta), ("valence_gamma0", 2.5)),
+    }
+
+
+# Module-level default (`"camp_pair"`, matching pre-targeting_mode
+# behaviour byte-for-byte) so existing callers that never pass a targeting
+# mode -- Wave A / Wave A′ among them -- keep their exact historical
+# meaning. Prefer `arms_for(mode)` in new code.
+ARMS: dict[str, tuple[tuple[str, object], ...]] = arms_for("camp_pair")
 ARM_NAMES = ("none", "exposure", "engagement", "composition")
 INTERVENTION_ARM_NAMES = ("exposure", "engagement", "composition")
 
 
 def forked_config(
-    burn_in: Config, arm: str, *, intervention_tick: int, withdrawal_tick: int | None = None
+    burn_in: Config, arm: str, *, intervention_tick: int, withdrawal_tick: int | None = None,
+    targeting_mode: str = "camp_pair",
 ) -> Config:
     """One config per arm, forked from `burn_in` via `dynamics.schedule` so
     every arm shares a bit-identical prefix through `intervention_tick`
     (SS5.1; proved in tests/test_runner.py's
     test_schedule_gives_a_bit_identical_prefix_and_diverges_after).
-    `ARMS["none"]` is `()`, an EMPTY overrides tuple -- `effective_dynamics`
-    treats "no schedule entry has fired yet" and "the fired entry changes
-    nothing" identically (both resolve to the base dynamics, unmodified),
-    which is exactly correct here since `burn_in`'s own field values ARE
-    the none-arm's values by construction. A `withdrawal_tick` re-applies
-    `ARMS["none"]` there too (SS5.2's hysteresis phase).
+    `arms_for(...)["none"]` is `()`, an EMPTY overrides tuple --
+    `effective_dynamics` treats "no schedule entry has fired yet" and "the
+    fired entry changes nothing" identically (both resolve to the base
+    dynamics, unmodified), which is exactly correct here since `burn_in`'s
+    own field values ARE the none-arm's values by construction. A
+    `withdrawal_tick` re-applies the none arm there too (SS5.2's hysteresis
+    phase) -- targeting-mode-independent, since it is the same empty tuple
+    under either mode.
+
+    `targeting_mode` (H3b) picks which of the two `ENGAGEMENT_KERNEL_THETA_*`
+    tables the `engagement`/`composition` arms use; see `arms_for`.
     """
-    if arm not in ARMS:
+    arms = arms_for(targeting_mode)
+    if arm not in arms:
         raise ValueError(f"unknown arm {arm!r}; expected one of {ARM_NAMES}")
-    schedule = [(intervention_tick, ARMS[arm])]
+    schedule = [(intervention_tick, arms[arm])]
     if withdrawal_tick is not None:
         if withdrawal_tick <= intervention_tick:
             raise ValueError("withdrawal_tick must be after intervention_tick")
-        schedule.append((withdrawal_tick, ARMS["none"]))
+        schedule.append((withdrawal_tick, arms["none"]))
     return dataclasses.replace(
         burn_in, dynamics=dataclasses.replace(burn_in.dynamics, schedule=tuple(schedule))
     )
@@ -308,6 +350,34 @@ class DeltaIdeo:
     ideo_level_toward_other_camp: float = float("nan")
     ideo_level_toward_mean: float = float("nan")
     ideo_level_toward_own_pole: float = float("nan")
+    # SS2.3's viewpoint-diversity floor `f`: post-intervention dispersion
+    # over pre-intervention dispersion, for the arm's OWN trajectory (not
+    # differenced against `none` -- `f` describes what the population ended
+    # up looking like, not an effect size) and, for background context,
+    # `none`'s own. Never NaN-gated: dispersion needs no camp split at all.
+    # f < 1 is a diversity loss; f > 1 is a gain.
+    diversity_ratio_arm: float = float("nan")
+    diversity_ratio_none: float = float("nan")
+
+
+def dispersion(stance: np.ndarray) -> float:
+    """Total viewpoint spread across all stance axes (SS2.3): sum of
+    per-axis variance -- equal to the trace of the covariance matrix, but
+    without `np.cov`'s degenerate return shape at D=1. Camp-agnostic by
+    construction: unlike bimodality (the distribution's SHAPE), this is
+    purely about spread, so it needs no camp split to be well-defined.
+    """
+    return float(np.var(stance, axis=0).sum())
+
+
+def diversity_ratio(stance0: np.ndarray, stance1: np.ndarray) -> float:
+    """SS2.3's `f` for one run's own trajectory: `dispersion(stance1) /
+    dispersion(stance0)`. NaN when the pre-period has zero dispersion (a
+    degenerate fixture, never a real population)."""
+    d0 = dispersion(stance0)
+    if d0 <= 0:
+        return float("nan")
+    return dispersion(stance1) / d0
 
 
 def _stance_and_animus_at(handle, cfg: Config, tick: int) -> tuple[np.ndarray, np.ndarray]:
@@ -467,9 +537,16 @@ def _ideo_decomposition(
     bimodality0 = float(bimodality_coefficient(proj0))
     delta_k = float(k1_arm - k1_none)
     delta_bic_margin = float(bic_margin_arm - bic_margin_none)
+    # SS2.3: needs no camp split at all, computed unconditionally up front
+    # so it survives both return paths below.
+    div_arm = diversity_ratio(stance0, stance1_arm)
+    div_none = diversity_ratio(stance0, stance1_none)
 
     if not np.isfinite(bimodality0) or bimodality0 <= CAMP_BIMODAL_THRESHOLD:
-        return DeltaIdeo(float("nan"), float("nan"), float("nan"), delta_k, delta_bic_margin=delta_bic_margin)
+        return DeltaIdeo(
+            float("nan"), float("nan"), float("nan"), delta_k, delta_bic_margin=delta_bic_margin,
+            diversity_ratio_arm=div_arm, diversity_ratio_none=div_none,
+        )
 
     camp0 = (proj0 > np.median(proj0)).astype(np.int64)
     sign0 = np.where(camp0 == 1, 1.0, -1.0)
@@ -500,6 +577,7 @@ def _ideo_decomposition(
         ideo_level_toward_other_camp=float(level_none[0]),
         ideo_level_toward_mean=float(level_none[1]),
         ideo_level_toward_own_pole=float(level_none[2]),
+        diversity_ratio_arm=div_arm, diversity_ratio_none=div_none,
     )
 
 
@@ -518,22 +596,47 @@ def delta_ideo(handle_arm, handle_none, cfg: Config, *, pre_tick: int, plateau_t
     )
 
 
+def diversity_floor_break_even(delta_aff_plateau: float, diversity_ratio_arm: float) -> float:
+    """SS2.3's normative rule, made a single reportable number instead of a
+    verdict at one chosen floor: "An intervention is justified if it
+    reduces affective hostility WITHOUT reducing viewpoint diversity below
+    a floor f." Since `diversity_ratio_arm` is a single measured number,
+    sweeping `f` needs no re-run -- the crossover is `diversity_ratio_arm`
+    itself, for any arm that actually reduces hostility (`delta_aff_
+    plateau < 0`): justified for every floor <= this value, not justified
+    above it. An arm that does NOT reduce hostility is never justified
+    regardless of floor, reported as NaN rather than a misleading number.
+    """
+    if not (delta_aff_plateau < 0.0):
+        return float("nan")
+    return diversity_ratio_arm
+
+
 # --------------------------------------------------------------------------
 # Running cells and Wave A (SS5.4)
 # --------------------------------------------------------------------------
 
-def run_arm(burn_in: Config, arm: str, seed: int, *, intervention_tick: int, n_ticks_total: int):
-    cfg = forked_config(burn_in, arm, intervention_tick=intervention_tick)
+def run_arm(
+    burn_in: Config, arm: str, seed: int, *, intervention_tick: int, n_ticks_total: int,
+    targeting_mode: str = "camp_pair", withdrawal_tick: int | None = None,
+):
+    cfg = forked_config(
+        burn_in, arm, intervention_tick=intervention_tick, targeting_mode=targeting_mode,
+        withdrawal_tick=withdrawal_tick,
+    )
     cfg = dataclasses.replace(cfg, dynamics=dataclasses.replace(cfg.dynamics, n_ticks=n_ticks_total))
     cached_run(cfg, seed, persist=PERSIST)
     return cfg, load_run(cfg, seed)
 
 
 def run_design_point(
-    burn_in: Config, seed: int, *, intervention_tick: int, n_ticks_total: int
+    burn_in: Config, seed: int, *, intervention_tick: int, n_ticks_total: int,
+    targeting_mode: str = "camp_pair",
 ) -> list[dict]:
     """The `none` arm plus the 3 intervention arms at ONE (dial, seed)
-    point, each of the 3 scored against `none` (SS2)."""
+    point, each of the 3 scored against `none` (SS2). `targeting_mode`
+    (H3b) is recorded on every row so a Wave B sweep across both modes is
+    distinguishable in the resulting table."""
     _, handle_none = run_arm(burn_in, "none", seed, intervention_tick=intervention_tick, n_ticks_total=n_ticks_total)
     pre_tick = intervention_tick - 1   # last tick still on the shared prefix
     plateau_tick = n_ticks_total - 1
@@ -541,12 +644,13 @@ def run_design_point(
     rows = []
     for arm in INTERVENTION_ARM_NAMES:
         arm_cfg, handle_arm = run_arm(
-            burn_in, arm, seed, intervention_tick=intervention_tick, n_ticks_total=n_ticks_total
+            burn_in, arm, seed, intervention_tick=intervention_tick, n_ticks_total=n_ticks_total,
+            targeting_mode=targeting_mode,
         )
         aff = delta_aff(handle_arm, handle_none, arm_cfg, window_start=intervention_tick, plateau_tick=plateau_tick)
         ideo = delta_ideo(handle_arm, handle_none, arm_cfg, pre_tick=pre_tick, plateau_tick=plateau_tick)
         rows.append({
-            "arm": arm, "seed": seed,
+            "arm": arm, "seed": seed, "targeting_mode": targeting_mode,
             "delta_aff_plateau": aff.plateau, "delta_aff_per_contact": aff.per_contact,
             "delta_aff_per_cross_contact": aff.per_cross_contact,
             "toward_other_camp": ideo.toward_other_camp, "toward_mean": ideo.toward_mean,
@@ -555,6 +659,9 @@ def run_design_point(
             "ideo_level_toward_other_camp": ideo.ideo_level_toward_other_camp,
             "ideo_level_toward_mean": ideo.ideo_level_toward_mean,
             "ideo_level_toward_own_pole": ideo.ideo_level_toward_own_pole,
+            "diversity_ratio_arm": ideo.diversity_ratio_arm,
+            "diversity_ratio_none": ideo.diversity_ratio_none,
+            "diversity_floor_break_even": diversity_floor_break_even(aff.plateau, ideo.diversity_ratio_arm),
         })
     return rows
 
@@ -671,6 +778,326 @@ def run_wave_a_prime(
     return df
 
 
+# --------------------------------------------------------------------------
+# Wave B (SS5.3, SS5.4): named scenarios as strata, Latin Hypercube points
+# inside each, both targeting modes, a response surface over delta_aff_plateau
+# --------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class Scenario:
+    """One of SS5.3's "named worlds": a dial-level PRESET plus a short note
+    on intent. SS5.3 wants scenarios defined by measurable properties a
+    reader can locate on a real platform, not by dial settings -- the
+    levels below are the KNOB, `describe_scenario` below measures the
+    DEFINITION."""
+    name: str
+    affective: float
+    ideological: float
+    structural: float
+    note: str
+
+
+SCENARIOS: dict[str, Scenario] = {
+    "consolidated_two_camp": Scenario(
+        name="consolidated_two_camp", affective=0.7, ideological=0.9, structural=0.9,
+        note=(
+            "Strongly bimodal, structurally sorted, already fairly hostile "
+            "-- the brief's 'two tight camps' world."
+        ),
+    ),
+    "cross_cut": Scenario(
+        name="cross_cut", affective=0.5, ideological=0.7, structural=0.1,
+        note=(
+            "Ideologically split but NOT structurally sorted -- ties cross "
+            "camp lines freely even though positions do not. Deliberately "
+            "NOT genuine multi-camp fragmentation (k>2): "
+            "`population.stance_polarization` is a single bimodal axis, and "
+            "Wave A/A' both measured delta_k at exactly 0.0 on every one of "
+            "their 270 combined rows -- this codebase has no population "
+            "generator that produces more than two ideological modes, so "
+            "'fragmented multi-camp,' as such, is not currently buildable. "
+            "This is the closest DISTINCT stratum the existing 3 dials can "
+            "reach to that intent: tribalization that is ideological "
+            "without being structural, rather than one splintered into more "
+            "than two pieces."
+        ),
+    ),
+    "low_tribalization": Scenario(
+        name="low_tribalization", affective=0.1, ideological=0.1, structural=0.1,
+        note="Near the origin on all three dials -- the region Wave A' (V7.3) made measurable for the first time.",
+    ),
+}
+
+
+def describe_scenario(scenario: Scenario, n_users: int = 1000, seed: int = 0) -> dict:
+    """SS5.3's own requirement: report the MEASURED properties a scenario's
+    preset produces (population + graph only, no dynamics run, so this is
+    cheap to call before committing to a scenario's LHS budget) -- so it is
+    locatable by "cross-camp tie share 0.25, mean animus 2.1, two camps"
+    rather than only by its dial levels.
+    """
+    from discourse_lab.metrics.polarization import camps_and_bimodality, emergent_camps
+    from discourse_lab.network import cached_graph
+    from discourse_lab.network.measures import cross_camp_tie_share
+    from discourse_lab.population import cached_population
+    from discourse_lab.runner import phase_rngs
+
+    cfg = dial_config(
+        base_config(n_users, 1), affective=scenario.affective,
+        ideological=scenario.ideological, structural=scenario.structural,
+    )
+    rngs = phase_rngs(seed)
+    pop = cached_population(cfg, seed, rngs["population"])
+    graph = cached_graph(cfg, seed, pop, rngs["graph"])
+    stance_cols = [i for i, n in enumerate(pop.trait_names) if n.startswith("stance_")]
+    stance = pop.X_used[:, stance_cols]
+    camps, bimodality = camps_and_bimodality(stance)
+    k = int(emergent_camps(stance)["k"])
+    labels = camps if camps is not None else (stance[:, 0] > np.median(stance[:, 0])).astype(np.int64)
+    return {
+        "scenario": scenario.name,
+        "mean_animus": float(pop.animus.mean()) if pop.has_affect else float("nan"),
+        "bimodality": bimodality,
+        "camps_defined": camps is not None,
+        "emergent_k": k,
+        "cross_camp_tie_share": float(cross_camp_tie_share(graph.csr, labels)),
+    }
+
+
+def lhs_design_points(
+    center: tuple[float, float, float], radius: float, n_points: int, seed: int,
+) -> list[dict[str, float]]:
+    """`n_points` Latin Hypercube samples in the 3-dial cube, confined to a
+    `radius`-neighbourhood of `center` and clipped to [0, 1] (SS5.3: "~30
+    Latin-hypercube points inside it" -- inside the named stratum, not
+    spanning the whole space). Returns `{"affective", "ideological",
+    "structural"}` dicts, one per point.
+    """
+    from scipy.stats import qmc
+
+    sampler = qmc.LatinHypercube(d=3, seed=seed)
+    unit = sampler.random(n=n_points)
+    lo = [max(0.0, c - radius) for c in center]
+    hi = [min(1.0, c + radius) for c in center]
+    scaled = qmc.scale(unit, lo, hi)
+    return [
+        {"affective": float(a), "ideological": float(i), "structural": float(s)}
+        for a, i, s in scaled
+    ]
+
+
+def run_wave_b(
+    n_users: int = 1000,
+    n_ticks_burn_in: int = 60,
+    n_ticks_post: int = 100,
+    n_lhs_points: int = 6,
+    lhs_radius: float = 0.25,
+    seeds: Sequence[int] = (0, 1),
+    targeting_modes: Sequence[str] = TARGETING_MODES,
+    scenarios: Sequence[str] = tuple(SCENARIOS),
+) -> pl.DataFrame:
+    """SS5.4 Wave B, reduced to what one session can run -- the SAME
+    reduction Wave A applied to a "true Morris design" (module docstring),
+    now applied to the brief's own Wave B: `n_lhs_points=6` per scenario
+    (not ~30), `seeds=(0, 1)` (not 10), `lhs_radius=0.25` (a local
+    neighbourhood around each named stratum, not the full space) -- roughly
+    a 1/20 reduction in points per scenario, run over BOTH `targeting_mode`s
+    (H3b) rather than the brief's implicit one, since that comparison is
+    exactly what Wave A' surfaced a reason to make. At the brief's own full
+    scale this is ~900 burn-ins / ~3,600 forks / ~10h.
+
+    Each row is one (scenario, LHS point, targeting_mode, seed, arm) cell.
+    `swept_dial`/`level` (Wave A's one-factor-at-a-time columns) do not
+    apply -- LHS points vary all 3 dials at once -- so rows instead carry
+    `lhs_index` (which of `n_lhs_points` within its scenario) alongside the
+    actual `affective`/`ideological`/`structural` levels drawn, for
+    grouping and for fitting a response surface after the fact.
+    """
+    intervention_tick = n_ticks_burn_in
+    n_ticks_total = n_ticks_burn_in + n_ticks_post
+    rows: list[dict] = []
+    for scen_index, scen_name in enumerate(scenarios):
+        scenario = SCENARIOS[scen_name]
+        center = (scenario.affective, scenario.ideological, scenario.structural)
+        # `100 + scen_index`, not `hash(scen_name)`: Python's string hash is
+        # randomized per-process by default, which would make the LHS draw
+        # (and so the whole sweep) non-reproducible run to run.
+        points = lhs_design_points(center, lhs_radius, n_lhs_points, seed=100 + scen_index)
+        for lhs_index, point in enumerate(points):
+            burn_in = dial_config(base_config(n_users, n_ticks_total), **point)
+            for targeting_mode in targeting_modes:
+                for seed in seeds:
+                    t0 = time.time()
+                    for row in run_design_point(
+                        burn_in, seed, intervention_tick=intervention_tick,
+                        n_ticks_total=n_ticks_total, targeting_mode=targeting_mode,
+                    ):
+                        row.update({"scenario": scen_name, "lhs_index": lhs_index, **point})
+                        rows.append(row)
+                    print(
+                        f"  scenario={scen_name} lhs={lhs_index} mode={targeting_mode} "
+                        f"seed={seed}: {time.time() - t0:.1f}s"
+                    )
+    return pl.DataFrame(rows)
+
+
+def run_wave_b_and_save(**kwargs) -> pl.DataFrame:
+    df = run_wave_b(**kwargs)
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    df.write_csv(RESULTS_DIR / "wave_b.csv")
+    return df
+
+
+# --------------------------------------------------------------------------
+# Wave C (SS5.2): hysteresis -- withdraw the intervention, see what persists
+# --------------------------------------------------------------------------
+
+def _hysteresis_from_arrays(
+    animus_arm_peak: np.ndarray, animus_none_peak: np.ndarray,
+    animus_arm_final: np.ndarray, animus_none_final: np.ndarray,
+) -> dict:
+    """Pure-array core of `run_hysteresis`, split out so the recovery-
+    fraction math is unit-testable on toy inputs without a persisted run
+    (the same split `_aff_from_arrays`/`delta_aff` and `_ideo_decomposition`/
+    `delta_ideo` already use).
+
+    `peak_gap`/`final_gap` are the animus gap (arm minus none), each pair
+    read at the SAME tick so both share whatever background drift `none`
+    itself has at that point (V7.2's `ideo_level_*` discipline, applied
+    here). `recovery_fraction = 1 - final_gap / peak_gap`: 1.0 is full
+    recovery (gap fully closed), 0.0 is fully sticky (gap unchanged since
+    withdrawal), negative is overshoot (the gap widened after withdrawal).
+    NaN when `peak_gap` is exactly 0 -- there is nothing to recover from and
+    nothing meaningful to divide by (this codebase has already found real
+    arm/mode/regime combinations that are exact no-ops, e.g. `engagement`
+    under `targeting_mode="camp_pair"` below the bimodality gate; dividing
+    by that zero would report a fake, noise-dominated ratio instead of "not
+    applicable").
+    """
+    peak_gap = float(np.nanmean(animus_arm_peak) - np.nanmean(animus_none_peak))
+    final_gap = float(np.nanmean(animus_arm_final) - np.nanmean(animus_none_final))
+    recovery_fraction = float("nan") if peak_gap == 0.0 else float(1.0 - final_gap / peak_gap)
+    return {"peak_gap": peak_gap, "final_gap": final_gap, "recovery_fraction": recovery_fraction}
+
+
+def run_hysteresis(
+    burn_in: Config, arm: str, seed: int, *, intervention_tick: int, withdrawal_tick: int,
+    n_ticks_total: int, targeting_mode: str = "camp_pair",
+) -> dict:
+    """H4 ("the hostile regime is stickier than the civil one"): does the
+    animus gap an arm opened against `none` close again once the arm is
+    switched back off? `forked_config` already supports this -- passing
+    `withdrawal_tick` re-applies `arms_for(...)["none"]` (the empty-overrides
+    no-op) at that tick, the SAME `dynamics.schedule` mechanism Wave A/B rely
+    on for a bit-identical PREFIX, now used for a bit-identical post-
+    withdrawal SUFFIX shape instead (arm and none converge on the same
+    dynamics from there, just starting from different states).
+
+    `RunHandle`-reading wrapper around `_hysteresis_from_arrays`: reads each
+    run's animus at the tick just before withdrawal (`peak_tick`, the
+    plateau the arm reached) and at the run's last tick (`final_tick`).
+    """
+    if not (intervention_tick < withdrawal_tick < n_ticks_total):
+        raise ValueError("expected intervention_tick < withdrawal_tick < n_ticks_total")
+    none_cfg, handle_none = run_arm(
+        burn_in, "none", seed, intervention_tick=intervention_tick, n_ticks_total=n_ticks_total,
+    )
+    arm_cfg, handle_arm = run_arm(
+        burn_in, arm, seed, intervention_tick=intervention_tick, n_ticks_total=n_ticks_total,
+        targeting_mode=targeting_mode, withdrawal_tick=withdrawal_tick,
+    )
+    peak_tick = withdrawal_tick - 1
+    final_tick = n_ticks_total - 1
+
+    _, animus_arm_peak = _stance_and_animus_at(handle_arm, arm_cfg, peak_tick)
+    _, animus_none_peak = _stance_and_animus_at(handle_none, none_cfg, peak_tick)
+    _, animus_arm_final = _stance_and_animus_at(handle_arm, arm_cfg, final_tick)
+    _, animus_none_final = _stance_and_animus_at(handle_none, none_cfg, final_tick)
+
+    metrics = _hysteresis_from_arrays(
+        animus_arm_peak, animus_none_peak, animus_arm_final, animus_none_final,
+    )
+    return {
+        "arm": arm, "seed": seed, "targeting_mode": targeting_mode,
+        "intervention_tick": intervention_tick, "withdrawal_tick": withdrawal_tick,
+        "n_ticks_total": n_ticks_total,
+        **metrics,
+    }
+
+
+def select_hysteresis_points(wave_b_df: pl.DataFrame, n_points: int = 3) -> pl.DataFrame:
+    """SS5.2: 'Only run this where phase 2 produced a significant effect' --
+    the `n_points` (scenario, lhs_index, targeting_mode, arm) cells with the
+    largest seed-averaged |delta_aff_plateau| (averaging first so a single
+    lucky seed cannot buy a slot). `arm="none"` is dropped: there is no
+    intervention to withdraw from it.
+    """
+    keys = ["scenario", "lhs_index", "targeting_mode", "arm", "affective", "ideological", "structural"]
+    return (
+        wave_b_df
+        .filter(pl.col("arm") != "none")
+        .group_by(keys)
+        .agg(pl.col("delta_aff_plateau").mean().alias("delta_aff_plateau_mean"))
+        .sort(pl.col("delta_aff_plateau_mean").abs(), descending=True)
+        .head(n_points)
+    )
+
+
+def run_wave_c(
+    wave_b_df: pl.DataFrame,
+    n_points: int = 3,
+    n_users: int = 1000,
+    n_ticks_burn_in: int = 60,
+    n_ticks_pre_withdrawal: int = 60,
+    n_ticks_post_withdrawal: int = 60,
+    seeds: Sequence[int] = (0, 1, 2, 3, 4),
+) -> pl.DataFrame:
+    """SS5.2's hysteresis phase, run ONLY on the `n_points` design points
+    Wave B measured the largest |delta_aff_plateau| at (`select_hysteresis_
+    points`) -- the brief's own scoping rule, and the reason this driver
+    takes `wave_b_df` as an argument rather than a dial/arm/mode triple:
+    which points qualify is an empirical question Wave B has to answer
+    first, not a choice made here.
+    """
+    intervention_tick = n_ticks_burn_in
+    withdrawal_tick = intervention_tick + n_ticks_pre_withdrawal
+    n_ticks_total = withdrawal_tick + n_ticks_post_withdrawal
+    points = select_hysteresis_points(wave_b_df, n_points)
+
+    rows: list[dict] = []
+    for point in points.iter_rows(named=True):
+        burn_in = dial_config(
+            base_config(n_users, n_ticks_total), affective=point["affective"],
+            ideological=point["ideological"], structural=point["structural"],
+        )
+        for seed in seeds:
+            t0 = time.time()
+            row = run_hysteresis(
+                burn_in, point["arm"], seed, intervention_tick=intervention_tick,
+                withdrawal_tick=withdrawal_tick, n_ticks_total=n_ticks_total,
+                targeting_mode=point["targeting_mode"],
+            )
+            row.update({
+                "scenario": point["scenario"], "lhs_index": point["lhs_index"],
+                "affective": point["affective"], "ideological": point["ideological"],
+                "structural": point["structural"],
+                "delta_aff_plateau_mean": point["delta_aff_plateau_mean"],
+            })
+            rows.append(row)
+            print(
+                f"  scenario={point['scenario']} arm={point['arm']} mode={point['targeting_mode']} "
+                f"seed={seed}: {time.time() - t0:.1f}s"
+            )
+    return pl.DataFrame(rows)
+
+
+def run_wave_c_and_save(wave_b_df: pl.DataFrame, **kwargs) -> pl.DataFrame:
+    df = run_wave_c(wave_b_df, **kwargs)
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    df.write_csv(RESULTS_DIR / "wave_c.csv")
+    return df
+
+
 if __name__ == "__main__":
     import sys
 
@@ -681,3 +1108,7 @@ if __name__ == "__main__":
         run_wave_a()
     if "wave_a_prime" in steps:
         run_wave_a_prime()
+    if "wave_b" in steps:
+        run_wave_b_and_save()
+    if "wave_c" in steps:
+        run_wave_c_and_save(pl.read_csv(RESULTS_DIR / "wave_b.csv"))
