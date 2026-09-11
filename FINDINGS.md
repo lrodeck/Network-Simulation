@@ -933,19 +933,130 @@ than to a gradient precursor of a real k-change.
 **What Wave A′ does not do.** It reuses Wave A's 4-arm design as-is;
 `targeting_mode`, the diversity-floor sweep, named scenarios, and hysteresis
 (experiment03-bubble-intervention.md §§2.3-3-4-5.2-5.3) are Wave B/C
-territory and require infrastructure this session did not build. Not
-comparable to `wave_a.csv` line-for-line: different mechanism
-(`affect_drive`), different structural substrate (`sbm_mirror_p=0.15`),
-different background (0.5 vs 0.7) — a fresh measurement, not a correction
-of the old one.
+territory and required infrastructure this session had not yet built (built
+and run below). Not comparable to `wave_a.csv` line-for-line: different
+mechanism (`affect_drive`), different structural substrate
+(`sbm_mirror_p=0.15`), different background (0.5 vs 0.7) — a fresh
+measurement, not a correction of the old one.
 
-**What this is not.** Wave A′ (the sequencing table's step 7 — "sign screen
-repeated over the full dial range, previously-gated region included") is
-not run in this session, matching how this project has previously kept
-"build the infrastructure" and "run the experiment" as separate steps
-(Experiment 03's own infrastructure and Wave A run were two commits, not
-one). `dial_config`'s `sbm_mirror_p=0.15` addition means a Wave A′ run is
-not directly comparable to Wave A's own `results/experiment03/wave_a.csv`
-on structural grounds ALONE, on top of the mechanism change `affect_drive`
-already implies — worth stating plainly before either is read as a
-straightforward "re-run."
+## Wave B/C — targeting_mode, the diversity floor, named scenarios, hysteresis
+
+Built to answer Wave A′'s own closing finding (the `engagement`/
+`composition` arms' `kernel_theta` reads `CONDITIONAL_FEATURES` and is a
+complete no-op below the bimodality gate, independent of `affect_drive`)
+and to run experiment03-bubble-intervention.md's §§2.3/3/5.2/5.3
+(the diversity floor, named scenarios + LHS, hysteresis) for the first
+time. Infrastructure (`targeting_mode`/`arms_for`, `dispersion`/
+`diversity_ratio`/`diversity_floor_break_even`, `SCENARIOS`/
+`lhs_design_points`, `run_hysteresis`/`run_wave_c`) and its conformance
+tests (tests/test_experiment03.py) landed in one commit; this section is
+the first RUN of it, against the full 364-test suite passing throughout.
+
+**Wave B design, reduced the same way Wave A was reduced from a true
+Morris design (module docstring): 3 named scenarios
+(`consolidated_two_camp`, `cross_cut`, `low_tribalization`) × 6 Latin
+Hypercube points per scenario (radius 0.25 around its dial preset) × both
+`targeting_mode`s × 2 seeds — 72 design points, 216 rows
+(`results/experiment03/wave_b.csv`), 1435s (~24 min) wall clock.** Per
+design point cost ~26s for `targeting_mode="camp_pair"` and ~14s for
+`"distance"` at the SAME (scenario, LHS point, seed) — not a
+`targeting_mode` performance difference but `run_wave_b`'s own loop order:
+the `none` arm never depends on `targeting_mode`, so the second mode's
+`none` run at a given point is a `cached_run` hit. Sanity check before
+anything else: the `exposure` arm is bit-identical across `targeting_mode`
+in all 72 of its rows (`arms_for(...)["exposure"]` never references
+`kernel_theta`, so its whole trajectory — same seed — is unaffected by
+which theta table `targeting_mode` would otherwise select) — the factor is
+wired where intended and nowhere else.
+
+**H3b: `targeting_mode` moves `engagement` uniformly and `composition` by
+regime, in OPPOSITE directions from each other.** Paired within every
+(scenario, LHS point, seed) cell, `camp_pair`'s `delta_aff_plateau` is
+LOWER than `distance`'s for `engagement` in all 36/36 cells in every one of
+the 3 scenarios (mean gap -0.0178 `consolidated_two_camp`, -0.0091
+`cross_cut`, -0.0011 `low_tribalization`) — `distance` targeting always
+produces MORE hostility increase than `camp_pair` there, not only in the
+cells where `camp_pair` is gated off. For `composition` the interaction
+flips sign by regime: in `consolidated_two_camp` (strongly, structurally
+tribalized) `camp_pair` reduces hostility MORE than `distance` (mean gap
+-0.0081, 8/12 cells favor `camp_pair`); in `low_tribalization` `distance`
+reduces it slightly more, with total consistency (12/12 cells, mean gap
++0.0010); `cross_cut` is weaker and less consistent (8/12 cells favor
+`distance`, mean gap +0.0005). Camp-based and distance-based targeting are
+not interchangeable implementations of "the same" manipulation — which one
+does more, in which direction, depends on how structurally sorted the
+population already is.
+
+**H1: still no sign flip anywhere Wave B sampled.** `composition` is
+negative and `engagement` is non-negative (zero only in the
+now-well-understood gated cells) across all 216 rows, 3 scenarios, both
+targeting modes — extending, not just repeating, Wave A′'s 45/45.
+`exposure` stays small and sign-varies by scenario (positive in
+`consolidated_two_camp`, ~0 elsewhere) but never crosses within a scenario.
+H1's falsifier has still not fired anywhere this project has looked.
+
+**The diversity floor rarely gets tested at this scale, because dispersion
+barely moves.** 90/216 rows reduced hostility at all (`composition`
+70/72, `exposure` 20/72, `engagement` 0/72 — it never once reduces
+hostility in this run). Among the 90, `diversity_floor_break_even` — SS2.3's
+break-even ratio `f` — ranges 0.997 to 1.024: post-intervention viewpoint
+dispersion sits within ~2.4% of its pre-intervention level in EVERY
+hostility-reducing cell measured, including the 34/90 where it moved in
+the "wrong" (shrinking) direction. SS2.3's central question — is civility
+worth a diversity cost — does not yet have a real dilemma to adjudicate
+here: the two outcomes are close to orthogonal at this population size and
+this 100-tick post-intervention horizon. A longer horizon or a stronger
+intervention could change that; this run tests neither.
+
+**Ideological movement stays dissociated from the affective outcome,
+consistent with Wave A′'s H2 finding.** Where camp is defined
+(`consolidated_two_camp`, `cross_cut`; `low_tribalization`'s 72 rows are
+correctly NaN-gated, its pre-period being unimodal), `toward_other_camp` is
+negative for every arm in both scenarios — the population moves AWAY from
+the other camp's pre-period centroid regardless of arm, `composition`
+included, even in the same cells where `composition` is reducing animus.
+`delta_k` is exactly 0.0 on all 216 rows (`cross_cut`'s own documented
+no-k>2-generator limitation) and `delta_bic_margin` is small and
+non-directional (mean -0.00017 to +0.00005 by arm) — no fragmentation
+signal at this scale, matching Wave A′.
+
+**Wave C: hysteresis on the 3 largest Wave B effects — all in the
+direction where the intervention makes things worse.**
+`select_hysteresis_points` (seed-averaged `|delta_aff_plateau|`, top 3)
+picked `engagement`/`targeting_mode="distance"` at all 3 points — 2 in
+`consolidated_two_camp` (LHS 1 and 5), 1 in `cross_cut` (LHS 0) — because
+`engagement`'s hostility INCREASE under `distance` targeting is larger in
+magnitude than `composition`'s hostility decrease anywhere in this run.
+Run at N=1,000, 60 burn-in + 60 pre-withdrawal + 60 post-withdrawal ticks,
+5 seeds per point (15 hysteresis runs, `results/experiment03/wave_c.csv`,
+195s). **Recovery is partial and strikingly consistent across all 3
+points: `recovery_fraction` 0.575-0.658 per run** (mean 0.628 ±0.027 at
+`consolidated_two_camp` LHS1, 0.635 ±0.025 at LHS5, 0.612 ±0.023 at
+`cross_cut` LHS0) **— roughly 61-64% of the peak animus gap closes in the
+60 ticks after withdrawal, leaving 36-39% persistent.** Neither H4 extreme
+holds cleanly: not fully sticky (0%), not fully reversed (100%), at a 1:1
+withdrawal-to-intervention tick ratio. The tightness of the cluster across
+two scenarios and 3 dial points — despite peak gaps varying 2.5x (0.0151 to
+0.0371) — reads as evidence for a roughly fixed relaxation timescale in the
+animus dynamics rather than a scenario-specific property, but this run
+samples only one arm/mode/direction and does not test that hypothesis
+directly.
+
+**What Wave C here does not test: whether `composition`'s CIVILITY gain is
+equally (a)symmetric.** Point-selection is by raw effect magnitude, and
+`engagement`'s hostility-increasing effect outsized `composition`'s
+hostility-decreasing effect everywhere sampled, so all 3 selected points
+test withdrawal from a HARM, not from a BENEFIT — the brief's own H4 framing
+("the hostile regime is stickier than the civil one") compares the two, and
+this run only has one side of that comparison at meaningful magnitude. A
+`run_wave_c`-style call seeded with `composition` points specifically
+(bypassing `select_hysteresis_points`'s magnitude ranking) would be needed
+to complete it.
+
+**Scope, same discipline as Wave A/A′.** 2 seeds × 6 LHS points per
+scenario here vs. the brief's own §5.3 default (~30 points, 10 seeds) — a
+~1/20 reduction matching Wave A's own precedent, stated as such in
+`run_wave_b`'s own docstring. No response-surface regression fit over the
+LHS points (the points are collected; fitting one is a separate,
+not-yet-built analysis step). No calibration against a real corpus (SS8),
+still out of scope.
