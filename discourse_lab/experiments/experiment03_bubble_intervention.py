@@ -618,6 +618,45 @@ def run_wave_a(
     return df
 
 
+def run_wave_a_prime(
+    n_users: int = 1000,
+    n_ticks_burn_in: int = 60,
+    n_ticks_post: int = 100,
+    seeds: Sequence[int] = (0, 1, 2, 3, 4),
+) -> pl.DataFrame:
+    """Wave A′ (experiment03-bubble-intervention.md §5.4's "required" row;
+    change-spec-v7-continuous-affect.md's own closing "Unlocks"): Wave A
+    repeated at the SAME scale, under the now-default `dynamics.affect_
+    drive="distance"`, over the FULL dial range.
+
+    `midpoint=0.5`, not Wave A's 0.7: `wave_a_screen`'s 0.7 background
+    existed only to keep the ideological dial's shared background clear of
+    the `"camp"`-mode bimodality gate while sweeping the other two dials —
+    a workaround for a defect `"distance"` mode does not have. 0.5 is the
+    neutral midpoint of each [0, 1] dial, so this is a genuinely different
+    slice of the space from Wave A's, not the same slice re-measured: it
+    reaches ideological=0.1 with affective/structural ALSO at their
+    neutral point, rather than the artificially-elevated 0.7 companion Wave
+    A needed.
+
+    Written to `wave_a_prime.csv`, never overwriting `wave_a.csv`: the two
+    are not comparable on mechanism (`affect_drive`) OR structural grounds
+    (`dial_config`'s `sbm_mirror_p=0.15`, added by the same V7.6 re-gate as
+    the mechanism flip) OR background level, so treating this as "Wave A
+    corrected in place" rather than a new, separate measurement would be
+    the forking-paths mistake this brief's own inference discipline (§7)
+    exists to prevent.
+    """
+    assert Config().dynamics.affect_drive == "distance", (
+        "Wave A′'s whole point is measuring the distance-drive mechanism -- "
+        "the config default must not have silently reverted to 'camp'"
+    )
+    df = wave_a_screen(n_users, n_ticks_burn_in, n_ticks_post, seeds, midpoint=0.5)
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    df.write_csv(RESULTS_DIR / "wave_a_prime.csv")
+    return df
+
+
 if __name__ == "__main__":
     import sys
 
@@ -626,3 +665,5 @@ if __name__ == "__main__":
         smoke_test()
     if "wave_a" in steps:
         run_wave_a()
+    if "wave_a_prime" in steps:
+        run_wave_a_prime()
