@@ -837,6 +837,108 @@ top-up and lands reciprocity at 0.156-0.159 — under band, matching
 `network/reciprocity.py`'s own documented ~0.157 chance-reciprocity
 baseline for this generator with the mirroring pass off.
 
+## Wave A′ — the full dial range, and a second camp-gate V7.3 didn't reach
+
+Run per experiment03-bubble-intervention.md §5.4's "required" row and
+change-spec-v7-continuous-affect.md's own closing "Unlocks": Wave A's
+design repeated at the same scale (N=1,000, 60 burn-in + 100 post ticks,
+3 dials × {0.1, 0.5, 0.9} × 5 seeds, 45 design points, 135 rows), under
+the now-default `affect_drive="distance"`, background moved from Wave A's
+0.7 to the neutral 0.5 (`run_wave_a_prime`, `results/experiment03/
+wave_a_prime.csv`). ~17 minutes wall clock at ~25s/design-point — close
+to the ~14s/design-point at N=800/80-ticks this module's own calibration
+recorded, scaled to this run's larger N and tick count.
+
+**H3 holds more cleanly than in Wave A, over the full range.** `composition`
+is negative in all 45/45 cells (delta_aff_plateau -0.0158 to -0.0040);
+`engagement` is positive in all 40 cells where its mechanism is active (see
+below) and never negative. Wave A's own 40/40 was measured over a slice
+that excluded the low ideological end entirely; this is the same finding,
+now confirmed on ground Wave A could not reach.
+
+**A second, unrelated camp-gate — the reaction kernel's own — makes the
+`engagement` arm a complete no-op below the SAME bimodality threshold,
+independent of `affect_drive`.** At ideological=0.1, `engagement`'s
+`delta_aff_plateau`, `delta_aff_per_contact`, `delta_aff_per_cross_contact`,
+`delta_k` and `delta_bic_margin` are all exactly `0.0` (not small — exactly
+zero) and every camp-relative `toward_*`/`ideo_level_*` column is `nan`, for
+all 5 seeds. Confirmed directly: at this design point `camps_and_bimodality`
+returns `None` (bimodality 0.355, same population `dynamics/drift.py`'s
+old gate would have frozen). The `engagement` arm's entire manipulation is
+a `kernel_theta` SET override on the `outgroup` feature
+(`exposure/kernel.py::compute_features`) — a DIFFERENT, still-standing
+consumer of the camp label than the one V7.3 touched. `compute_features`
+only adds `outgroup`/`outgroup_x_animus`/`ingroup_x_ident` `if camps is not
+None`, and `apply_kernel`'s theta loop silently skips any entry naming a
+feature that is not present — so below the gate, `engagement`'s config
+differs from `none`'s in an override that never fires, and the run is
+bit-identical to `none` down to the same-seed RNG draws. **V7.3's own
+warrant — "the affect op is the last consumer of the camp label in the
+mechanism path" — is not quite right; this is a second one, and it was not
+in V7's scope.**
+
+`composition` and `exposure` stay measurable at ideological=0.1 precisely
+because neither depends on that feature for its OWN effect: `composition`
+adds `valence_gamma0=2.5` (a platform-wide civility shift, independent of
+camps) on top of the same `kernel_theta` override, and that shift alone —
+interacting with the now-continuous affect channel — produces a real,
+seed-consistent de-escalation (-0.00598 to -0.00460 across the 5 seeds at
+this cell, versus exactly 0.0 for `engagement` on the identical population).
+`exposure` (`inject_k`) never touches camp features at all. This is a
+genuine, nameable methodological finding rather than a defect to route
+around silently: **a camp-*aware* intervention (this codebase's only
+implementation of "promote cross-camp engagement") cannot act on a
+population that has not yet structurally sorted into visible camps, even
+though the OUTCOME it would be judged on is now measurable there.** The
+experiment03-bubble-intervention.md brief's own §4 `targeting_mode ∈
+{distance, camp_pair}` factor is the fix this points at — a `distance`
+targeting mode would promote engagement by continuous stance distance
+instead of a camp label, exactly as V7.3 did for the affect channel — but
+it is not built; the current `engagement`/`composition` arms are what the
+brief would call `camp_pair` targeting, unswept and unlabelled as such.
+
+**H1 is still neither confirmed nor falsified, now with the previously-inert
+region included.** No sign flip for `composition` or `engagement` anywhere
+across the full range on any of the 3 one-factor-at-a-time slices. The one
+nominal sign change (`exposure`, sweeping `ideological`: mean -3.4e-5 at
+0.1 vs positive at 0.5/0.9) is not a real crossing — per-seed values at that
+cell are `[-3.8e-5, -2.1e-4, +3.6e-5, +1.5e-5, +3.3e-5]`, the same
+small-and-seed-inconsistent pattern Wave A already reported for `exposure`
+generally (37/40), not a new one. A true response-surface search (Wave B)
+over the interior of the 3-dial volume is still what H1 needs.
+
+**H2, resolved: the "hardening under every arm" reading was overwhelmingly
+background, exactly as V7.2 predicted.** `ideo_level_toward_own_pole`
+(`none`'s own absolute movement) ranges from -0.0004 to +0.0262 across the
+sweep — an ~65x span driven by tribalization level, most visible on the
+affective dial (0.0016 at level 0.1 rising to 0.0233 at level 0.9).
+`composition`'s OWN net contribution (`toward_own_pole`, differenced) is an
+order of magnitude smaller and roughly flat across levels (-0.0005 to
++0.0026) — it does not track tribalization the way the background does. Its
+animus benefit (`delta_aff_plateau`) DOES scale with tribalization (-0.0040
+at the low end to -0.0158 at the high end on the affective sweep). So the
+named pattern survives measurement, refined rather than debunked:
+composition's de-escalation grows with tribalization while its own
+ideological cost stays small and roughly constant — a different, more
+precise claim than Wave A's raw numbers supported.
+
+**H5's falsifier looks like it holds at this scale, more informatively than
+Wave A's flat `delta_k=0.0` could show.** `delta_k` is exactly 0.0 on all
+135 rows again. `delta_bic_margin` is no longer identically flat (it can — 
+it is a continuous quantity), but its movement is small (order 1e-4) and
+non-monotonic across levels, reading as noise around zero rather than a
+directional signal — closer to "the binary frame is adequate at this scale"
+than to a gradient precursor of a real k-change.
+
+**What Wave A′ does not do.** It reuses Wave A's 4-arm design as-is;
+`targeting_mode`, the diversity-floor sweep, named scenarios, and hysteresis
+(experiment03-bubble-intervention.md §§2.3-3-4-5.2-5.3) are Wave B/C
+territory and require infrastructure this session did not build. Not
+comparable to `wave_a.csv` line-for-line: different mechanism
+(`affect_drive`), different structural substrate (`sbm_mirror_p=0.15`),
+different background (0.5 vs 0.7) — a fresh measurement, not a correction
+of the old one.
+
 **What this is not.** Wave A′ (the sequencing table's step 7 — "sign screen
 repeated over the full dial range, previously-gated region included") is
 not run in this session, matching how this project has previously kept

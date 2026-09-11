@@ -192,6 +192,20 @@ def dial_config(base: Config, *, affective: float, ideological: float, structura
 # positive -- exposure/kernel.py), so "scale it up" cannot reliably mean
 # "more cross-camp engagement" across different burn-in kernels. A direct
 # SET pins the intended direction regardless of the base kernel.
+#
+# Wave A′ (FINDINGS.md): this is a CAMP-AWARE targeting choice -- the
+# `outgroup` feature it overrides only exists in `compute_features`'s
+# output `if camps is not None` (exposure/kernel.py), so below the Sarle
+# bimodality gate this override never fires and the `engagement` arm is a
+# complete, bit-identical no-op vs `none`. V7.3 (change-spec-v7-continuous-
+# affect.md) made the AFFECT channel's outcome measurable below that gate;
+# it did not touch this SEPARATE camp-conditional consumer, so an arm whose
+# only lever is this table stays inert exactly where the ideological dial's
+# low end now needs it to act. `composition` stays measurable there only
+# because `valence_gamma0` (below) does not depend on `outgroup` at all.
+# experiment03-bubble-intervention.md's own `targeting_mode="distance"`
+# (§4) -- promoting engagement by continuous stance distance instead of a
+# camp label -- is the fix; it is not built.
 ENGAGEMENT_KERNEL_THETA: tuple[tuple[str, str, float], ...] = (
     ("like", "outgroup", 0.8),
     ("reply", "outgroup", 1.2),
