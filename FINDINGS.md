@@ -592,10 +592,16 @@ change. `delta_aff` (plateau animus, arm minus none, plus the same delta
 normalized by total engagement volume over the window) and `delta_ideo`
 (toward-other-camp / toward-mean / toward-own-pole / delta-k, each a
 per-user DISTANCE-DECREASE oriented toward its reference point before
-averaging) are reported as a pair, never collapsed — `delta_ideo`'s three
-camp-relative components are computed against a FIXED axis and camp split
-taken from the shared pre-intervention state, so a later tick's population
-is scored against a reference frame that does not itself drift.
+averaging, THEN differenced arm minus none the same way `delta_aff` is --
+`_ideo_decomposition`'s `net = _movement(stance1_arm) -
+_movement(stance1_none)`, present since the infrastructure commit, before
+Wave A ever ran; every `toward_*` number below is the arm's net
+contribution over whatever `none` itself does, never each arm's raw
+movement on its own) are reported as a pair, never collapsed —
+`delta_ideo`'s three camp-relative components are computed against a FIXED
+axis and camp split taken from the shared pre-intervention state, so a
+later tick's population is scored against a reference frame that does not
+itself drift.
 `tests/test_experiment03.py` proves the decomposition does not repeat
 Experiment 01's `affective_distance` bug: a scenario where both camps
 converge toward the population mean by the same amount cancels to exactly
@@ -629,13 +635,41 @@ magnitude but in SIGN, on every design point where the comparison is
 measurable — the tautology-risk note in the brief's own §3 predicted
 exactly this ("the engagement arm alone... will and should show backfire...
 The composition arm is the informative one"), and Wave A reproduces it
-quantitatively rather than by construction: `civility` is the only
-difference between the two arms' schedules, and it flips the sign every
-time. `exposure`'s small, occasionally-ambiguous effect also matches prior
+quantitatively rather than by construction. Precisely stated, since
+`base_config` sets `valence_mode="endogenous"` (V3) for both arms: they
+share the SAME `kernel_theta` change, and differ only in `valence_gamma0`
+— the intercept of the endogenous civility response, `P(civil) =
+sigma(gamma0 + gamma_animus*animus_i + ...)`, read off the ENGAGING user's
+own animus. Under that response, `engagement`'s positive sign is not "no
+civility mechanism" versus composition's "civility mechanism" — both arms
+run the identical animus -> civility -> sign -> animus loop the V3
+bistability probe already characterizes elsewhere in this document;
+`engagement` runs it at `gamma0=0.0` (P(civil)=0.5 at animus=0) with MORE
+cross-camp contact feeding it, so the loop operates comparatively
+unopposed, while `composition` raises `gamma0` to 2.5 (P(civil)=0.92 at
+animus=0), damping it. `exposure`'s small, occasionally-ambiguous effect also matches prior
 work: Experiment 01 measured `inject_k` moving the raw cross-cutting-
 exposure aggregate by almost nothing while the injected items themselves
 were far more cross-cutting — "drowned out by follower fanout at any
 dosage a platform would ship."
+
+**The per-contact normalization gap is fatal to one specific claim in this
+section, not to the section generally.** `delta_aff.per_contact`
+normalizes by TOTAL engagement volume, not by cross-camp contact
+specifically (the literal §2.2 ask). That is harmless to the H3 contrast
+just stated: `composition` and `engagement` share the identical
+`kernel_theta` change, so cross-camp contact volume is approximately
+fixed BETWEEN them, and the sign flip is not a dosage artifact. It is NOT
+harmless to `engagement` vs. `none` on its own (the "backfire," positive
+40/40 result two paragraphs up): `engagement` raises cross-camp contact
+BY CONSTRUCTION relative to `none`, so an animus delta normalized by total
+volume is partly measuring dosage rather than the outrage-per-contact
+this arm is supposed to isolate — exactly the tautology §3 of the brief
+warns against, undefended here. V7.4 (change-spec-v7-continuous-affect.md)
+has since built the engagement/author-camp join this needs
+(`delta_aff.per_cross_contact`, `_cross_contact_from_frames`), motivated
+by this exact gap; the re-instrumented replication below applies it
+directly to Wave A's own design points.
 
 **H1 (the sign flips somewhere in the tribalization space) is NOT
 established by this pass, and that is a real limitation of the design, not
@@ -682,15 +716,36 @@ composition arm's de-escalation is reversible. No response-surface fit
 over the full 3-dial volume, only three one-at-a-time slices through it.
 No calibration against a corpus (§8) and no viewpoint-diversity floor
 (§2.3) — both explicitly deferred as normative/scope choices in the brief
-itself, unresolved here too. `delta_aff.per_contact` normalizes by total
-engagement volume, not contact restricted to cross-camp pairs specifically
-— the literal §2.2 ask needs an engagement/author-camp join this pass does
-not build. Waves B-D (the LHS response surface, hysteresis, and held-out
-confirmation) are not run. The open decisions §10 of the brief lists —
-the viewpoint-diversity floor's number, corpus-or-swept-anchored-group,
-and the intervention target under emergent k — are exactly as open as
-before this session; none of them blocked Wave A, but all of them block
-Wave B.
+itself, unresolved here too. Waves B-D (the LHS response surface,
+hysteresis, and held-out confirmation) are not run. The open decisions
+§10 of the brief lists — the viewpoint-diversity floor's number,
+corpus-or-swept-anchored-group, and the intervention target under
+emergent k — are exactly as open as before this session; none of them
+blocked Wave A, but all of them block Wave B.
+
+**The bimodality gate is a real design constraint on Wave B, not only on
+Wave A, and this pass's fix (background=0.7, clear of the gate) does not
+generalize to it.** A naive LHS over the full 3-dial volume would put
+points below the ideological gate where the affect channel is
+IDENTICALLY zero for every arm (not low-signal — structurally constant),
+which would fit a response surface across a step function rather than a
+trend, and dominate its leverage. Resolved differently than either
+obvious option (truncate the swept range, or fit only above the gate as
+an explicit boundary): change-spec-v7-continuous-affect.md's
+`affect_drive="distance"` mechanism replaces the discontinuity itself with
+a continuous saturating function of stance distance, so the affect
+channel has something to report on both sides of the old gate — this is
+what Wave A′ and Wave B are built on (below). That fix is NOT complete for
+every consumer of the camp label, though: Wave A′ separately found that
+the `engagement`/`composition` arms' OWN `kernel_theta` override reads a
+DIFFERENT, still-conditional feature (`outgroup`), so `engagement` under
+`targeting_mode="camp_pair"` remains an EXACT structural zero below the
+same gate — confirmed again in Wave B's own `low_tribalization` scenario.
+Wave B's response-surface fit (below) sidesteps this by being built for
+`composition` only, whose own lever (`valence_gamma0`) is not camp-gated
+and so never hits an exact zero — not because the discontinuity was
+modeled as a boundary, but because no regression was attempted over the
+one arm/mode combination that still has one.
 
 ## Change spec V7 — continuous affect drive: implemented, substrate re-gated
 

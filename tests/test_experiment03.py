@@ -231,6 +231,32 @@ def test_aff_per_cross_contact_is_nan_without_the_join_inputs():
     assert np.isnan(result.per_cross_contact)
 
 
+# --------------------------------------------------------------------------
+# SS7's SESOI reference: DeltaAff.level_none
+# --------------------------------------------------------------------------
+
+
+def test_aff_level_none_is_the_none_arms_own_drift_over_the_window():
+    """SS7's SESOI decision rule needs `none`'s own drift, not the plateau
+    delta -- the two can differ in both magnitude and (in principle) sign,
+    so this must be a genuinely separate read, not derived from `plateau`."""
+    result = _aff_from_arrays(
+        animus_arm=np.array([5.0, 5.0]), animus_none=np.array([2.0, 2.0]),
+        contact_arm=10.0, contact_none=10.0,
+        animus_none_window_start=np.array([1.0, 1.0]),
+    )
+    assert result.plateau == pytest.approx(3.0)          # 5.0 - 2.0, arm vs none AT plateau
+    assert result.level_none == pytest.approx(1.0)        # 2.0 - 1.0, none's OWN drift since window_start
+
+
+def test_aff_level_none_is_nan_without_the_window_start_array():
+    """Matching `per_cross_contact`'s own optionality (V7.4): an omitted
+    optional input reads as NaN, not as a silent zero that would misread as
+    "no background drift"."""
+    result = _aff_from_arrays(np.array([1.0]), np.array([0.0]), contact_arm=10.0, contact_none=10.0)
+    assert np.isnan(result.level_none)
+
+
 def test_cross_contact_join_classifies_events_by_dyad_distance():
     """Pure-frame core of the engagement/author-stance join (V7.4's
     "engagement/author-stance join yielding per-event stance distance"):
