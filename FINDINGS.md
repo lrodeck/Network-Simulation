@@ -619,6 +619,15 @@ initial 40-tick check, which gave legible-but-barely-so deltas of order
 model-arm rows, ~30s/point, ~23 minutes wall clock
 (`results/experiment03/wave_a.csv`).
 
+**Standing caveat for every seed-cell count in this document (§7's own
+"cluster by seed"), stated once here rather than re-derived at each site.**
+The 5 seeds at one design point share that point's population and graph —
+only the per-tick RNG differs — so "40/40 seed-cells" is 8 populations
+measured 5 times each, not 40 independent draws. A count like this is
+evidence about consistency WITHIN the populations sampled, not a
+40-observation estimate of a population-level rate; every "n/n" figure
+below (Wave A, Wave A′, Wave B, Wave C alike) should be read that way.
+
 **Measured.** Across every non-degenerate cell (i.e. excluding
 ideological=0.1, where the gate above makes the whole affect channel
 inert):
@@ -715,46 +724,53 @@ failure Wave A's own original substrate had, found and fixed by V7.6
 after Wave A ran, so this is not a byte-identical rerun --
 `results/experiment03/wave_a_reinstrumented.csv`, 135 rows, ~23 min)
 reads `none`'s own `toward_own_pole` drift (`ideo_level_toward_own_pole`,
-V7.2) ALONGSIDE the net effect for the first time: median none-own-drift
-0.00851, against a median NET contribution of 0.00075 (`composition`),
-0.00085 (`engagement`), 0.00151 (`exposure`) — 8.8%, 10.0%, and 17.8% of
-the background, respectively. Sign-consistency itself replicates closely
-(111/120 net-positive across the three arms here, against 113/120
+V7.2) ALONGSIDE the net effect for the first time. §7's own reference is
+per design point, not pooled (A5 of this project's own pre-submission
+checklist): the ratio net/background computed AT EACH of the 40 points,
+then summarized, not medians-of-each-pooled-then-divided (the latter gave
+8.8%/10.0%/17.8% in an earlier pass of this section — close enough not to
+change the qualitative picture, but the per-point version below is the one
+this section now stands behind). Per-point ratio is strongly right-skewed
+(a handful of points where `none`'s own drift is small enough to blow the
+ratio up dominate the mean; median is the number to read): median
+9.9% (`composition`), 9.4% (`engagement`), 22.9% (`exposure`) of `none`'s
+own drift. Against the brief's own §7 SESOI (10%), BOTH `composition` and
+`engagement`'s own ideological contributions now fall (narrowly) short —
+only `exposure` clears comfortably. Sign-consistency itself replicates
+closely (111/120 net-positive across the three arms here, against 113/120
 originally — the small gap is consistent with the substrate difference,
-not a discrepancy needing its own explanation). Against the brief's own
-§7 SESOI (10% of `none`'s own drift, this section's own new decision-rule
-application — see the SESOI table below), `engagement` sits almost
-exactly AT the line, `exposure` clears it, and `composition`'s own
-ideological contribution — the more surprising half of "de-escalation with
-simultaneous ideological hardening" — does NOT. **Revised claim: the
+not a discrepancy needing its own explanation). **Revised claim: the
 positive sign on `toward_own_pole` is a genuine net effect, not
 background drift misread as one, but "hardening," as a named phenomenon
-worth its own title, overstates a `composition` contribution this small
-relative to what the brief's own rule treats as meaningful.** `exposure`
-and `engagement`'s own contributions are larger and clear SESOI more
-comfortably — if this combination deserves a name, it currently fits them
-better than it fits `composition`.
+worth its own title, overstates a contribution this close to the brief's
+own noise floor for `composition` AND `engagement` alike — only
+`exposure`'s own ideological contribution is unambiguously large enough
+to deserve one.**
 
 **SESOI, applied to `delta_aff_plateau` itself (§7's decision rule, not
 previously checked against any number in this section).** Sign
-consistency alone is cheap when an effect is tiny but systematic, and
-seeds sharing a population/graph within one design point are not 5
-independent draws (§7's own "cluster by seed"). Median `delta_aff_plateau`
-and median `none`'s own animus drift over the same window
-(`delta_aff_level_none`, new this pass, mirroring `ideo_level_*`'s
-convention), from the re-instrumented replication:
+consistency alone is cheap when an effect is tiny but systematic (the
+standing seed caveat above applies to every count in this paragraph too).
+Per-point ratio (`|delta_aff_plateau| / (0.10 * |delta_aff_level_none|)`,
+`delta_aff_level_none` new this pass, mirroring `ideo_level_*`'s
+convention), each of the 40 non-degenerate points scored against its OWN
+`none` arm at the SAME point, from the re-instrumented replication:
 
-| arm | median delta_aff_plateau | median none's own drift | SESOI threshold (10%) | ratio | verdict |
-|---|---|---|---|---|---|
-| composition | -0.00928 | 0.00883 | 0.000883 | 10.5x | CLEARS |
-| engagement | +0.00406 | 0.00883 | 0.000883 | 4.6x | CLEARS |
-| exposure | +0.00223 | 0.00883 | 0.000883 | 2.5x | CLEARS |
+| arm | median ratio vs. SESOI | points clearing | verdict |
+|---|---|---|---|
+| composition | 12.8x | 40/40 | CLEARS at every point |
+| engagement | 4.7x | 40/40 | CLEARS at every point |
+| exposure | 3.4x | 34/40 | clears at most points, not all |
 
-All three clear SESOI comfortably in aggregate, and per-dial (not shown in
-full: ratios range 12x-22x for `composition`, a consistent ~4.2x-4.6x for
-`engagement`, 1.2x-3.4x for `exposure` — weakest on the structural sweep
-specifically, still clearing). **H3 "holds cleanly" survives contact with
-its own decision rule** — unlike the `toward_own_pole` contribution above,
+`composition` and `engagement` clear SESOI at every single design point,
+not just on aggregate — the strongest form this check can take.
+`exposure` clears comfortably in the median but NOT uniformly: 6/40 points
+fall short, unlike the other two arms — a real, more precise finding the
+earlier pooled-ratio version of this table (10.5x/4.6x/2.5x on medians-of-
+medians, all reported as uniformly "CLEARS") did not have the resolution
+to see. **H3 "holds cleanly" survives contact with its own decision rule,
+uniformly for `composition` and `engagement` and at most points for
+`exposure`** — unlike the `toward_own_pole` contribution above,
 `delta_aff_plateau` is not a small effect relative to what the brief
 treats as meaningful; it is the primary, well-powered outcome this design
 was built to measure, and the ideological side-effect above is the
@@ -1054,6 +1070,23 @@ composition's de-escalation grows with tribalization while its own
 ideological cost stays small and roughly constant — a different, more
 precise claim than Wave A's raw numbers supported.
 
+**Against the brief's own §7 SESOI (10% of `none`'s own drift, per-point
+ratio — see the same check applied to the original Wave A design, above):
+all three arms clear it comfortably here.** Median ratio 22.8%
+(`composition`, 42/45 net-positive), 24.1% (`engagement`, measurable
+cells only, 36/40 net-positive), 22.7% (`exposure`, 42/45 net-positive) —
+roughly DOUBLE the ~10% SESOI line, and roughly double what the original
+Wave A design (camp-gated mechanism, background=0.7) found for
+`composition`/`engagement` specifically (9.9%/9.4%, narrowly BELOW the
+line). Same brief, same rule, two different verdicts — because the
+mechanism and background differ, not because either measurement is wrong:
+under the continuous `affect_drive="distance"` mechanism at the neutral
+0.5 background, the ideological side-effect this section names is larger
+relative to `none`'s own drift than it is under the old camp-gated
+mechanism at 0.7. The finding this section's own bold claim rests on is
+real by the brief's own decision rule at THIS mechanism/background; stated
+without that qualifier, it would overclaim what generalizes.
+
 **H5's `delta_k` component is untestable here, not falsified.** `delta_k`
 is exactly 0.0 on all 135 rows again — a STRUCTURAL consequence of this
 codebase having no population generator that produces more than two
@@ -1181,21 +1214,37 @@ since H3b already found the two are not interchangeable:
   `distance`:  intercept -0.0054, affective +0.0084, ideological -0.0199,
   structural +0.0122, R^2 = 0.415.
 
-`camp_pair`'s surface is a genuinely good linear fit (R^2 = 0.91) — the
-`affective` coefficient (-0.017 per unit) is close to the ~-0.0148/unit
-slope Wave A′'s own one-factor affective sweep measured independently
-(-0.0118 over 0.8 units), an out-of-sample cross-check the fit was not
-built to satisfy. Its sign pattern is new information Wave A′'s
-one-factor-at-a-time design could not show on its own: MORE affective and
-ideological tribalization make `composition` do MORE (steeper negative
-slope on both), but MORE structural sorting makes it do LESS (positive
-slope) — holding the other two fixed, which one-factor-at-a-time sweeps
-from a single fixed background cannot separate from each other.
-`distance`'s surface is NOT well described by a plane (R^2 = 0.42) — a
-plain, honest negative result, not a fit worth reporting coefficients for:
-consistent with H3b's own finding that `distance` targeting's effect on
-`composition` changes SIGN between regimes (`consolidated_two_camp` vs
-`low_tribalization`), which a single hyperplane cannot represent.
+**R^2 = 0.91 is not evidence on its own, and this project's own
+pre-submission checklist (D1, blocking) says why: `camp_pair`'s 18 points
+sit in exactly 3 neighborhoods (one per scenario, LHS radius 0.25 around
+each center), so this is a 4-parameter fit against 3 effective design
+points at the between-cluster level — under-determined by the checklist's
+own criterion, not merely coarse.** Checked directly, not just flagged:
+a model using ONLY which scenario a point belongs to — no dial values at
+all — already reaches R^2 = 0.844, 93% of the full fit's 0.908. Refit with
+scenario fixed effects (so the 3 dial slopes come from WITHIN-cluster
+leverage only, the between-cluster mean absorbed separately): affective
+-0.0130, ideological -0.0010, structural +0.0052 — ideological's slope
+collapses to near-zero (the plain fit's -0.0102 was mostly the 3 scenarios'
+own mean differences, not a within-scenario ideological trend), while
+affective survives at roughly its original size AND stays close to the
+~-0.0148/unit slope Wave A′'s own one-factor sweep measured independently
+(-0.0118 over 0.8 units) — the one part of this surface with a real
+out-of-sample cross-check behind it. Leave-one-scenario-out prediction
+(fit on 2 scenarios, predict the third) is the sharper test: R^2 = 0.072 —
+barely above predicting the global mean, and far below what R^2 = 0.908
+implies about this fit's ability to generalize. **Revised claim: this is
+not "a genuinely good linear fit." The fit reproduces 3 scenario means
+well (unsurprising with 3 free means available) and contains one dial
+(`affective`) whose slope has independent corroboration; it has
+essentially no demonstrated ability to predict a held-out region of the
+tribalization space, which is what a response surface is for.**
+`distance`'s surface (R^2 = 0.42) was already reported as a plain, honest
+negative result — the same leave-one-scenario-out check makes it more
+decisively so (R^2 = -8.96, worse than the mean), consistent with H3b's
+own finding that `distance` targeting's effect on `composition` changes
+SIGN between regimes (`consolidated_two_camp` vs `low_tribalization`),
+which no hyperplane fit to 3 points can represent regardless of R^2.
 
 Caveat this fit shares with everything else built on Wave B: 18 points
 sitting in 3 tight, radius-0.25 neighborhoods around 3 centers is not a
@@ -1293,6 +1342,39 @@ by this codebase's dynamics specifically** — partial persistence (the
 non-asymmetry-specific half of H4) holds in both directions, at a rate this
 project can now name from the OU constants alone rather than measure arm by
 arm.
+
+**Dataset provenance, one table for the whole experiment (standing
+requirement, not previously consolidated — each number above cites its own
+CSV inline, but no single place lists all six together).**
+
+| dataset | substrate (`sbm_mirror_p`) | mechanism | background | rows | canonical for |
+|---|---|---|---|---|---|
+| `wave_a.csv` | 0.0 (pre-V7.6, reciprocity under-band) | `camp` | 0.7 | 135 | Wave A's own sign/consistency table only; superseded by `wave_a_reinstrumented.csv` for any magnitude, SESOI, or per-cross-contact claim |
+| `wave_a_reinstrumented.csv` | 0.15 (V7.6) | `camp` (forced, to match Wave A's original mechanism) | 0.7 | 135 | all SESOI/magnitude/dosage/k-pinned-vs-stable checks laid onto Wave A's design; NOT byte-identical to `wave_a.csv` (substrate differs) |
+| `wave_a_prime.csv` | 0.15 (V7.6) | `distance` (V7.3) | 0.5 | 135 | the entire Wave A′ section |
+| `wave_b.csv` | 0.15 (V7.6) | `distance` | LHS around 3 named scenario centers, not one value | 216 | Wave B (H3b, diversity floor, response surface) |
+| `wave_c.csv` | 0.15 (V7.6) | `distance` | the 3 largest-|effect| `engagement`/`distance` points from `wave_b.csv` | 15 | Wave C harm-side hysteresis |
+| `wave_c_composition.csv` | 0.15 (V7.6) | `distance` | the 3 largest-|effect| `composition` points from `wave_b.csv` | 15 | Wave C benefit-side hysteresis (H4 asymmetry check) |
+
+**Two standing items this project defers rather than silently drops.**
+H1's falsifier has now been searched for across Wave A (one background,
+0.7), Wave A′ (one background, 0.5, full dial range), and Wave B (3
+scenario neighborhoods) without firing — deferred three times to "a
+denser design" without ever stating what would actually settle it. Stated
+now: a real Morris elementary-effects design needs multiple (a handful,
+e.g. 4-6) random trajectories through the full 3-dial cube, each
+perturbing one dial at a time from a random base point — order 20-40 design
+points chosen to SPREAD across the cube rather than cluster around named
+scenarios, specifically so a fitted surface has enough effective
+neighborhoods to validate out of sample (the D1/D2 gap just found in the
+response surface above). Anything smaller repeats this session's own
+under-determined-fit problem. Separately: Wave C's point selection
+(`select_hysteresis_points`, top-3 by `|delta_aff_plateau|`) picks from
+Wave B's 2-seed ESTIMATES, not from the true per-point effect size — with
+only 2 seeds, a point's estimate can rank in the top 3 partly by which way
+its own sampling noise happened to land, so "the 3 largest effects" this
+section's own language uses at first mention should be read as "the 3
+largest 2-seed ESTIMATES," a real but weaker claim than it sounds.
 
 **Scope, same discipline as Wave A/A′.** 2 seeds × 6 LHS points per
 scenario here vs. the brief's own §5.3 default (~30 points, 10 seeds) — a
