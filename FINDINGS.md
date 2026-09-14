@@ -776,15 +776,38 @@ treats as meaningful; it is the primary, well-powered outcome this design
 was built to measure, and the ideological side-effect above is the
 secondary one that is not.
 
-**The dosage confound flagged above is resolved empirically, not just by
-caveat.** `delta_aff_per_cross_contact` (V7.4's join, applied here to Wave
-A's own design points) keeps `engagement`'s sign positive in 40/40 cells —
-identical to `delta_aff_plateau` and to the total-volume `delta_aff_per_
-contact`. `composition` (0/40 positive across all three) and `exposure`
-(37/40 across all three) show the same normalization-invariance. The
-backfire signal survives being read per unit of CROSS-CAMP contact
-specifically, not just per unit of contact overall — the tautology §3
-warns against does not appear to be what is driving it.
+**The dosage-confound check above does NOT resolve the confound — checked
+directly (A4/B3 of this project's own pre-submission checklist), and this
+reverses the previous paragraph's conclusion.** `delta_aff_per_cross_
+contact`'s sign matching `delta_aff_per_contact` and raw `delta_aff_
+plateau` (40/40 `engagement`, 0/40 `composition`, 37/40 `exposure` — same
+counts either way) is NOT independent confirmation, because the two
+denominators are not independent: classifying an event cross-contact when
+its dyad distance exceeds `d_cross = affect_d0 = 1.0` selects **80-85% of
+ALL contact, for every arm**, across every design point in this design
+except one — at `ideological=0.1` specifically it drops to 57%, still a
+majority (`results/experiment03/wave_a_reinstrumented_cross_contact_
+fraction.csv`, all 45×4 arm/none combinations audited directly). A
+denominator selecting the large majority of everything reproduces the
+unrestricted denominator's result by construction (A4's own named failure
+mode) — this is not a robustness check that happened to agree, it is close
+to the same measurement asked twice. This is not a new surprise: V7.3's
+own section already recorded that `affect_d0=1.0`, calibrated for a
+ONE-AXIS population, saturates `phi` for same- and cross-camp dyads alike
+at Experiment 03's actual D=3; this is that same miscalibration's
+consequence in `d_cross` (V7.4 deliberately ties the two so they cannot
+drift apart, which also means neither can be wrong without the other
+following). **Revised claim: whether `engagement`'s backfire is a dosage
+artifact remains OPEN at this substrate — untested, not negatively tested
+(the C2 distinction, applied here) — because the one check built for it
+does not discriminate cross-camp from same-camp contact well enough to be
+informative.** A real test needs `d_cross` recalibrated for D=3 (e.g. to
+the level that actually splits contact close to the true camp-membership
+boundary, not a nominal midpoint carried over from D=1) or a same-camp-vs-
+cross-camp classification that does not route through a single scalar
+distance threshold at all — neither is built; out of scope for this pass,
+recorded here rather than left for the normalization-invariance claim to
+imply a resolution that was not actually reached.
 
 **H5 (fragmentation is a distinct outcome) has no support in this pass.**
 `delta_k` is exactly 0.0 on all 135 rows — `emergent_camps`' BIC-selected k
@@ -919,7 +942,13 @@ its dyad distance exceeds `d_cross = dynamics.affect_d0` — V7.3's own
 saturation midpoint, so the two thresholds cannot drift apart as the spec
 requires. `per_contact` (total-volume) is left exactly as it was;
 `per_cross_contact` is NaN when the join's persistence targets (`traits`,
-`posts`) are unavailable, never silently wrong.
+`posts`) are unavailable, never silently wrong. Tying `d_cross` to
+`affect_d0` so the two cannot drift apart also means neither can be wrong
+without the other following: the Wave A section below finds directly that
+`affect_d0`'s own D=1-calibrated value (already flagged in V7.3, next)
+makes `d_cross` classify 80-85% of ALL contact as "cross-camp" at this
+D=3 substrate, not a restrictive subset — `per_cross_contact` does not yet
+deliver the discriminating check §2.2 wants it for.
 
 **V7.5 — BIC margin.** `emergent_camps` returns `bic_margin` (the runner-up
 k's BIC minus the selected k's, normalized by `|selected|`; NaN when fewer
@@ -1383,3 +1412,37 @@ scenario here vs. the brief's own §5.3 default (~30 points, 10 seeds) — a
 LHS points (the points are collected; fitting one is a separate,
 not-yet-built analysis step). No calibration against a real corpus (SS8),
 still out of scope.
+
+## Pre-submission checklist run against Experiment 03
+
+Run against the full Experiment 03 arc above (Wave A through Wave C) per
+the project's own 14-item checklist (Review 01/02 + brief §7). Two items
+found real, load-bearing problems rather than wording gaps: D1 (the
+response-surface R²=0.91 was ~93% scenario-identity, not a validated
+surface) and A4/B3 (the per-cross-contact dosage check does not
+discriminate at this substrate — reversed from "resolved" to "open").
+Everything else below either already passed or was fixed in place.
+
+| item | result | one line |
+|---|---|---|
+| A1 — sign claims paired with magnitude + SESOI [blocking] | fixed, one stated limitation | Original Wave A and Wave A′ H2 now carry full SESOI tables; Wave A′ H3/Wave B H3b's `delta_aff_plateau` magnitude claims still lack one (`delta_aff_level_none` does not exist in `wave_a_prime.csv`/`wave_b.csv` — would need a re-run to close) |
+| A2 — exclude degenerate cells from counts | pass | Already excluded/labeled at every site checked (ideological=0.1 gate, engagement's own kernel_theta gate) |
+| A3 — seeds are not independent draws | fixed | Standing caveat added where seed-cell counts first appear |
+| A4 — per-contact denominator's selection fraction characterized | fixed, reversed a prior claim | Audited directly (45 points × 4 arms): `d_cross` selects 80-85% of ALL contact almost everywhere — not restrictive. The "dosage confound resolved" claim from the previous commit was wrong; rewritten to "open, untested" |
+| A5 — each comparison against its own matched reference | fixed | H2/SESOI tables recomputed as median-of-per-point-ratios, not ratio-of-pooled-medians; changed two conclusions (engagement's H2 contribution, exposure's SESOI uniformity) |
+| B1 — new/reused constants measured in their actual regime [blocking] | pass | `affect_d0` at D=3 already flagged (V7.3); no new unregimed constant introduced this pass |
+| B2 — thresholds reported as realized distributions | pass | Bimodality gate, k pinned/stable, and (this pass) the cross-contact selection fraction all reported as measured distributions, not nominal values |
+| B3 — shared constant checked in each consumer | fixed | `d_cross`/`affect_d0` now checked directly in the cross-contact classifier specifically, not assumed safe by association with V7.3's affect-drive check |
+| B4 — every consumer of a gated feature enumerated | pass | Established precedent (V7.3/Wave A′ finding the second `camp` consumer); no new gated-feature claim made this pass without one |
+| C1 — a derivation must contain the mechanism it predicts about [blocking] | pass | H4's OU derivation contains the sign-symmetry property itself, scoped to "this codebase's dynamics" rather than claimed universally |
+| C2 — "not supported" vs. "not testable" distinguished | pass | H5 (k pinned vs. stable) and now A4 (untested vs. negatively tested) both apply the distinction |
+| C3 — an arm's own construction separated from its attributed effect | pass | `engagement`/`composition`'s shared `kernel_theta` vs. distinct `gamma0` lever already separated (pre-existing) |
+| C4 — alternative explanation stated before naming a finding | pass | No new unvalidated name asserted; response-surface downgrade explicitly avoided over-naming what the LOO check does not support |
+| D1 — fits report effective design points, not row count [blocking] | fixed | `camp_pair`'s 18 points are 3 effective neighborhoods against 4 parameters — under-determined; stated explicitly with cluster-only R²=0.844 and leave-one-out R²=0.072 |
+| D2 — fits validated out of sample or with clustering absorbed | fixed | Leave-one-scenario-out and scenario-fixed-effects both added for `camp_pair` and `distance` |
+| D3 — algebraically dependent quantities counted once | pass (fixed earlier this session) | `toward_own_pole` reported as primary; `toward_mean`/`toward_other_camp` noted as near-mirror-images, not counted as independent confirmations |
+| D4 — good and bad fits held to the same standard | fixed | Leave-one-out applied to both `camp_pair` (R²=0.072) and `distance` (R²=-8.95), not only to the fit already read as a negative result |
+| dataset provenance | fixed | New table: substrate, mechanism, background, canonical-for, all six CSVs |
+| stopping rules before the next wave | fixed | H1's own concrete Morris-design coverage stated (order 20-40 space-filling points), after three waves of deferring it without saying so |
+| selection on noisy estimates labelled | fixed | Wave C's point selection now explicitly named as "largest 2-seed ESTIMATES," not "largest effects" |
+| house virtues (record gap first, test first, default off, non-comparability stated) | pass | Consistent throughout; this pass's own new datasets follow the same pattern |
