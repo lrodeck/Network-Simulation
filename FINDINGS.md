@@ -686,21 +686,89 @@ a confirmed crossover — worth flagging rather than either claiming H1 or
 declaring it falsified.
 
 **H2 (the bundle comes apart) has a genuine, unanticipated signature in
-this data.** `toward_mean` is negative and `toward_own_pole` is positive
-in 113/120 non-degenerate seed-cells, for EVERY arm — including
-`composition`, which simultaneously LOWERS animus. The brief's own §2
-table anticipates two rows for the ideological axis ("positions converge"
-vs "positions unchanged"); what Wave A actually shows is a third pattern
-the table does not name: positions do not converge OR stay put, they
-measurably move toward radicalization even under the arm that reduces
-hostility. "Pacification without persuasion" (the table's own bottom-left
-cell) undersells it — this reads as "de-escalation with simultaneous
-ideological hardening," a combination worth a name of its own if this
-holds up at full scale. Caveat stated plainly: magnitudes here are ~1e-3,
-one reduced-scale run, and `toward_other_camp`/`toward_mean`/`toward_own_
-pole` are close to mirror images of each other in this near-linear
-two-camp setup (recorded in the outcome-pair's own module docstring) — the
-DIRECTION is the finding, not yet the magnitude.
+this data — smaller than it first looked, and real.** `toward_own_pole` is
+positive in 113/120 non-degenerate seed-cells, for EVERY arm — including
+`composition`, which simultaneously LOWERS animus. (`toward_mean` negative
+and `toward_other_camp` positive track it near-exactly at this camp
+structure — close to mirror images of the same signal in a near-linear
+two-camp setup, recorded in the outcome-pair's own module docstring — so
+`toward_own_pole` alone, not a three-way conjunction, is the count that
+follows; the other two are not three independent confirmations of the
+same finding.) The brief's own §2 table anticipates two rows for the
+ideological axis ("positions converge" vs "positions unchanged"); what
+Wave A actually shows is a third pattern the table does not name:
+positions do not converge OR stay put, they measurably move toward
+radicalization even under the arm that reduces hostility.
+
+Is that the intervention's own doing, or the substrate radicalizing on its
+own regardless of arm? `toward_own_pole` is ALREADY `arm minus none`
+(`_ideo_decomposition`'s `net = _movement(stance1_arm) -
+_movement(stance1_none)`, present since the pre-Wave-A infrastructure
+commit, before Wave A ever ran) — not each arm's raw movement — so a
+positive value already means the arm radicalizes MORE than the shared
+background does, not merely that it fails to arrest a background trend.
+But "already differenced" does not mean "large": a re-instrumented
+replication of Wave A's own design (identical dials/levels/seeds/
+background=0.7/mechanism `affect_drive="camp"`, on the current corrected
+substrate -- `dial_config`'s `sbm_mirror_p=0.15` fixes a reciprocity-gate
+failure Wave A's own original substrate had, found and fixed by V7.6
+after Wave A ran, so this is not a byte-identical rerun --
+`results/experiment03/wave_a_reinstrumented.csv`, 135 rows, ~23 min)
+reads `none`'s own `toward_own_pole` drift (`ideo_level_toward_own_pole`,
+V7.2) ALONGSIDE the net effect for the first time: median none-own-drift
+0.00851, against a median NET contribution of 0.00075 (`composition`),
+0.00085 (`engagement`), 0.00151 (`exposure`) — 8.8%, 10.0%, and 17.8% of
+the background, respectively. Sign-consistency itself replicates closely
+(111/120 net-positive across the three arms here, against 113/120
+originally — the small gap is consistent with the substrate difference,
+not a discrepancy needing its own explanation). Against the brief's own
+§7 SESOI (10% of `none`'s own drift, this section's own new decision-rule
+application — see the SESOI table below), `engagement` sits almost
+exactly AT the line, `exposure` clears it, and `composition`'s own
+ideological contribution — the more surprising half of "de-escalation with
+simultaneous ideological hardening" — does NOT. **Revised claim: the
+positive sign on `toward_own_pole` is a genuine net effect, not
+background drift misread as one, but "hardening," as a named phenomenon
+worth its own title, overstates a `composition` contribution this small
+relative to what the brief's own rule treats as meaningful.** `exposure`
+and `engagement`'s own contributions are larger and clear SESOI more
+comfortably — if this combination deserves a name, it currently fits them
+better than it fits `composition`.
+
+**SESOI, applied to `delta_aff_plateau` itself (§7's decision rule, not
+previously checked against any number in this section).** Sign
+consistency alone is cheap when an effect is tiny but systematic, and
+seeds sharing a population/graph within one design point are not 5
+independent draws (§7's own "cluster by seed"). Median `delta_aff_plateau`
+and median `none`'s own animus drift over the same window
+(`delta_aff_level_none`, new this pass, mirroring `ideo_level_*`'s
+convention), from the re-instrumented replication:
+
+| arm | median delta_aff_plateau | median none's own drift | SESOI threshold (10%) | ratio | verdict |
+|---|---|---|---|---|---|
+| composition | -0.00928 | 0.00883 | 0.000883 | 10.5x | CLEARS |
+| engagement | +0.00406 | 0.00883 | 0.000883 | 4.6x | CLEARS |
+| exposure | +0.00223 | 0.00883 | 0.000883 | 2.5x | CLEARS |
+
+All three clear SESOI comfortably in aggregate, and per-dial (not shown in
+full: ratios range 12x-22x for `composition`, a consistent ~4.2x-4.6x for
+`engagement`, 1.2x-3.4x for `exposure` — weakest on the structural sweep
+specifically, still clearing). **H3 "holds cleanly" survives contact with
+its own decision rule** — unlike the `toward_own_pole` contribution above,
+`delta_aff_plateau` is not a small effect relative to what the brief
+treats as meaningful; it is the primary, well-powered outcome this design
+was built to measure, and the ideological side-effect above is the
+secondary one that is not.
+
+**The dosage confound flagged above is resolved empirically, not just by
+caveat.** `delta_aff_per_cross_contact` (V7.4's join, applied here to Wave
+A's own design points) keeps `engagement`'s sign positive in 40/40 cells —
+identical to `delta_aff_plateau` and to the total-volume `delta_aff_per_
+contact`. `composition` (0/40 positive across all three) and `exposure`
+(37/40 across all three) show the same normalization-invariance. The
+backfire signal survives being read per unit of CROSS-CAMP contact
+specifically, not just per unit of contact overall — the tautology §3
+warns against does not appear to be what is driving it.
 
 **H5 (fragmentation is a distinct outcome) has no support in this pass.**
 `delta_k` is exactly 0.0 on all 135 rows — `emergent_camps`' BIC-selected k
@@ -708,7 +776,16 @@ never moved, for any arm, at any design point. Could be a true negative
 (the binary frame is adequate at this scale) or could be that 160 ticks
 and N=1000 is simply too short/small for a k-means-BIC estimator to
 register a shift — this pass cannot distinguish the two, and does not
-claim to.
+claim to. What k itself is (not just its delta) at a few representative
+points, checked directly against the re-instrumented replication's own
+cached population states: pinned at k=1 at ideological=0.1 (bic_margin
+~0.06, pre- and post-intervention alike — no camps to begin with, exactly
+the gated region above), stable at k=2 at ideological=0.5 and 0.9
+(bic_margin ~0.03-0.04, pre- and post- alike). So "no support" at
+ideological=0.1 is "pinned at k=1," uninformative about fragmentation by
+construction; at 0.5 and 0.9 it is "stable at k=2," which IS informative
+— genuinely ruling out a shift toward more camps in the region where
+camps exist, not silence from an estimator with nothing to say.
 
 **What this is not, stated plainly (see also the module's own
 docstring).** No hysteresis phase (§5.2) — nothing here says whether the
