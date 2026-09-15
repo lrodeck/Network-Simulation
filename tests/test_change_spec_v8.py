@@ -46,14 +46,18 @@ def test_affect_d0_calibrated_tracks_the_populations_own_median_pairwise_distanc
     at a population small enough that the full median is cheap -- the two
     should agree closely even though one is exact and the other sampled.
     """
-    cfg = _cfg(n_users=300, stance_polarization=6.0)
+    cfg = _cfg(n_users=300, pop={"stance_polarization": 6.0})
     engine = _engine(cfg)
+    assert cfg.dynamics.agreement_metric == "rms", "test assumes the default metric"
 
     stance_cols = [i for i, n in enumerate(engine.pop.trait_names) if n.startswith("stance_")]
     stance = engine.pop.X_used[:, stance_cols]
     n = stance.shape[0]
     full_pairwise = np.linalg.norm(stance[:, None, :] - stance[None, :, :], axis=-1)
-    true_median = float(np.median(full_pairwise[np.triu_indices(n, k=1)]))
+    # RMS-normalized (/sqrt(D)), matching agree_delta's own convention -- the
+    # SAME units `stance_distance` (-features["agreement"]) is actually in
+    # wherever agreement_metric="rms", which is what phi(d) consumes.
+    true_median = float(np.median(full_pairwise[np.triu_indices(n, k=1)])) / np.sqrt(len(stance_cols))
 
     assert engine.affect_d0_calibrated == pytest.approx(true_median, rel=0.05)
     # deliberately the SAME statistic as agree_delta (B3: two consumers of
@@ -72,7 +76,7 @@ def test_affect_d0_mode_switch_has_a_real_effect_on_the_running_engine():
     """
     from discourse_lab.runner import run_iter
 
-    base = _cfg(n_users=300, n_ticks=15, stance_polarization=6.0, affect_drive="distance", pop={"affect": True})
+    base = _cfg(n_users=300, n_ticks=15, affect_drive="distance", pop={"affect": True, "stance_polarization": 6.0})
     fixed_cfg = dataclasses.replace(base, dynamics=dataclasses.replace(base.dynamics, affect_d0_mode="fixed", affect_d0=1.0))
     calibrated_cfg = dataclasses.replace(base, dynamics=dataclasses.replace(base.dynamics, affect_d0_mode="calibrated"))
 
@@ -103,25 +107,37 @@ def test_affect_d0_calibrated_is_not_equal_to_d_cross():
     """Decision 1c's third pin: the two constants must NOT be equal, so a
     future change cannot silently re-tie them (V7.4's original coupling).
     `d0` is the population's own median pairwise distance (a "how far
-    apart are two random users, typically" statistic); `d_cross`
-    (tests/test_experiment03.py) is the midpoint between the SAME-camp and
-    CROSS-camp classes' own mean distances -- a different statistic by
-    construction once camps exist, not just a different number by luck.
+    apart are two random users, typically" statistic, mixing same- and
+    cross-camp pairs); `d_cross` (tests/test_experiment03.py) is the
+    midpoint between the SAME-camp and CROSS-camp classes' own mean
+    distances -- a different statistic by construction.
+
+    On the ACTUAL Experiment 03 population generator (checked directly --
+    a `stance_polarization=X` fixture at this file's own reduced scale
+    lands the two within ~1-5% of each other, since only axis 0 carries
+    camp signal and 2 undifferentiated noise axes dominate total distance
+    for BOTH statistics at small N; `dial_config`'s full 3-dial setup at
+    N=1000 separates them somewhat more, ~7-10%), so this test uses THAT
+    generator rather than the file's own lighter `_cfg` fixture.
     """
     from discourse_lab.experiments.experiment03_bubble_intervention import (
         _camp_boundary_d_cross,
         _camp_split_from_stance0,
+        base_config,
+        dial_config,
+        run_arm,
+        _stance_and_animus_at,
     )
 
-    cfg = _cfg(n_users=400, stance_polarization=6.0)
-    engine = _engine(cfg)
-    stance_cols = [i for i, n in enumerate(engine.pop.trait_names) if n.startswith("stance_")]
-    stance = engine.pop.X_used[:, stance_cols]
-    camp0, bimodality0 = _camp_split_from_stance0(stance)
+    burn_in = dial_config(base_config(1000, 60), affective=0.7, ideological=0.7, structural=0.7)
+    none_cfg, handle_none = run_arm(burn_in, "none", 0, intervention_tick=59, n_ticks_total=60)
+    stance0, _ = _stance_and_animus_at(handle_none, none_cfg, 58)
+    camp0, _ = _camp_split_from_stance0(stance0)
     assert camp0 is not None, "test setup: this population must be bimodal enough to have camps"
 
-    d_cross = _camp_boundary_d_cross(stance, camp0)
-    assert engine.affect_d0_calibrated != pytest.approx(d_cross, rel=0.05), (
+    engine = _engine(none_cfg)
+    d_cross = _camp_boundary_d_cross(stance0, camp0, rms=True)
+    assert engine.affect_d0_calibrated != pytest.approx(d_cross, rel=0.03), (
         f"d0 ({engine.affect_d0_calibrated}) and d_cross ({d_cross}) must not "
         "coincide -- that would silently reintroduce the V7.4 tie this decision breaks"
     )

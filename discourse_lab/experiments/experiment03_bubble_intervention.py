@@ -539,7 +539,8 @@ def delta_aff(handle_arm, handle_none, cfg: Config, *, window_start: int, platea
         stance0, _ = _stance_and_animus_at(handle_none, cfg, pre_tick)
         camp0, _ = _camp_split_from_stance0(stance0)
         if camp0 is not None:
-            d_cross = _camp_boundary_d_cross(stance0, camp0)
+            rms = cfg.dynamics.agreement_metric == "rms"
+            d_cross = _camp_boundary_d_cross(stance0, camp0, rms=rms)
             _, cross_arm = _cross_contact_share(
                 handle_arm, cfg, window_start=window_start, plateau_tick=plateau_tick, d_cross=d_cross,
             )
@@ -573,7 +574,7 @@ def _camp_split_from_stance0(stance0: np.ndarray) -> tuple[np.ndarray | None, fl
     return (proj0 > np.median(proj0)).astype(np.int64), bimodality0
 
 
-def _camp_boundary_d_cross(stance0: np.ndarray, camp0: np.ndarray) -> float:
+def _camp_boundary_d_cross(stance0: np.ndarray, camp0: np.ndarray, rms: bool = True) -> float:
     """V8 (work-order-01, decision 1b): `d_cross`'s own calibration,
     independent of `affect_d0` (breaks V7.4's tie). Midpoint between the
     realized same-camp and cross-camp classes' own mean pairwise distance --
@@ -584,6 +585,16 @@ def _camp_boundary_d_cross(stance0: np.ndarray, camp0: np.ndarray) -> float:
     analysis time and needs no RNG stream of its own. NaN if the sample
     happens to contain no pairs of one class (degenerate, not expected at
     the population sizes this project runs).
+
+    `rms` MUST match the `rms` the caller passes to `_cross_contact_share`/
+    `_cross_contact_from_frames` -- those compare their own per-event
+    distance against this return value directly, and that distance is
+    RMS-normalized (divided by `sqrt(D)`) whenever `cfg.dynamics.
+    agreement_metric == "rms"` (the default). A raw-scale `d_cross` compared
+    against an RMS-scale event distance is a unit mismatch that silently
+    under-classifies almost everything as same-camp -- caught by this
+    project's own B1 measurement finding raw and RMS-scale distances
+    disagreed by exactly the missing `sqrt(D)` factor.
     """
     rng = np.random.default_rng(0)
     n = stance0.shape[0]
@@ -591,6 +602,8 @@ def _camp_boundary_d_cross(stance0: np.ndarray, camp0: np.ndarray) -> float:
     a = rng.integers(0, n, n_sample)
     b = rng.integers(0, n, n_sample)
     dist = np.linalg.norm(stance0[a] - stance0[b], axis=1)
+    if rms:
+        dist = dist / np.sqrt(max(stance0.shape[1], 1))
     same = camp0[a] == camp0[b]
     cross = ~same
     if not same.any() or not cross.any():

@@ -571,12 +571,15 @@ def test_camp_boundary_d_cross_sits_between_the_class_means_not_at_a_nominal_mid
     """Decision 1b's own motivating example, reproduced as a fixture: two
     well-separated camps whose mean pairwise distance is far larger than
     the old affect_d0=1.0 -- d_cross must track THIS population's own
-    geometry, not default anywhere near the old nominal constant."""
+    geometry, not default anywhere near the old nominal constant. `rms=
+    False` here isolates the boundary computation itself; RMS scaling is
+    checked separately below, the same way test_cross_contact_join_rms_
+    scales_distance_by_axis_count isolates it for the sibling join."""
     stance0 = _two_camps(-3.0, 3.0, n_per_camp=200, noise=0.3)
     camp0, _ = _camp_split_from_stance0(stance0)
     assert camp0 is not None
 
-    d_cross = _camp_boundary_d_cross(stance0, camp0)
+    d_cross = _camp_boundary_d_cross(stance0, camp0, rms=False)
 
     rng = np.random.default_rng(1)  # independent of _camp_boundary_d_cross's own fixed-seed sampler
     n = stance0.shape[0]
@@ -587,6 +590,22 @@ def test_camp_boundary_d_cross_sits_between_the_class_means_not_at_a_nominal_mid
 
     assert d_cross == pytest.approx(expected, rel=0.1)
     assert d_cross > 2.0, f"d_cross should be well above the old affect_d0=1.0 constant, got {d_cross}"
+
+
+def test_camp_boundary_d_cross_rms_divides_by_sqrt_of_axis_count():
+    """The unit-mismatch bug this project's own B1 measurement caught:
+    `_cross_contact_share` compares its per-event distance against
+    `d_cross` directly, and that distance is RMS-normalized whenever
+    `agreement_metric="rms"` (the default) -- `d_cross` must be in the
+    SAME units, or the comparison silently misclassifies almost
+    everything. `rms=True` (the function's own default) must divide by
+    sqrt(D), matching `_cross_contact_from_frames`'s own convention."""
+    stance0 = _two_camps(-3.0, 3.0, n_per_camp=200, noise=0.3)
+    camp0, _ = _camp_split_from_stance0(stance0)
+
+    d_cross_raw = _camp_boundary_d_cross(stance0, camp0, rms=False)
+    d_cross_rms = _camp_boundary_d_cross(stance0, camp0, rms=True)
+    assert d_cross_rms == pytest.approx(d_cross_raw / np.sqrt(2), rel=1e-9)  # _two_camps is 2-D
 
 
 def test_camp_boundary_d_cross_is_nan_when_one_class_is_empty_in_the_sample():
