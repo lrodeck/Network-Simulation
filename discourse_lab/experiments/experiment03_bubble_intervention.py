@@ -321,6 +321,14 @@ class DeltaAff:
     # its volume. NaN when the join inputs (traits/posts persistence) are
     # unavailable, so `_aff_from_arrays` stays callable without them.
     per_cross_contact: float = float("nan")
+    # SS7's SESOI reference point: the `none` arm's OWN absolute animus
+    # change over the SAME window (`window_start` to `plateau_tick`), not
+    # net of anything -- mirrors `DeltaIdeo.ideo_level_*`'s reasoning
+    # exactly (the background a plateau delta should be read against, not
+    # an arbitrary absolute threshold). NaN when the caller does not supply
+    # `animus_none` at `window_start` (`_aff_from_arrays` stays callable
+    # without it, matching `per_cross_contact`'s own optionality).
+    level_none: float = float("nan")
 
 
 @dataclass(frozen=True)
@@ -418,11 +426,14 @@ def _fixed_axis(stance0: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 def _aff_from_arrays(
     animus_arm: np.ndarray, animus_none: np.ndarray, contact_arm: float, contact_none: float,
     cross_contact_arm: float = float("nan"), cross_contact_none: float = float("nan"),
+    animus_none_window_start: np.ndarray | None = None,
 ) -> DeltaAff:
     """Pure-array core of `delta_aff`, split out so the normalization logic
     is unit-testable on toy inputs without a persisted run. `cross_contact_*`
     (V7.4) are optional: omitted, `per_cross_contact` stays NaN rather than
-    silently dividing by the wrong (total-volume) denominator."""
+    silently dividing by the wrong (total-volume) denominator.
+    `animus_none_window_start` is likewise optional: omitted, `level_none`
+    stays NaN rather than silently reading as "no background drift"."""
     plateau_delta = float(np.nanmean(animus_arm) - np.nanmean(animus_none))
     denom = max(float(contact_arm), float(contact_none), 1.0)
     per_contact = plateau_delta / denom
@@ -432,7 +443,14 @@ def _aff_from_arrays(
         cross_denom = max(float(cross_contact_arm), float(cross_contact_none), 1.0)
         per_cross_contact = plateau_delta / cross_denom
 
-    return DeltaAff(plateau=plateau_delta, per_contact=per_contact, per_cross_contact=per_cross_contact)
+    level_none = float("nan")
+    if animus_none_window_start is not None:
+        level_none = float(np.nanmean(animus_none) - np.nanmean(animus_none_window_start))
+
+    return DeltaAff(
+        plateau=plateau_delta, per_contact=per_contact, per_cross_contact=per_cross_contact,
+        level_none=level_none,
+    )
 
 
 def _cross_contact_from_frames(
@@ -497,6 +515,11 @@ def _cross_contact_share(
 def delta_aff(handle_arm, handle_none, cfg: Config, *, window_start: int, plateau_tick: int) -> DeltaAff:
     _, animus_arm = _stance_and_animus_at(handle_arm, cfg, plateau_tick)
     _, animus_none = _stance_and_animus_at(handle_none, cfg, plateau_tick)
+    # SS7's SESOI reference: `none`'s own animus at the START of the SAME
+    # window `delta_aff` reports over (SS5.1's shared prefix means this
+    # tick is bit-identical whether read from `handle_arm` or `handle_
+    # none` -- read once, from `none`, matching `level_none`'s own naming).
+    _, animus_none_window_start = _stance_and_animus_at(handle_none, cfg, window_start)
 
     def _contact(handle) -> float:
         m = handle.metrics()
@@ -516,6 +539,7 @@ def delta_aff(handle_arm, handle_none, cfg: Config, *, window_start: int, platea
     return _aff_from_arrays(
         animus_arm, animus_none, _contact(handle_arm), _contact(handle_none),
         cross_contact_arm=cross_arm, cross_contact_none=cross_none,
+        animus_none_window_start=animus_none_window_start,
     )
 
 
@@ -652,7 +676,7 @@ def run_design_point(
         rows.append({
             "arm": arm, "seed": seed, "targeting_mode": targeting_mode,
             "delta_aff_plateau": aff.plateau, "delta_aff_per_contact": aff.per_contact,
-            "delta_aff_per_cross_contact": aff.per_cross_contact,
+            "delta_aff_per_cross_contact": aff.per_cross_contact, "delta_aff_level_none": aff.level_none,
             "toward_other_camp": ideo.toward_other_camp, "toward_mean": ideo.toward_mean,
             "toward_own_pole": ideo.toward_own_pole, "delta_k": ideo.delta_k,
             "delta_bic_margin": ideo.delta_bic_margin,
@@ -1025,17 +1049,28 @@ def run_hysteresis(
     }
 
 
-def select_hysteresis_points(wave_b_df: pl.DataFrame, n_points: int = 3) -> pl.DataFrame:
+def select_hysteresis_points(wave_b_df: pl.DataFrame, n_points: int = 3, arm: str | None = None) -> pl.DataFrame:
     """SS5.2: 'Only run this where phase 2 produced a significant effect' --
     the `n_points` (scenario, lhs_index, targeting_mode, arm) cells with the
     largest seed-averaged |delta_aff_plateau| (averaging first so a single
     lucky seed cannot buy a slot). `arm="none"` is dropped: there is no
     intervention to withdraw from it.
+
+    `arm`, when given, restricts the ranking to that one arm's own rows --
+    the default (any intervention arm) always surfaces whichever arm has
+    the single largest-magnitude effect in the whole sweep (empirically,
+    `engagement`, whose hostility-INCREASING effect outsizes `composition`'s
+    decrease everywhere Wave B sampled), which means H4's own framing
+    ("the hostile regime is stickier than the civil one") only ever gets
+    tested from the harm side unless a caller asks for the benefit side by
+    name.
     """
     keys = ["scenario", "lhs_index", "targeting_mode", "arm", "affective", "ideological", "structural"]
+    frame = wave_b_df.filter(pl.col("arm") != "none")
+    if arm is not None:
+        frame = frame.filter(pl.col("arm") == arm)
     return (
-        wave_b_df
-        .filter(pl.col("arm") != "none")
+        frame
         .group_by(keys)
         .agg(pl.col("delta_aff_plateau").mean().alias("delta_aff_plateau_mean"))
         .sort(pl.col("delta_aff_plateau_mean").abs(), descending=True)
@@ -1051,6 +1086,7 @@ def run_wave_c(
     n_ticks_pre_withdrawal: int = 60,
     n_ticks_post_withdrawal: int = 60,
     seeds: Sequence[int] = (0, 1, 2, 3, 4),
+    arm: str | None = None,
 ) -> pl.DataFrame:
     """SS5.2's hysteresis phase, run ONLY on the `n_points` design points
     Wave B measured the largest |delta_aff_plateau| at (`select_hysteresis_
@@ -1058,11 +1094,16 @@ def run_wave_c(
     takes `wave_b_df` as an argument rather than a dial/arm/mode triple:
     which points qualify is an empirical question Wave B has to answer
     first, not a choice made here.
+
+    `arm`, passed straight through to `select_hysteresis_points`, restricts
+    which arm's points are eligible -- e.g. `arm="composition"` for the
+    benefit-side half of H4's own comparison, since the unrestricted
+    default always surfaces `engagement`'s larger-magnitude harm instead.
     """
     intervention_tick = n_ticks_burn_in
     withdrawal_tick = intervention_tick + n_ticks_pre_withdrawal
     n_ticks_total = withdrawal_tick + n_ticks_post_withdrawal
-    points = select_hysteresis_points(wave_b_df, n_points)
+    points = select_hysteresis_points(wave_b_df, n_points, arm=arm)
 
     rows: list[dict] = []
     for point in points.iter_rows(named=True):

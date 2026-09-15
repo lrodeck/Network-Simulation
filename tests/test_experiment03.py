@@ -31,6 +31,7 @@ from discourse_lab.experiments.experiment03_bubble_intervention import (
     dispersion,
     lhs_design_points,
     run_arm,
+    select_hysteresis_points,
 )
 
 
@@ -228,6 +229,32 @@ def test_aff_per_cross_contact_reflects_the_cross_camp_restricted_denominator():
 def test_aff_per_cross_contact_is_nan_without_the_join_inputs():
     result = _aff_from_arrays(np.array([1.0]), np.array([0.0]), contact_arm=10.0, contact_none=10.0)
     assert np.isnan(result.per_cross_contact)
+
+
+# --------------------------------------------------------------------------
+# SS7's SESOI reference: DeltaAff.level_none
+# --------------------------------------------------------------------------
+
+
+def test_aff_level_none_is_the_none_arms_own_drift_over_the_window():
+    """SS7's SESOI decision rule needs `none`'s own drift, not the plateau
+    delta -- the two can differ in both magnitude and (in principle) sign,
+    so this must be a genuinely separate read, not derived from `plateau`."""
+    result = _aff_from_arrays(
+        animus_arm=np.array([5.0, 5.0]), animus_none=np.array([2.0, 2.0]),
+        contact_arm=10.0, contact_none=10.0,
+        animus_none_window_start=np.array([1.0, 1.0]),
+    )
+    assert result.plateau == pytest.approx(3.0)          # 5.0 - 2.0, arm vs none AT plateau
+    assert result.level_none == pytest.approx(1.0)        # 2.0 - 1.0, none's OWN drift since window_start
+
+
+def test_aff_level_none_is_nan_without_the_window_start_array():
+    """Matching `per_cross_contact`'s own optionality (V7.4): an omitted
+    optional input reads as NaN, not as a silent zero that would misread as
+    "no background drift"."""
+    result = _aff_from_arrays(np.array([1.0]), np.array([0.0]), contact_arm=10.0, contact_none=10.0)
+    assert np.isnan(result.level_none)
 
 
 def test_cross_contact_join_classifies_events_by_dyad_distance():
@@ -466,3 +493,39 @@ def test_hysteresis_recovery_fraction_is_nan_when_there_is_no_peak_gap_to_recove
     result = _hysteresis_from_arrays(zeros, zeros, zeros, zeros)
     assert result["peak_gap"] == 0.0
     assert np.isnan(result["recovery_fraction"])
+
+
+def test_select_hysteresis_points_arm_filter_finds_a_smaller_effect_the_default_would_skip():
+    """Real Wave B data has exactly this shape: `engagement`'s largest
+    |delta_aff_plateau| outsizes `composition`'s everywhere sampled, so the
+    unrestricted top-N is always all-`engagement` -- H4's own framing needs
+    the benefit side too, which only `arm=` can surface."""
+    df = pl.DataFrame({
+        "arm": ["engagement", "engagement", "composition", "composition"],
+        "scenario": ["s1", "s2", "s1", "s2"],
+        "lhs_index": [0, 0, 0, 0],
+        "targeting_mode": ["distance"] * 4,
+        "affective": [0.5] * 4, "ideological": [0.5] * 4, "structural": [0.5] * 4,
+        "seed": [0, 0, 0, 0],
+        "delta_aff_plateau": [0.05, 0.03, -0.02, -0.01],
+    })
+
+    unrestricted = select_hysteresis_points(df, n_points=1)
+    assert unrestricted["arm"].to_list() == ["engagement"], (
+        "test setup: engagement's magnitude should dominate the unrestricted ranking"
+    )
+
+    composition_only = select_hysteresis_points(df, n_points=1, arm="composition")
+    assert composition_only["arm"].to_list() == ["composition"]
+    assert composition_only["scenario"].to_list() == ["s1"], "still the larger-magnitude composition row"
+
+
+def test_select_hysteresis_points_arm_filter_still_drops_none():
+    df = pl.DataFrame({
+        "arm": ["none", "composition"],
+        "scenario": ["s1", "s1"], "lhs_index": [0, 0], "targeting_mode": ["camp_pair"] * 2,
+        "affective": [0.5] * 2, "ideological": [0.5] * 2, "structural": [0.5] * 2,
+        "seed": [0, 0], "delta_aff_plateau": [0.0, -0.02],
+    })
+    result = select_hysteresis_points(df, n_points=5, arm="composition")
+    assert result["arm"].to_list() == ["composition"]
