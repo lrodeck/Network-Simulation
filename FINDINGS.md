@@ -809,6 +809,32 @@ distance threshold at all — neither is built; out of scope for this pass,
 recorded here rather than left for the normalization-invariance claim to
 imply a resolution that was not actually reached.
 
+**B1 of this project's own pre-submission checklist, applied properly: not
+"already flagged," actually measured.** V7.3's own section states `phi`
+"saturates for same- and cross-camp dyads alike" at D=3 — true of the
+ABSOLUTE level, imprecise about the MECHANISM: measured directly (join
+every `distance`-mode engagement event against the engaging user's and
+post author's STABLE pre-period camp label, not just distance), `phi`
+DOES discriminate true camp membership, and the gap widens with
+tribalization rather than staying fixed — mean `phi` 0.666 (true
+same-camp) vs. 0.832 (true cross-camp) at background=0.7 (0.655 vs. 0.787
+at 0.5; 0.677 vs. 0.864 at 0.9). The fraction near-saturated (`phi` > 0.8)
+tells the sharper story: 5.7% of true same-camp contact vs. 81.9% of true
+cross-camp contact at background=0.7 — nowhere near "alike" at that
+threshold. What IS true, and is the actual mechanism behind `d_cross`'s
+80-85% figure above: mean same-camp distance (2.29 at background=0.7) is
+already MORE than double `affect_d0=1.0`, so `d_cross=affect_d0` sits well
+inside the saturated part of the curve for BOTH classes — a threshold set
+there cannot cleanly separate them even though the underlying continuous
+signal is discriminating. **This is a more precise, and more useful,
+finding than "saturates alike": the continuous mechanism carries real
+information about camp membership at this D=3 substrate; the specific
+threshold value inherited from D=1 is what fails to use it.** A `d_cross`
+recalibrated to sit between the two classes' actual distance distributions
+(mean same-camp ~2.3, mean cross-camp ~5.3 at background=0.7 — a threshold
+nearer 3.5-4.0, not 1.0) is a substantially more promising next step than
+this pass had reason to expect before measuring it.
+
 **H5 (fragmentation is a distinct outcome) has no support in this pass.**
 `delta_k` is exactly 0.0 on all 135 rows — `emergent_camps`' BIC-selected k
 never moved, for any arm, at any design point. Could be a true negative
@@ -1054,6 +1080,18 @@ warrant — "the affect op is the last consumer of the camp label in the
 mechanism path" — is not quite right; this is a second one, and it was not
 in V7's scope.**
 
+**B4 of this project's own pre-submission checklist, re-run rather than
+assumed still complete: `grep -rn "camps is not None\|camps is None"
+discourse_lab/` finds a THIRD site, not documented above —
+`metrics/dmp.py`'s thread-friction computation.** Checked whether it
+matters here: `dmp_table`/`dmp_thread_count` are never imported by
+`experiment03_bubble_intervention.py` or its notebook — dead code with
+respect to every claim in this document, not a third gate any Experiment
+03 result passes through. The two consumers enumerated above remain the
+complete set THIS experiment's results depend on; `dmp.py`'s own camp-gated
+metric would need this same enumeration repeated if a future analysis
+ever calls it.
+
 `composition` and `exposure` stay measurable at ideological=0.1 precisely
 because neither depends on that feature for its OWN effect: `composition`
 adds `valence_gamma0=2.5` (a platform-wide civility shift, independent of
@@ -1194,17 +1232,47 @@ targeting modes — extending, not just repeating, Wave A′'s 45/45.
 H1's falsifier has still not fired anywhere this project has looked.
 
 **The diversity floor rarely gets tested at this scale, because dispersion
-barely moves.** 90/216 rows reduced hostility at all (`composition`
-70/72, `exposure` 20/72, `engagement` 0/72 — it never once reduces
-hostility in this run). Among the 90, `diversity_floor_break_even` — SS2.3's
-break-even ratio `f` — ranges 0.997 to 1.024: post-intervention viewpoint
-dispersion sits within ~2.4% of its pre-intervention level in EVERY
-hostility-reducing cell measured, including the 34/90 where it moved in
-the "wrong" (shrinking) direction. SS2.3's central question — is civility
-worth a diversity cost — does not yet have a real dilemma to adjudicate
-here: the two outcomes are close to orthogonal at this population size and
-this 100-tick post-intervention horizon. A longer horizon or a stronger
-intervention could change that; this run tests neither.
+barely moves — checked with a sensitivity test this time, not just read
+off a flat statistic (C5 of this project's own pre-submission checklist).**
+90/216 rows reduced hostility at all (`composition` 70/72, `exposure`
+20/72, `engagement` 0/72 — it never once reduces hostility in this run).
+Among the 90, `diversity_floor_break_even` — SS2.3's break-even ratio `f`,
+literally `diversity_ratio_arm` when the arm reduces hostility (§4's own
+build note) — ranges 0.997 to 1.024. **Stated plainly, since it is easy to
+misread from the number alone: this is a PRE-vs-POST ratio within the
+arm's OWN trajectory, not an arm-minus-`none` difference** — unlike
+`toward_own_pole`, it does not automatically net out shared background
+movement.
+
+Sensitivity check: does the same statistic move when something in this
+data demonstrably does? `none`'s own version of it (`diversity_ratio_
+none`, the null's pre/post dispersion ratio over the identical window)
+is ALSO flat — 0.997 to 1.023 across all 216 rows — while `ideo_level_
+toward_own_pole` (animus/ideology's OWN background drift, same rows) spans
+a ~65x range. Dispersion is genuinely a far more stable summary statistic
+at this population size and horizon than animus or ideology are; the flat
+`diversity_ratio_none` is not proof the check is broken, it is evidence
+there is little background movement HERE to net out in the first place —
+a materially different situation from `toward_own_pole`'s, where a flat
+number WOULD have been suspicious. Netting it out anyway (`diversity_
+ratio_arm - diversity_ratio_none`, the arm's actual incremental
+contribution over the SAME 90 hostility-reducing rows `diversity_floor_
+break_even` is itself defined over — `engagement`'s own 0 qualifying rows
+excluded, not folded in) surfaces a small effect invisible in the raw
+ratio, but only for one arm: mean +0.0028 (`composition`, n=70,
+consistently positive), -0.00006 (`exposure`, n=20, indistinguishable from
+zero). `engagement` has no net-effect number here at all — it is undefined
+under this statistic's own domain, the same reason it contributes nothing
+to the 0.997-1.024 band above. **Revised verdict: SS2.3's central
+question — is civility worth a diversity cost — still does not have a
+real dilemma to adjudicate here, but for a checked reason now, and a more
+specific one than "every arm barely moves it": `composition` (the only
+arm both reliably reducing hostility AND newly checked here) shows a
+small, real, consistently-signed net INCREASE in dispersion (a few tenths
+of a percent) once background is subtracted out, `exposure`'s is
+genuinely negligible, and `engagement` was never in scope for this
+particular tradeoff to begin with.** A longer horizon or a stronger
+intervention could change the magnitude; this run tests neither.
 
 **Ideological movement stays dissociated from the affective outcome,
 consistent with Wave A′'s H2 finding.** Where camp is defined
@@ -1416,12 +1484,59 @@ still out of scope.
 ## Pre-submission checklist run against Experiment 03
 
 Run against the full Experiment 03 arc above (Wave A through Wave C) per
-the project's own 14-item checklist (Review 01/02 + brief §7). Two items
-found real, load-bearing problems rather than wording gaps: D1 (the
-response-surface R²=0.91 was ~93% scenario-identity, not a validated
-surface) and A4/B3 (the per-cross-contact dosage check does not
-discriminate at this substrate — reversed from "resolved" to "open").
-Everything else below either already passed or was fixed in place.
+the project's own checklist (`findings-pre-submission-checklist.md`;
+Review 01/02 + brief §7). Two items found real, load-bearing problems
+rather than wording gaps on the first pass: D1 (the response-surface
+R²=0.91 was ~93% scenario-identity, not a validated surface) and A4/B3
+(the per-cross-contact dosage check does not discriminate at this
+substrate — reversed from "resolved" to "open").
+
+**Second pass, after the checklist's own amendments.** The first pass's
+table (below) scored B1, B4, and C1 **pass** on reasoning rather than a
+fresh measurement — exactly the failure mode the checklist's own amended
+scoring-discipline section now names, applied here to itself rather than
+just added to the document. Re-run properly:
+
+- **B1** was scored pass because `affect_d0`'s D=3 mismatch was "already
+  flagged" — flagged is not measured. Actually measured this time: joined
+  every `distance`-mode engagement against the engaging user's and post
+  author's stable pre-period camp label and computed `phi(d)` by TRUE
+  camp pairing, not just its aggregate level. Result is more precise than
+  "saturates alike": `phi` DOES discriminate real camp membership (mean
+  0.666 same-camp vs. 0.832 cross-camp at background=0.7, widening with
+  tribalization), but both classes sit in the saturated part of the curve
+  because mean same-camp distance (2.29) is already more than double
+  `affect_d0=1.0` — the continuous signal is real, the specific threshold
+  inherited from D=1 is what wastes it. Now **fixed**, not pass.
+- **B4** was scored pass on "no new claim was made this pass" — the
+  amended B1 clarification's "no new constant is not the test" applies
+  identically here. Actually re-run: `grep -rn "camps is not
+  None\|camps is None" discourse_lab/` finds a THIRD site
+  (`metrics/dmp.py`), not two. Checked whether it matters: `dmp_table`/
+  `dmp_thread_count` are never imported by Experiment 03's driver or
+  notebook — confirmed dead code with respect to every claim in this
+  document. Now **fixed** (re-enumerated, found and cleared a real gap),
+  not pass-by-assumption.
+- **C1** is left at **pass**, but on a tighter basis than before: its
+  measurement (the OU 2-state fit, R²>0.999 at all 3 points) was real,
+  freshly-computed analysis done earlier in this same investigation, not
+  reasoning about a flag — the distinction the amendment draws is between
+  measurement and reasoning, not between this commit and an earlier one.
+  Stated explicitly here so the "pass" is not resting on the same
+  unstated assumption B1 and B4 were.
+- **C3** was reasoned as pass ("pre-existing"); re-verified fresh this
+  pass instead by reading `ARMS` directly (`experiment03_bubble_
+  intervention.py`): `engagement` sets `kernel_theta` only, `composition`
+  sets the SAME `kernel_theta` plus `valence_gamma0` — confirmed, not
+  assumed. Pass stands, now on a fresh check.
+- **C5** (new item, added after the first pass): `diversity_floor_break_
+  even`'s 0.997-1.024 flat band is checked against a sensitivity test —
+  `none`'s own version of the same ratio is equally flat (dispersion is
+  genuinely more stable here than animus/ideology, not evidence the check
+  is broken), but netting it out surfaces a small, consistently positive
+  effect (+0.001 to +0.003) invisible in the raw statistic. **Fixed** —
+  the "close to orthogonal" conclusion is revised to rest on a checked
+  small net effect rather than an unchecked flat ratio.
 
 | item | result | one line |
 |---|---|---|
@@ -1430,14 +1545,15 @@ Everything else below either already passed or was fixed in place.
 | A3 — seeds are not independent draws | fixed | Standing caveat added where seed-cell counts first appear |
 | A4 — per-contact denominator's selection fraction characterized | fixed, reversed a prior claim | Audited directly (45 points × 4 arms): `d_cross` selects 80-85% of ALL contact almost everywhere — not restrictive. The "dosage confound resolved" claim from the previous commit was wrong; rewritten to "open, untested" |
 | A5 — each comparison against its own matched reference | fixed | H2/SESOI tables recomputed as median-of-per-point-ratios, not ratio-of-pooled-medians; changed two conclusions (engagement's H2 contribution, exposure's SESOI uniformity) |
-| B1 — new/reused constants measured in their actual regime [blocking] | pass | `affect_d0` at D=3 already flagged (V7.3); no new unregimed constant introduced this pass |
-| B2 — thresholds reported as realized distributions | pass | Bimodality gate, k pinned/stable, and (this pass) the cross-contact selection fraction all reported as measured distributions, not nominal values |
-| B3 — shared constant checked in each consumer | fixed | `d_cross`/`affect_d0` now checked directly in the cross-contact classifier specifically, not assumed safe by association with V7.3's affect-drive check |
-| B4 — every consumer of a gated feature enumerated | pass | Established precedent (V7.3/Wave A′ finding the second `camp` consumer); no new gated-feature claim made this pass without one |
-| C1 — a derivation must contain the mechanism it predicts about [blocking] | pass | H4's OU derivation contains the sign-symmetry property itself, scoped to "this codebase's dynamics" rather than claimed universally |
+| B1 — new/reused constants measured in their actual regime [blocking] | fixed (was wrongly scored pass) | `phi(d)` measured directly by true camp pairing: discriminates real membership but both classes saturate because `affect_d0=1.0` sits well below the true same-camp distance scale (~2.3) |
+| B2 — thresholds reported as realized distributions | pass | Bimodality gate, k pinned/stable, cross-contact selection fraction, and (this pass) `phi` by true camp pairing all reported as measured distributions |
+| B3 — shared constant checked in each consumer | fixed | `d_cross`/`affect_d0` checked directly in the cross-contact classifier; B1's fresh measurement now separately checks the affect-drive consumer too |
+| B4 — every consumer of a gated feature enumerated | fixed (was wrongly scored pass) | Fresh `grep` finds a third site (`metrics/dmp.py`); confirmed unused by Experiment 03, so the previously-known two remain the complete relevant set |
+| C1 — a derivation must contain the mechanism it predicts about [blocking] | pass | H4's OU derivation contains the sign-symmetry property itself; measurement was real (R²>0.999) though done earlier in this investigation, not reasoning about a flag |
 | C2 — "not supported" vs. "not testable" distinguished | pass | H5 (k pinned vs. stable) and now A4 (untested vs. negatively tested) both apply the distinction |
-| C3 — an arm's own construction separated from its attributed effect | pass | `engagement`/`composition`'s shared `kernel_theta` vs. distinct `gamma0` lever already separated (pre-existing) |
+| C3 — an arm's own construction separated from its attributed effect | pass | Re-verified fresh this pass by reading `ARMS` directly: `engagement`/`composition` share `kernel_theta`, differ only in `composition`'s added `gamma0` |
 | C4 — alternative explanation stated before naming a finding | pass | No new unvalidated name asserted; response-surface downgrade explicitly avoided over-naming what the LOO check does not support |
+| C5 — a null statistic gets a sensitivity check | fixed | `diversity_floor_break_even`'s flat 0.997-1.024 band checked against `none`'s own (also flat) version; netted out over the SAME 90-row domain the statistic is itself defined on, reveals a small real effect for `composition` (+0.0028) the raw ratio hid, ~zero for `exposure`, undefined for `engagement` |
 | D1 — fits report effective design points, not row count [blocking] | fixed | `camp_pair`'s 18 points are 3 effective neighborhoods against 4 parameters — under-determined; stated explicitly with cluster-only R²=0.844 and leave-one-out R²=0.072 |
 | D2 — fits validated out of sample or with clustering absorbed | fixed | Leave-one-scenario-out and scenario-fixed-effects both added for `camp_pair` and `distance` |
 | D3 — algebraically dependent quantities counted once | pass (fixed earlier this session) | `toward_own_pole` reported as primary; `toward_mean`/`toward_other_camp` noted as near-mirror-images, not counted as independent confirmations |
