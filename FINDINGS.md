@@ -1527,15 +1527,29 @@ expected, not merely unremarked, given the mechanism check above**: the
 and sign-symmetric in the gap — `k`/`k_b` do not know or care whether
 `Delta` is positive (harm) or negative (benefit), so a model where recovery
 comes from that mechanism predicts equal recovery rates in both directions,
-which is exactly what both runs show. **H4's own asymmetry claim ("the
-hostile regime is stickier than the civil one") is therefore NOT supported
-by this codebase's dynamics specifically** — partial persistence (the
-non-asymmetry-specific half of H4) holds in both directions, at a rate this
-project can now name from the OU constants alone rather than measure arm by
-arm. Re-checked at ~4x this section's own peak-gap magnitude (work-order-01
-decision 2, pre-registered before running — see "Decision 2d" below): the
-same conclusion holds, and the mechanism check above correctly predicts a
-large drop in the recovered FRACTION at the longer exposure too.
+which is exactly what both runs show. **At this comparison's own scale
+(60-tick pre-withdrawal), H4's asymmetry claim ("the hostile regime is
+stickier than the civil one") is not supported** — partial persistence
+(the non-asymmetry-specific half of H4) holds in both directions, at a
+rate this project can now name from the OU constants alone rather than
+measure arm by arm.
+
+**Superseded, not merely re-checked: work order 02's gap-ladder test
+(below, and in full under "Work order 02, task 1") found the opposite at
+the SAME points, run jointly.** Two defects in the comparison just
+above — harm and benefit measured at DIFFERENT design points, and
+statistics pooled across 3 non-independent points — meant it could not
+actually distinguish "no asymmetry" from "an asymmetry too small to see
+through those two flaws." Fixing both (a common 3-point design, per-point
+statistics) and adding a 60/300/1000-tick ladder finds a REAL, if narrow,
+asymmetry: relative asymmetry grows with exposure duration at 2 of 3
+points, clearing a pre-registered 3-sigma bar at both. Work order 01's
+own larger-gap check (decision 2, immediately below) inherited both of
+this comparison's defects and its own unit error besides, so its null
+result is superseded for the same reason. **Current verdict: H4's
+asymmetry claim IS supported, narrowly, once arm/point confounding and
+cross-point pooling are removed from the test** — see "Work order 02,
+task 1" for the numbers this rests on.
 
 **Dataset provenance, one table for the whole experiment (standing
 requirement, not previously consolidated — each number above cites its own
@@ -1556,6 +1570,8 @@ CSV inline, but no single place lists all six together).**
 | `wave_c_largergap.csv` | 0.15 (V7.6) | `distance` | the SAME 3 points as `wave_c.csv` (re-selected from the ORIGINAL `wave_b.csv`), `n_ticks_pre_withdrawal=1000` (was 60) | 15 | Decision 2's harm-side larger-gap hysteresis check (H4) |
 | `wave_c_composition_largergap.csv` | 0.15 (V7.6) | `distance`, `camp_pair` | the SAME 3 points as `wave_c_composition.csv` (re-selected from the ORIGINAL `wave_b.csv`), `n_ticks_pre_withdrawal=1000` (was 60) | 15 | Decision 2's benefit-side larger-gap hysteresis check (H4) |
 | `wave_c_largergap_ou_fit.csv` | n/a (derived) | n/a | per-seed 2-state OU refit (RMSE, R², peak_gap) over the 6 points in the two datasets above | 6 | Decision 2d's C1 residual-growth check |
+| `wave_c_gap_ladder.csv` | 0.15 (V7.6) | `distance`, `affect_d0_mode="calibrated"` | 3 points selected JOINTLY from `wave_b_recal.csv` by both arms' mean \|Δ\| (work order 02, task 1) — a common design, not per-arm selection | 90 | Work order 02's H4 asymmetry re-test (60/300/1000-tick pre-withdrawal ladder, both arms at every point) |
+| `wave_c_gap_ladder_ou_fit.csv` | n/a (derived) | n/a | per-seed 2-state OU refit over all 90 rows in the row above | 18 | Work order 02's secondary RMSE/peak_gap check, all 3 rungs |
 
 **Two standing items this project defers rather than silently drops.**
 H1's falsifier has now been searched for across Wave A (one background,
@@ -1872,11 +1888,15 @@ entirely.**
   features under different `targeting_mode`s, not the animus-update
   mechanism), so an unchanged count here is confirmatory, not
   uninformative.
-- **Wave C (H4): no asymmetry, still.** Harm recovery_fraction
+- **Wave C (H4): recalibration barely moves these numbers either way —
+  the asymmetry finding itself is superseded by work order 02, below, not
+  by this recalibration.** Harm recovery_fraction
   0.6250→0.6298 (SD 0.0253→0.0206), benefit 0.6078→0.6157 (SD
   0.0270→0.0198) — both sides moved together, by less than their own
   seed spread, keeping the harm/benefit difference small in both
-  datasets. Peak gaps shrank somewhat (e.g. the largest point:
+  datasets AT THIS (per-arm-selected, pooled) design; work order 02's
+  common-design, per-point re-test later found a real asymmetry the
+  pooling here could not see. Peak gaps shrank somewhat (e.g. the largest point:
   0.0356→0.0240) — recalibration lowers `engagement`/`composition`'s
   overall animus impact a little, consistent with the response-surface
   coefficients shrinking too, but does not touch the recovery MECHANISM
@@ -1963,12 +1983,24 @@ and the normalized ratio falls. Both unit choices agree on the verdict;
 the normalized one rules out "the absolute comparison happened to favor
 no-growth because the gaps were also growing" as a competing explanation.
 
-**C2 (harm/benefit asymmetry): NOT confirmed — still no asymmetry.**
+**C2 (harm/benefit asymmetry): NOT confirmed by this pre-registration's
+OWN threshold — and that threshold turned out to be the wrong test
+(work order 02, tasks 1 and 7).**
 `composition` (benefit) recovery_fraction mean **0.2121** (SD 0.0104,
 n=15); `engagement` (harm) mean **0.2339** (SD 0.0108, n=15); difference
 **0.0218**, against baseline difference 0.0172 and the pre-registered
 threshold of >0.081 (~3x the original pooled SD). The two distributions
-still overlap almost completely.
+still overlap almost completely — **but this threshold was fixed in
+`recovery_fraction`'s SHORT-gap absolute units, and `recovery_fraction`'s
+own SD fell ~2.5x at this larger gap (0.0270/0.0253 -> 0.0104/0.0108
+above), so 0.081 was functioning as roughly an 8-sigma bar here, not the
+3-sigma one it was set to be** — checked directly and named as this
+project's own standing checklist amendment, not asserted. This section's
+own verdict stands as the record of what THIS pre-registration found;
+work order 02's own re-test, on a scale-relative statistic and a design
+that also fixes the arm/point confound and cross-point pooling this
+section's points still carry, found asymmetry confirmed. See "Work order
+02, task 1" for the numbers.
 
 **A real change neither threshold was built to catch, checked rather than
 left as a loose end: recovery_fraction itself collapses at the new
@@ -2108,3 +2140,91 @@ increase — the opposite of what a dropped term quadratic in the gap would
 predict (~16x for a 4x gap). A third rung reads the trend across three
 points instead of two, on the same common-design points the primary
 statistic uses.
+
+## Work order 02, task 1 — resolved: asymmetry CONFIRMED on a common design
+
+All 90 runs complete (3 points x 2 arms x 3 windows x 5 seeds, fresh —
+see the provenance table). Both analyses below follow the pre-
+registration above exactly; neither was adjusted after seeing a number.
+
+**Primary statistic, per point:**
+
+| point | A(60) | A(300) | A(1000) | SD(60) | monotonic? | increase | 3xSD(60) | clears? |
+|---|---|---|---|---|---|---|---|---|
+| `consolidated_two_camp` LHS1 | 0.0589 | 0.1075 | 0.1927 | 0.0428 | yes | 0.1338 | 0.1284 | yes (+4.2%) |
+| `cross_cut` LHS0 | 0.0571 | 0.0796 | 0.3010 | 0.0808 | yes | 0.2440 | 0.2424 | yes (+0.6%) |
+| `cross_cut` LHS4 | 0.0293 | 0.0131 | 0.0743 | 0.0219 | **no** (dips at 300) | 0.0450 | 0.0656 | no |
+
+**Verdict, applying the pre-registered rule exactly: ASYMMETRY CONFIRMED.**
+2 of 3 points are monotonic (`consolidated_two_camp` LHS1, `cross_cut`
+LHS0), and BOTH clear their own point's `3 x SD(60)` bar — the
+pre-registration's own "confirmed" branch, not the "rejected" one.
+**Stated precisely rather than rounded up: this is a narrow confirmation,
+not an overwhelming one.** `cross_cut` LHS0 clears by 0.6% — a margin
+inside ordinary seed-to-seed noise for a 5-seed SD estimate — and
+`consolidated_two_camp` LHS1 clears by 4.2%, comfortable but not large.
+`cross_cut` LHS4, the one point that does NOT confirm, is also the point
+where `composition`'s own effect is largest relative to `engagement`'s
+(the reverse of the other two) — noted as a fact about which point
+behaves differently, not explained away with a new hypothesis this pass
+has no data to test.
+
+**Why this reverses Decision 2d's C2 null, not a contradiction of it:**
+Decision 2d's own C2 threshold was itself methodologically sound in
+INTENT (a pre-registered 3-sigma bar) but wrong in TWO other ways this
+section's design fixes: harm and benefit were measured at DIFFERENT
+points (confounding arm with design point — only 1 of 3 points
+overlapped), and the 15-row-per-side statistics were pooled across 3
+non-independent points rather than computed per point (A3's own
+objection). This section's design uses the SAME 3 points for both arms
+and computes `A` within each point, never pooled. Fixing those two
+defects — not the units fix from task 2, which was about C1 — is what
+surfaces the confirmation C2 missed. Decision 2d's own verdict stands as
+recorded (a pre-registration is not retro-fitted); this section
+supersedes it as the more soundly designed test of the same question.
+
+**Context, not part of the test:** absolute `recovery_fraction` falls
+with window length for both arms at all 3 points (e.g.
+`consolidated_two_camp` LHS1: engagement 0.642->0.450->0.241, composition
+0.638->0.498->0.293) — the same two-timescale mechanism Decision 2d
+already established (more of the gap migrates into the slow `Bs` block
+before withdrawal). The per-point absolute differences make the
+pooled-vs-clustered distinction concrete: `cross_cut` LHS0's absolute
+difference at window 1000 (0.0588) is larger than `consolidated_two_camp`
+LHS1's (0.0516) even though the LATTER's relative asymmetry `A` is
+smaller at every window — pooling the three points' absolute differences
+together, as Decision 2d's C2 did, cannot see this because a large
+absolute difference at a point with large `recovery_fraction` values
+(diluting the relative signal) looks the same as a large absolute
+difference at a point with small ones.
+
+**Secondary: OU RMSE/peak_gap ratio across three points, not two — same
+conclusion, more decisively.** Mean of the 6 per-point-arm ratios at each
+window: **0.0177 (60) -> 0.0099 (300) -> 0.0050 (1000)** — a clean,
+monotonic DECLINE, not the growth a dropped term quadratic in the gap
+would produce. Fit quality stays high throughout (R² 0.82-0.94 at the
+single lowest-signal seed, 0.95-0.999 typically). C1's own "residual
+stays flat" conclusion is now checked at a third magnitude and holds
+there too: the OU mechanism describes the larger gaps at least as well,
+not worse, contrary to what a missing feedback term would predict.
+
+**What this section does NOT do.** It does not re-litigate Decision 2d's
+own two conclusions on their own terms (C1 stands, re-confirmed above;
+C2 is superseded, not overturned by a flaw in the original reasoning —
+the flaw was in the DESIGN feeding it). It does not explain WHY
+`cross_cut` LHS4 fails to confirm while the other two do — a real
+open question, not papered over with an unearned story. **It does not
+reconcile this confirmed asymmetry with the OU DECAY mechanism's own
+sign-symmetry (§5a, above), which this section leaves standing rather
+than treating as contradicted:** `k`/`k_b` still do not know or care
+about the sign of `Δ`, and nothing here re-measures that. `recovery_
+fraction` depends on how `Δ_withdrawal` is SPLIT between the fast and
+slow blocks at the moment of withdrawal, not only on the shared decay
+constants — and `engagement`'s and `composition`'s own EXOGENOUS
+accumulation processes (hostile contact vs. civil contact, entirely
+different mechanisms upstream of withdrawal) could populate that split
+differently without the shared post-withdrawal decay being asymmetric at
+all. This is a plausible account, consistent with Decision 2d's own
+`ΔBs`-share finding, not a demonstrated one — decomposing `ΔBs`/`Δ_with
+drawal` per arm at all three rungs would test it directly and is not
+done here.
