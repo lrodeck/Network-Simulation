@@ -2390,6 +2390,18 @@ intervention's own effect as the interesting outcome; this is a flip in
 a DIFFERENT quantity (which arm's post-withdrawal effect is stickier),
 found the same way, in the same space.
 
+**Numeric backing for "internally consistent," not just a read of the
+table above (section 7's `mean(D)/SE`, carrying section 7's own
+exploratory label):** all three points show a change in the signed
+statistic across the ladder that is large relative to its own seed
+noise — `mean(D)/SE` = -4.03 (`consolidated_two_camp` LHS1), +4.34
+(`cross_cut` LHS0), +2.23 (`cross_cut` LHS4). Even LHS4, whose SIGN
+oscillates, has a net change across the full ladder that is not
+nothing — consistent with "no stable sign" (a mid-crossing point) rather
+than "no effect." These are exploratory, post-hoc statistics (section 7)
+and cannot revise REJECTED; they characterize what the rejection
+consists of, which is what this section is for.
+
 **The caveat this needs, stated plainly rather than left implicit:**
 scenario and structural sorting are confounded in these three points.
 `consolidated_two_camp` LHS1 is the only `consolidated_two_camp` point in
@@ -2401,7 +2413,9 @@ hypothesis the data suggests and this design cannot test, not a finding
 in its own right** — recorded as a candidate account for the next
 experiment to design around, not as part of what work order 03 verified.
 
-**7. Work order 04, task 2 — EXPLORATORY, cannot change the verdict:**
+**7. Work order 04, task 2 — EXPLORATORY, cannot change the verdict —
+corrected in work order 05 (the first version compared `SD(D)` against
+the wrong baseline):**
 the pre-registration's `3xSD(p,60)` bar used the seed spread at the short
 window alone; the quantity actually being tested is a difference between
 two windows, so the paired per-seed difference is the more natural noise
@@ -2416,26 +2430,52 @@ scale:
 | `cross_cut` LHS4 | +0.0654 | 0.0657 | 0.0294 | +2.23 |
 
 `mean(D)` reproduces `S(p,1000)-S(p,60)` from section 3 exactly, as it
-must (a mean of paired differences equals the difference of means). The
-work order's own expectation was that pairing shared seeds would make
-`SD(D)` smaller than either endpoint's `SD`, since both windows share the
-same burn-in realization. **That expectation does not hold at 2 of these
-3 points, checked rather than assumed:** `SD(D)` (0.112, 0.126) exceeds
-BOTH `SD(60)` (0.078, 0.082) and `SD(1000)` (0.058, 0.149) at
-`consolidated_two_camp` LHS1 and is between the two at `cross_cut` LHS0;
-only `cross_cut` LHS4 shows `SD(D)` below both. Positive seed-to-seed
-correlation across windows would shrink `Var(D)` below the sum of the two
-endpoint variances; what these numbers show instead is `Var(D)` at or
-above that sum at 2 of 3 points — the per-seed noise between window 60
-and window 1000 is not the positively-correlated "same realization"
-pattern the pairing argument assumes, at least not at these points. Per
-the work order's own labeling: this is exploratory and does not revise
-REJECTED (the test was not specified before the data was seen, and
-swapping the noise scale after seeing two margins miss by 13.3%/0.3%
-under the pre-registered scale is exactly the move pre-registration
-exists to prevent) — its value is only for scoping what precision a
-future design should expect, and it says that expectation should not
-assume pairing helps here.
+must (a mean of paired differences equals the difference of means).
+
+**Whether pairing helps is not answered by comparing `SD(D)` to either
+endpoint's own `SD` — that was the wrong baseline, caught in work order
+05.** A difference is noisier than its parts regardless of correlation;
+`SD(D)` exceeding `SD(60)` or `SD(1000)` individually says nothing about
+whether pairing helped. The right comparison is against the UNPAIRED
+baseline `sqrt(Var(60) + Var(1000))` — the noise `D` would have if the
+two windows' seeds were independent draws rather than the same 5 runs
+measured twice:
+
+| point | SD(60) | SD(1000) | unpaired baseline | SD(D) | pairing | implied r |
+|---|---|---|---|---|---|---|
+| `consolidated_two_camp` LHS1 | 0.0778 | 0.0582 | 0.0972 | 0.1123 | hurts | -0.35 |
+| `cross_cut` LHS0 | 0.0821 | 0.1493 | 0.1704 | 0.1264 | helps | +0.53 |
+| `cross_cut` LHS4 | 0.0381 | 0.0467 | 0.0603 | 0.0657 | hurts | -0.19 |
+
+(`SD(1000)` for `cross_cut` LHS4 — not reported in the previous pass —
+is 0.0467, from the same per-(point,window) aggregation as section 1's
+table; it is now evaluable like the other two.)
+
+Pairing HELPS at `cross_cut` LHS0 (`SD(D)`=0.126 against an unpaired
+0.170, implied seed correlation +0.53 across windows) and HURTS at both
+`consolidated_two_camp` LHS1 (implied r=-0.35) and `cross_cut` LHS4
+(implied r=-0.19) — the two flaws in the earlier version of this
+paragraph (comparing to the wrong baseline, and misreading LHS4's own
+comparison as "below both" when 0.0657 is above both 0.0381 and 0.0467)
+partly compounded: fixing the baseline is what makes LHS0's result read
+as "pairing helps" rather than "in between," which the endpoint
+comparison could not show either way.
+
+**At n=5, none of this is distinguishable from zero, and that is the
+actual scoping conclusion.** A correlation's standard error at n=5 is
+roughly `1/sqrt(n-3)` = 1/sqrt(2) ~ 0.71 — both +0.53 and -0.35 (and
+-0.19) sit well inside one SE of zero, and of each other. The honest
+statement for a future design is **not** "pairing does not help" (the
+first version's error) or "pairing helps, use it" (the naive read of
+LHS0 alone) but: **the seed correlation across windows cannot be
+estimated at this sample size — size a future design assuming
+independent endpoints (the conservative, unpaired baseline), and treat
+any pairing benefit that materializes as a bonus, not a planned
+saving.** Per the work order's own labeling throughout: exploratory,
+computed after the data was seen, and does not revise REJECTED (swapping
+the noise scale after seeing two margins miss by 13.3%/0.3% under the
+pre-registered scale is exactly the move pre-registration exists to
+prevent) — its only role is scoping a successor design's precision.
 
 **Recommended, not executed here — superseded by work order 04's own
 correction:** adding seeds at the 60-tick rung would cut the bar's SE
