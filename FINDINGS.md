@@ -1657,3 +1657,51 @@ with an out-group PREMIUM (same-camp contact still contributes ~60-71% of
 what cross-camp contact does to the animus update, not close to zero) —
 `drift.py`'s own Rathje citation describes an out-group-SPECIFIC
 mechanism, which this is not, at any `d0`.
+
+**Decision 2, pre-registered: the larger-gap hysteresis check for H4.**
+The current 2-state OU fit (R² > 0.999 at the 5-seed MEAN trajectory,
+peak gaps ~1e-2) shows the endogenous-valence feedback term is small at
+those magnitudes; it does not show the term is absent, because the
+derivation predicting equal recovery is the same derivation that drops
+it. Settling this needs peak gaps roughly an order of magnitude larger
+(~1e-1) — reached by lengthening the pre-withdrawal window, not
+strengthening `kernel_theta` (that would change what the arm IS, not how
+long it has been accumulating, and would make the withdrawal comparison
+dirtier). Written down BEFORE running the new points, per this project's
+own C1/C2 (acceptance-criteria doc for this work order):
+
+- **C1's threshold.** Refit the EXISTING 6 Wave C points (3 `engagement`/
+  harm, 3 `composition`/benefit) per SEED rather than on the 5-seed mean
+  (the mean-trajectory fit is what FINDINGS.md's Wave C section already
+  reports; this is the same fit run 5 times per point instead of once, to
+  read across-seed spread). Per-seed R² ranges 0.982-0.999; mean RMSE
+  0.000156, pooled SD of per-seed RMSE across all 6 points 0.000053 (the
+  noise floor). **Growth is confirmed only if the new ~1e-1-gap points'
+  mean per-seed RMSE exceeds 0.000156 by more than 3× that noise floor
+  (> 0.000315 in absolute terms) — a plain "the residual is bigger"
+  is not enough, since RMSE naturally has more room to be large against a
+  10x bigger gap even under a still-good fit.** Below that line, the
+  residual is judged flat and the OU mechanism's own prediction stands
+  unmodified at the new scale too.
+- **C2's threshold.** Current point estimates: `composition` (benefit)
+  recovery_fraction 0.6078 (SD 0.0270, n=15 seed-runs across 3 points),
+  `engagement` (harm) 0.6250 (SD 0.0253, n=15) — a difference of 0.0172
+  against a pooled seed-spread SE of 0.0087 (already only ~2x the SE,
+  consistent with the existing "not supported" reading). **A real
+  asymmetry at the new magnitude is confirmed only if
+  `|recovery_fraction_engagement - recovery_fraction_composition|` exceeds
+  3× the pooled SD (~0.081) at the new points — set before looking at
+  them, matching C1's own 3-sigma-style bar rather than picking a
+  post-hoc threshold that happens to make whatever the new numbers show
+  look decisive.**
+- **C3/C4, re-verified rather than assumed to survive the window
+  change:** the schedule prefix bit-identity test
+  (`test_schedule_gives_a_bit_identical_prefix_and_diverges_after`) does
+  not depend on tick COUNT, only on the schedule mechanism itself, so it
+  needs no new case for a longer pre-withdrawal window — confirmed by
+  reading the test, not re-asserted with a new fixture, since it already
+  parameterizes the fork tick rather than hardcoding one. `ARMS`
+  (`experiment03_bubble_intervention.py`) is read fresh, not assumed:
+  `engagement`/`composition` still differ only in `composition`'s added
+  `valence_gamma0` — unchanged by this decision, which touches
+  `n_ticks_pre_withdrawal` only, never the arm definitions.
