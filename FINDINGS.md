@@ -1903,6 +1903,19 @@ degrading. The OU model's prediction stands at the new scale too: this is
 the same linear mechanism describing a larger gap, not a fit that happens
 to still work by coincidence.
 
+**Same comparison, in units that do not depend on the gap magnitude
+(work order 02, task 2).** The 0.000181-vs-0.000156 comparison above is
+absolute RMSE across points whose peak gaps differ 3.5-4.4x — informative
+for the pre-registered threshold (which was itself set in absolute units
+deliberately, unlike C2's), but not the fairest single number for the
+"is the residual growing" question on its own. `RMSE / |peak_gap|`, mean
+of the 6 per-point ratios: **0.01175 at the short gap, 0.00355 at the
+larger one — a 3.3x DECLINE**, not growth. A dropped term quadratic in the
+gap would raise absolute RMSE ~16x for a 4x gap increase; it rose 1.16x,
+and the normalized ratio falls. Both unit choices agree on the verdict;
+the normalized one rules out "the absolute comparison happened to favor
+no-growth because the gaps were also growing" as a competing explanation.
+
 **C2 (harm/benefit asymmetry): NOT confirmed — still no asymmetry.**
 `composition` (benefit) recovery_fraction mean **0.2121** (SD 0.0104,
 n=15); `engagement` (harm) mean **0.2339** (SD 0.0108, n=15); difference
