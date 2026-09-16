@@ -1406,18 +1406,36 @@ affective survives at roughly its original size AND stays close to the
 out-of-sample cross-check behind it. Leave-one-scenario-out prediction
 (fit on 2 scenarios, predict the third) is the sharper test: R^2 = 0.072 —
 barely above predicting the global mean, and far below what R^2 = 0.908
-implies about this fit's ability to generalize. **Revised claim: this is
-not "a genuinely good linear fit." The fit reproduces 3 scenario means
-well (unsurprising with 3 free means available) and contains one dial
-(`affective`) whose slope has independent corroboration; it has
-essentially no demonstrated ability to predict a held-out region of the
-tribalization space, which is what a response surface is for.**
-`distance`'s surface (R^2 = 0.42) was already reported as a plain, honest
-negative result — the same leave-one-scenario-out check makes it more
-decisively so (R^2 = -8.96, worse than the mean), consistent with H3b's
-own finding that `distance` targeting's effect on `composition` changes
-SIGN between regimes (`consolidated_two_camp` vs `low_tribalization`),
-which no hyperplane fit to 3 points can represent regardless of R^2.
+implies about this fit's ability to generalize. **Revised verdict (work order 02, task 5): the coefficient table above is
+NOT INTERPRETABLE, not merely caveated.** This project's own D1 (pre-
+submission checklist, blocking) is why the distinction matters: a fit
+must contain the mechanism it predicts about, and a 4-parameter surface
+fit to 3 effective design points does not, regardless of its in-sample
+R². "Not a genuinely good linear fit" understates it — the coefficients
+(`camp_pair`'s affective -0.0170, ideological -0.0102, structural
++0.0084; `distance`'s +0.0084/-0.0199/+0.0122) are not a usable
+description of what the three dials do and should not be read as one,
+independent of the ONE narrower fact that survives: `affective`'s slope
+under `camp_pair` has independent corroboration from Wave A′'s own
+one-factor sweep, which is a claim about that single dial, not about the
+table as a whole. `distance`'s surface (R^2 = 0.42) was already reported
+as a plain, honest negative result — the same leave-one-scenario-out
+check makes it more decisively so (R^2 = -8.96, worse than the mean),
+consistent with H3b's own finding that `distance` targeting's effect on
+`composition` changes SIGN between regimes (`consolidated_two_camp` vs
+`low_tribalization`), which no hyperplane fit to 3 points can represent
+regardless of R^2.
+
+**Independently replicated, not just argued once: refitting the identical
+18-point design at work order 01's recalibrated `affect_d0`/`d_cross` made
+BOTH leave-one-scenario-out numbers WORSE, not better** —
+`camp_pair` 0.072 -> -0.455, `distance` -8.99 -> -9.26 (Decision 1d).
+Negative LOO R^2 means the fit predicts worse than the held-out scenario's
+own mean; recalibration touches the affect channel and the analysis-only
+`d_cross` classifier, nothing about how `run_wave_b`'s 18 points are laid
+out, so an under-determined design behaving unpredictably across two
+materially different refits of the SAME data is exactly what D1 predicts,
+observed twice rather than asserted once.
 
 Caveat this fit shares with everything else built on Wave B: 18 points
 sitting in 3 tight, radius-0.25 neighborhoods around 3 centers is not a
