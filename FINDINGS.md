@@ -1490,7 +1490,10 @@ hostile regime is stickier than the civil one") is therefore NOT supported
 by this codebase's dynamics specifically** — partial persistence (the
 non-asymmetry-specific half of H4) holds in both directions, at a rate this
 project can now name from the OU constants alone rather than measure arm by
-arm.
+arm. Re-checked at ~4x this section's own peak-gap magnitude (work-order-01
+decision 2, pre-registered before running — see "Decision 2d" below): the
+same conclusion holds, and the mechanism check above correctly predicts a
+large drop in the recovered FRACTION at the longer exposure too.
 
 **Dataset provenance, one table for the whole experiment (standing
 requirement, not previously consolidated — each number above cites its own
@@ -1508,6 +1511,9 @@ CSV inline, but no single place lists all six together).**
 | `wave_b_recal.csv` | 0.15 (V7.6) | `distance`, `affect_d0_mode="calibrated"` | LHS around 3 named scenario centers | 216 | Wave B re-run at the recalibrated `d0`; same relationship to `wave_b.csv` as above |
 | `wave_c_recal.csv` | 0.15 (V7.6) | `distance`, `affect_d0_mode="calibrated"` | re-selected from `wave_b_recal.csv` — checked directly, the SAME 3 points as `wave_c.csv` (`select_hysteresis_points`'s top-3-by-magnitude ranking for `engagement` did not change, only the magnitudes did) | 15 | Wave C harm-side hysteresis, recalibrated |
 | `wave_c_composition_recal.csv` | 0.15 (V7.6) | `distance`, `affect_d0_mode="calibrated"` | re-selected from `wave_b_recal.csv` — checked directly, NOT the same 3 points as `wave_c_composition.csv`: 2 of 3 match (`cross_cut` LHS 4/`distance`, LHS 0/`camp_pair`), the third changed from `cross_cut` LHS 4/`camp_pair` to `cross_cut` LHS 3/`distance` — the ranking is close enough for recalibration to reorder it, stated rather than assumed unchanged | 15 | Wave C benefit-side hysteresis, recalibrated |
+| `wave_c_largergap.csv` | 0.15 (V7.6) | `distance` | the SAME 3 points as `wave_c.csv` (re-selected from the ORIGINAL `wave_b.csv`), `n_ticks_pre_withdrawal=1000` (was 60) | 15 | Decision 2's harm-side larger-gap hysteresis check (H4) |
+| `wave_c_composition_largergap.csv` | 0.15 (V7.6) | `distance`, `camp_pair` | the SAME 3 points as `wave_c_composition.csv` (re-selected from the ORIGINAL `wave_b.csv`), `n_ticks_pre_withdrawal=1000` (was 60) | 15 | Decision 2's benefit-side larger-gap hysteresis check (H4) |
+| `wave_c_largergap_ou_fit.csv` | n/a (derived) | n/a | per-seed 2-state OU refit (RMSE, R², peak_gap) over the 6 points in the two datasets above | 6 | Decision 2d's C1 residual-growth check |
 
 **Two standing items this project defers rather than silently drops.**
 H1's falsifier has now been searched for across Wave A (one background,
@@ -1852,3 +1858,85 @@ would actually validate out of sample — decision 1d's own finding is that
 this fit is unstable across calibrations, which is evidence AGAINST
 spending more effort on the current 18-point design rather than a reason
 to keep refitting it.
+
+## Decision 2d — the larger-gap hysteresis check, run and resolved
+
+Both sides re-run at `n_ticks_burn_in=60, n_ticks_pre_withdrawal=1000,
+n_ticks_post_withdrawal=60` (previously 60/60/60), same `n_users=1000`,
+same 5 seeds. The 3 largest-|effect| points per side are re-selected from
+the ORIGINAL, pre-recalibration `wave_b.csv` — deliberately the SAME
+points `wave_c.csv`/`wave_c_composition.csv` already used, not
+`wave_b_recal.csv`'s, so this check's own before/after comparison (below)
+stays against the exact short-gap baseline C1/C2 were pre-registered
+against, not a recalibrated one. `wave_c_largergap.csv` (engagement/harm,
+15 rows, 1356s) and `wave_c_composition_largergap.csv`
+(composition/benefit, 15 rows, 645s — re-run once after an unrelated
+mid-job cache-eviction crash; both datasets reflect a complete, clean
+run) plus `wave_c_largergap_ou_fit.csv` (the per-seed OU refit this
+section reports).
+
+**Peak gaps actually reached: 3.5-4.4x larger, not a literal order of
+magnitude, but landing in the targeted ~1e-1 range regardless.**
+
+| point | old peak_gap (60-tick) | new peak_gap (1000-tick) | ratio |
+|---|---|---|---|
+| engagement `consolidated_two_camp` LHS1 | 0.0235 | 0.1039 | 4.42x |
+| engagement `consolidated_two_camp` LHS5 | 0.0142 | 0.0567 | 4.01x |
+| engagement `cross_cut` LHS0 | 0.0124 | 0.0473 | 3.81x |
+| composition `cross_cut` LHS4 (`camp_pair`) | -0.0097 | -0.0371 | 3.83x |
+| composition `cross_cut` LHS4 (`distance`) | -0.0103 | -0.0371 | 3.61x |
+| composition `cross_cut` LHS0 (`camp_pair`) | -0.0104 | -0.0365 | 3.50x |
+
+16.7x more pre-withdrawal ticks bought 3.5-4.4x more peak gap —
+accumulation is sub-linear in exposure time, consistent with a
+mean-reverting mechanism where `k*(X-Bs)` increasingly opposes further
+growth in `X` as `X` itself grows.
+
+**C1 (OU-fit residual growth): NOT confirmed — the residual stays flat.**
+Per-seed refit of the SAME 2-state model (`M = [[1-k,k],[k_b,1-k_b]]`,
+least-squares on `ΔBs` alone, `Δ_withdrawal` fixed from the observed
+trajectory) on all 6 new points: pooled mean RMSE **0.000181**, against
+baseline 0.000156 and the pre-registered threshold of >0.000315 (baseline
+plus 3x its own 0.000053 noise floor). Per-seed R² 0.962-0.999 (baseline
+0.982-0.999) — comparable fit quality at ~4x the gap magnitude, not
+degrading. The OU model's prediction stands at the new scale too: this is
+the same linear mechanism describing a larger gap, not a fit that happens
+to still work by coincidence.
+
+**C2 (harm/benefit asymmetry): NOT confirmed — still no asymmetry.**
+`composition` (benefit) recovery_fraction mean **0.2121** (SD 0.0104,
+n=15); `engagement` (harm) mean **0.2339** (SD 0.0108, n=15); difference
+**0.0218**, against baseline difference 0.0172 and the pre-registered
+threshold of >0.081 (~3x the original pooled SD). The two distributions
+still overlap almost completely.
+
+**A real change neither threshold was built to catch, checked rather than
+left as a loose end: recovery_fraction itself collapses at the new
+magnitude** (harm 0.6250→0.2339, i.e. to 37% of its old value; benefit
+0.6078→0.2121, to 35%). This is not a third result contradicting the
+first two — it is the same sign-symmetric OU mechanism (above) doing
+something the two pre-registered thresholds do not measure. Refitting
+`ΔBs` (the slow-block gap already accumulated by the moment of
+withdrawal) as a fraction of `Δ_withdrawal` at these same 6 new points:
+**64-72% (pooled 67%)**, against the 5-9% the ORIGINAL short-gap Wave C
+mechanism check reported at these same 3 harm points' short-gap
+counterparts. A 1000-tick pre-withdrawal window gives the slow `Bs` block
+(`k_b = k/10`, one-tenth the fast block's own reversion rate) far more
+time to drift toward the elevated state before withdrawal, so by the time
+withdrawal happens most of the total gap is stored in the SLOW component
+— which the same fixed 60-tick post-withdrawal window recovers only a
+small fraction of. This is the two-timescale mechanism interacting with
+exposure DURATION, not a new mechanism, and it does not differ between
+harm and benefit (both drop to within 2 points of the same 35-37%
+fraction of their old recovery) — so it does not reopen C2, it explains
+why recovery_fraction's absolute LEVEL is not itself a stable statistic
+across exposure lengths the way C1/C2's own ratio-based thresholds are.
+
+**Decision rule applied, per the pre-registration: neither threshold
+fired, so H4's verdict is unchanged, now checked at a substantially
+larger gap.** Partial, sign-symmetric persistence (the non-asymmetry half
+of H4) continues to hold; the ASYMMETRY half continues to not hold. What
+DOES change with exposure duration is the absolute fraction a
+fixed-length withdrawal window recovers — a named property of the OU
+mechanism's two timescales, not a reason to suspect the harm/benefit
+comparison itself.
