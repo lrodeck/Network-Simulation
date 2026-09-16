@@ -1572,6 +1572,7 @@ CSV inline, but no single place lists all six together).**
 | `wave_c_largergap_ou_fit.csv` | n/a (derived) | n/a | per-seed 2-state OU refit (RMSE, R², peak_gap) over the 6 points in the two datasets above | 6 | Decision 2d's C1 residual-growth check |
 | `wave_c_gap_ladder.csv` | 0.15 (V7.6) | `distance`, `affect_d0_mode="calibrated"` | 3 points selected JOINTLY from `wave_b_recal.csv` by both arms' mean \|Δ\| (work order 02, task 1) — a common design, not per-arm selection | 90 | Work order 02's H4 asymmetry re-test (60/300/1000-tick pre-withdrawal ladder, both arms at every point) |
 | `wave_c_gap_ladder_ou_fit.csv` | n/a (derived) | n/a | per-seed 2-state OU refit over all 90 rows in the row above | 18 | Work order 02's secondary RMSE/peak_gap check, all 3 rungs |
+| `wave_a_prime_recal_cross_contact_fraction.csv` | 0.15 (V7.6) | `distance`, `affect_d0_mode="calibrated"` | `wave_a_prime_recal`'s own 45-point design, all 4 arm-values audited directly | 180 | Work order 02, task 6's dosage-confound closure (A4, recalibrated classifier) |
 
 **Two standing items this project defers rather than silently drops.**
 H1's falsifier has now been searched for across Wave A (one background,
@@ -1670,7 +1671,7 @@ just added to the document. Re-run properly:
 | A1 — sign claims paired with magnitude + SESOI [blocking] | fixed, one stated limitation | Original Wave A and Wave A′ H2 now carry full SESOI tables; Wave A′ H3/Wave B H3b's `delta_aff_plateau` magnitude claims still lack one (`delta_aff_level_none` does not exist in `wave_a_prime.csv`/`wave_b.csv` — would need a re-run to close) |
 | A2 — exclude degenerate cells from counts | pass | Already excluded/labeled at every site checked (ideological=0.1 gate, engagement's own kernel_theta gate) |
 | A3 — seeds are not independent draws | fixed | Standing caveat added where seed-cell counts first appear |
-| A4 — per-contact denominator's selection fraction characterized | fixed, reversed a prior claim | Audited directly (45 points × 4 arms): `d_cross` selects 80-85% of ALL contact almost everywhere — not restrictive. The "dosage confound resolved" claim from the previous commit was wrong; rewritten to "open, untested" |
+| A4 — per-contact denominator's selection fraction characterized | fixed, reversed a prior claim | Audited directly (45 points × 4 arms): `d_cross` selects 80-85% of ALL contact almost everywhere — not restrictive. The "dosage confound resolved" claim from the previous commit was wrong; rewritten to "open, untested". Closed, not just re-opened: work order 01 recalibrated `d_cross` to the realized camp boundary, and work order 02's re-audit on that classifier finds 42-46% selected (genuinely restrictive, varying by point) — `engagement`'s backfire sign survives 40/40 |
 | A5 — each comparison against its own matched reference | fixed | H2/SESOI tables recomputed as median-of-per-point-ratios, not ratio-of-pooled-medians; changed two conclusions (engagement's H2 contribution, exposure's SESOI uniformity) |
 | B1 — new/reused constants measured in their actual regime [blocking] | fixed (was wrongly scored pass) | `phi(d)` measured directly by true camp pairing: discriminates real membership but both classes saturate because `affect_d0=1.0` sits well below the true same-camp distance scale (~2.3) |
 | B2 — thresholds reported as realized distributions | pass | Bimodality gate, k pinned/stable, cross-contact selection fraction, and (this pass) `phi` by true camp pairing all reported as measured distributions |
@@ -1859,16 +1860,29 @@ entirely.**
   project's smallest effect of interest, though resting on only 2 seeds
   at this specific point (the cross-calibration reproduction above is
   what carries this claim, not seed count).
-- **The dosage-confound check for `engagement`.** Re-run is not needed to
-  re-answer this specifically — it was already left OPEN (not resolved
-  either way) in the pre-submission-checklist pass, because `d_cross`'s
-  classification did not discriminate well AT ANY calibration tried
-  there. `d_cross` is now calibrated properly (camp-boundary, not tied to
-  `affect_d0`), which is progress on the classifier itself, but answering
-  "is the backfire a dosage artifact" with the new classifier needs a
-  fresh `delta_aff_per_cross_contact` audit analogous to the original
-  A4 one — not run this pass; still open, now on a better-calibrated tool
-  than before rather than a broken one.
+- **The dosage-confound check for `engagement` — CLOSED (work order 02,
+  task 6): NOT a dosage artifact.** Left OPEN in the pre-submission-
+  checklist pass because `d_cross`'s classification did not discriminate
+  well at ANY calibration tried there (A4: 80-85% of ALL contact
+  selected almost everywhere). Re-audited on the recalibrated classifier,
+  same shape as A4 (45 points x 4 arm-values, `wave_a_prime_recal`'s own
+  design, `n_users=1000`, `n_ticks_total=160`,
+  `results/experiment03/wave_a_prime_recal_cross_contact_fraction.csv`,
+  874s): the cross-contact selection fraction now averages **42-46%**
+  across arms (median 42.6-46.0%, range 22.5-58.4%) — genuinely
+  restrictive and, unlike A4's own finding, varying substantially by
+  design point rather than pinned near one value. `engagement`'s backfire
+  sign survives intact under this now-informative denominator: **40/40
+  measurable points positive** (5 below-gate, same as `delta_aff_plateau`
+  and `delta_aff_per_contact`'s own counts). More precisely: the
+  `per_cross_contact`/`per_contact` RATIO is not a constant rescale (which
+  would mean the restriction adds no information) — median 2.17x, range
+  1.71x-3.89x, tracking each point's own `1/cross_contact_fraction`
+  almost exactly, confirming the denominator is doing real per-point work.
+  **Revised claim: `engagement`'s hostility-raising backfire is not an
+  artifact of measuring more contact overall — isolating cross-camp
+  contact specifically does not shrink or reverse it, and its per-event
+  rate is if anything LARGER once diluting same-camp contact is removed.**
 - **Response-surface coefficients (`camp_pair`, `composition`).**
   affective -0.0170→-0.0121, ideological -0.0102→-0.0068, structural
   +0.0084→+0.0072, R²=0.908→0.883 (similar), but **leave-one-scenario-out
