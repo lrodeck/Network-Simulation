@@ -381,6 +381,19 @@ def affect_delta(
       camp label and no bimodality gate anywhere in this branch — a
       population that has not yet sorted into two camps still has a
       measurable affect channel under this mode.
+
+    **Grounding, stated precisely (FINDINGS.md, "Work order 01 — decisions
+    made, breaking the affect_d0/d_cross tie"; not corrected until then):**
+    this is distance-graded escalation with an out-group PREMIUM, not the
+    out-group-SPECIFIC mechanism Rathje et al. (2021) report — same-camp
+    contact still contributes ~60-71% of what cross-camp contact does to
+    the animus update (measured at `affect_d0`'s calibrated value; the
+    ratio does not depend much on `d0` specifically, since both `d0` and
+    the realized camp boundary land in the same neighborhood). Rathje et
+    al.'s own finding is about out-group content's effect on SHARING (the
+    `outgroup` feature in `exposure/kernel.py`, a different mechanism
+    entirely); citing it as grounding for `affect_delta` specifically
+    overstates what this function implements.
     """
     n = pop.X_stored.shape[0]
     names = pop.trait_names
