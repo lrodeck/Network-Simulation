@@ -1546,10 +1546,18 @@ asymmetry: relative asymmetry grows with exposure duration at 2 of 3
 points, clearing a pre-registered 3-sigma bar at both. Work order 01's
 own larger-gap check (decision 2, immediately below) inherited both of
 this comparison's defects and its own unit error besides, so its null
-result is superseded for the same reason. **Current verdict: H4's
-asymmetry claim IS supported, narrowly, once arm/point confounding and
-cross-point pooling are removed from the test** — see "Work order 02,
-task 1" for the numbers this rests on.
+result is superseded for the same reason.
+
+**Superseded again, by work order 03: the statistic behind that
+"confirmed" call took `|·|` before averaging over seeds, discarding
+direction. The signed re-analysis of the SAME 90 runs (see "Work order
+03, task 1") finds neither of the two growing points clears its own
+threshold, and the two do not even agree on which arm is stickier — one
+grows more anti-H4 with exposure, the other flips INTO the pro-H4
+direction. Current verdict: H4's asymmetry claim is REJECTED** — not
+merely "not yet confirmed": the direction is inconsistent across design
+points, and H4 is a directional hypothesis. See "Work order 03, task 1"
+for the numbers this rests on.
 
 **Dataset provenance, one table for the whole experiment (standing
 requirement, not previously consolidated — each number above cites its own
@@ -1903,8 +1911,10 @@ entirely.**
   mechanism), so an unchanged count here is confirmatory, not
   uninformative.
 - **Wave C (H4): recalibration barely moves these numbers either way —
-  the asymmetry finding itself is superseded by work order 02, below, not
-  by this recalibration.** Harm recovery_fraction
+  the asymmetry finding itself is superseded by work order 02, below,
+  and work order 02's own "confirmed" call is in turn superseded by
+  work order 03's signed re-analysis to REJECTED (see "Work order 03,
+  task 1") — neither is about this recalibration.** Harm recovery_fraction
   0.6250→0.6298 (SD 0.0253→0.0206), benefit 0.6078→0.6157 (SD
   0.0270→0.0198) — both sides moved together, by less than their own
   seed spread, keeping the harm/benefit difference small in both
@@ -2157,6 +2167,18 @@ statistic uses.
 
 ## Work order 02, task 1 — resolved: asymmetry CONFIRMED on a common design
 
+**Superseded, not merely re-checked: work order 03's signed re-analysis
+(below, "Work order 03, task 1") reverses this section's verdict to
+REJECTED.** This section's `A(p,w,s) = |rec_eng - rec_comp| / mean(...)`
+took an absolute value before averaging over seeds, which discards
+direction and — on per-seed values scattered near zero — systematically
+overstates magnitude (`E|X| > |E X|`). The signed statistic run on the
+SAME 90 runs finds the two "confirming" points do not clear their own
+threshold and do not even point the same direction. This section is kept
+below for the record (it is what work order 02's pre-registration
+committed to computing, and the numbers are correct given that
+pre-registered statistic), not because its verdict stands.
+
 All 90 runs complete (3 points x 2 arms x 3 windows x 5 seeds, fresh —
 see the provenance table). Both analyses below follow the pre-
 registration above exactly; neither was adjusted after seeing a number.
@@ -2242,3 +2264,109 @@ all. This is a plausible account, consistent with Decision 2d's own
 `ΔBs`-share finding, not a demonstrated one — decomposing `ΔBs`/`Δ_with
 drawal` per arm at all three rungs would test it directly and is not
 done here.
+
+## Work order 03, task 1 — resolved: the signed statistic reverses the confirmation to REJECTED
+
+Re-analysis only, from the same `wave_c_gap_ladder.csv` (90 rows) work
+order 02 collected — no new simulation. `A(p,w,s)` took `|rec_eng -
+rec_comp|` before averaging over seeds; direction was discarded. The
+signed statistic keeps the same seed-pairing (unchanged — it was the
+right call) and drops only the absolute value:
+
+    S(p, w, s) = (rec_eng(p,w,s) - rec_comp(p,w,s)) / mean(rec_eng(p,w,s), rec_comp(p,w,s))
+    S(p, w)    = mean over s   [n=5]
+    SD(p, w)   = sample SD over s, ddof=1
+
+Positive `S` means `engagement` (harm) recovers MORE than `composition`
+(benefit) — the direction OPPOSITE H4's claim that the hostile regime is
+stickier. Negative `S` is H4's own predicted direction.
+
+**1. `S(p,w)` and `SD(p,w)`:**
+
+| point | S(60) | S(300) | S(1000) | SD(60) |
+|---|---|---|---|---|
+| `consolidated_two_camp` LHS1 | +0.0096 | -0.0930 | -0.1927 | 0.0778 |
+| `cross_cut` LHS0 | +0.0556 | +0.0647 | +0.3010 | 0.0821 |
+| `cross_cut` LHS4 | +0.0090 | -0.0080 | +0.0743 | 0.0381 |
+
+**2. Sign consistency: not consistent, and the flip lands exactly on the
+point work order 02 leaned on hardest.** Of the 45 (point, window, seed)
+triples, 26 (57.8%) are positive (anti-H4 direction), 19 (42.2%) negative
+(pro-H4). At the (point, window)-mean level:
+
+- `cross_cut` LHS0 is positive at all 3 windows and grows MORE positive
+  with exposure (+0.056 -> +0.065 -> +0.301) — anti-H4 throughout, and
+  more strongly anti-H4 at the longest window. This matches Decision 2d's
+  old pooled direction (harm 0.2339 > benefit 0.2121, also anti-H4) and
+  simply extends it.
+- `consolidated_two_camp` LHS1 starts positive (+0.0096, anti-H4, and
+  indistinguishable from zero) at window 60, then FLIPS to negative at
+  300 and 1000 (-0.093, -0.193) — into the pro-H4 direction, the OPPOSITE
+  of Decision 2d's old pooled direction and the opposite of LHS0's own
+  sign.
+- `cross_cut` LHS4 oscillates (+, -, +) with no stable sign.
+
+Two of the three points do not agree with each other on which arm is
+stickier, let alone with a single directional claim. Work order 02's `|A|`
+statistic could not see this because both a growing anti-H4 effect
+(LHS0) and a late-emerging pro-H4 effect (LHS1) look identical once the
+sign is discarded — `|A|` growing was reported as "the asymmetry," but
+the two points that grow are not growing the SAME asymmetry.
+
+**3. Monotonicity + threshold, re-run on `S`:**
+
+| point | monotone? | \|S(1000)-S(60)\| | 3×SD(60) | SE of that bar (±35%) | clears? |
+|---|---|---|---|---|---|
+| `consolidated_two_camp` LHS1 | yes (monotone decrease) | 0.2024 | 0.2335 | ±0.0826 | no (-13.3%) |
+| `cross_cut` LHS0 | yes (\|S\| increases, same sign) | 0.2454 | 0.2462 | ±0.0870 | no (-0.3%) |
+| `cross_cut` LHS4 | no (sign oscillates) | 0.0654 | 0.1143 | ±0.0404 | no |
+
+Same 2 of 3 points are monotonic as under `|A|` (LHS1, LHS0) — the
+correction does not change WHICH points grow, only what growing means.
+But under the signed statistic, NEITHER clears its own point's `3×SD(60)`
+bar: LHS1 misses by 13.3%, LHS0 by 0.3% (a bare miss, the mirror image of
+its bare 0.6% CLEAR under `|A|`). `cross_cut` LHS4 does not resolve to
+monotone — the work order's own hypothesis that its dip under `|A|` was a
+sign-crossing artifact does not hold; its sign genuinely oscillates
+(+0.009, -0.008, +0.074), which is a different and messier pattern than a
+single crossing. **The ladder does not become 3/3.**
+
+**PRIMARY VERDICT ON THE SIGNED STATISTIC: REJECTED.** Fewer than 2 of the
+3 monotonic points clear the magnitude bar (0 of 2) — the pre-
+registration's own rejection branch, not a downgrade to "ambiguous."
+
+**4. The verdict CHANGES.** Work order 02's task 1 reported CONFIRMED;
+the signed re-analysis of the identical 90 runs reports REJECTED. The
+work order's own prediction ("it probably does not [change]") does not
+hold here — the direction check is what changes it, not just the
+narrower magnitude test. Both facts matter and neither alone would have
+been enough: the magnitude bar is missed by margins (13.3%, 0.3%) of the
+same order as the bars' own ±35% estimation error, so a magnitude-only
+re-run at n=5 would have been a coin flip either way; what removes the
+ambiguity is that the two nominally-growing points do not even agree on
+which arm is stickier, which no amount of additional precision on `A`
+alone (an unsigned quantity) could ever have revealed.
+
+**5. Threshold uncertainty, stated for the record.** `SD(p,60)` comes
+from 5 seeds; its own standard error is `SD/sqrt(2x4)`, about 35% of
+itself, so the `3xSD(60)` bar's standard error is about 35% of the bar.
+Under the ORIGINAL `|A|` statistic, both reported "clears" were inside
+that band: `cross_cut` LHS0 cleared by 0.6% of its bar (SE ±35%),
+`consolidated_two_camp` LHS1 by 4.2% (SE ±35%) — both margins are
+roughly an order of magnitude smaller than the bar's own uncertainty.
+Under the signed statistic, both misses are of the same size and
+therefore also inside that band. **The pre-registered rule's binary
+output is not decisive in EITHER direction at n=5** — CONFIRMED and
+REJECTED were both within one noisy threshold's own noise band of each
+other. The signed re-analysis is reported as the standing verdict because
+it corrects a real defect (direction-blindness) in the prior statistic,
+not because its own margin is any more statistically decisive than the
+one it replaces.
+
+**Recommended, not executed here:** adding seeds at the 60-tick rung
+only (cheapest of the three, and `SD(60)` is what every bar in this
+table is built from) would cut the bar's SE from ~35% to ~19% at n=15
+and could settle whether either point's magnitude test is real. This is
+a new simulation increment and, per this project's standing practice,
+would need its own pre-registration before running — not done as part of
+this (analysis-only) work order.
