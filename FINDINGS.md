@@ -810,30 +810,55 @@ recorded here rather than left for the normalization-invariance claim to
 imply a resolution that was not actually reached.
 
 **B1 of this project's own pre-submission checklist, applied properly: not
-"already flagged," actually measured.** V7.3's own section states `phi`
-"saturates for same- and cross-camp dyads alike" at D=3 — true of the
-ABSOLUTE level, imprecise about the MECHANISM: measured directly (join
-every `distance`-mode engagement event against the engaging user's and
-post author's STABLE pre-period camp label, not just distance), `phi`
-DOES discriminate true camp membership, and the gap widens with
-tribalization rather than staying fixed — mean `phi` 0.666 (true
-same-camp) vs. 0.832 (true cross-camp) at background=0.7 (0.655 vs. 0.787
-at 0.5; 0.677 vs. 0.864 at 0.9). The fraction near-saturated (`phi` > 0.8)
-tells the sharper story: 5.7% of true same-camp contact vs. 81.9% of true
-cross-camp contact at background=0.7 — nowhere near "alike" at that
-threshold. What IS true, and is the actual mechanism behind `d_cross`'s
-80-85% figure above: mean same-camp distance (2.29 at background=0.7) is
-already MORE than double `affect_d0=1.0`, so `d_cross=affect_d0` sits well
-inside the saturated part of the curve for BOTH classes — a threshold set
-there cannot cleanly separate them even though the underlying continuous
-signal is discriminating. **This is a more precise, and more useful,
-finding than "saturates alike": the continuous mechanism carries real
-information about camp membership at this D=3 substrate; the specific
-threshold value inherited from D=1 is what fails to use it.** A `d_cross`
-recalibrated to sit between the two classes' actual distance distributions
-(mean same-camp ~2.3, mean cross-camp ~5.3 at background=0.7 — a threshold
-nearer 3.5-4.0, not 1.0) is a substantially more promising next step than
-this pass had reason to expect before measuring it.
+"already flagged," actually measured — and corrected once more after this
+measurement's own first pass got the UNITS wrong.** V7.3's own section
+states `phi` "saturates for same- and cross-camp dyads alike" at D=3 —
+true of the absolute level, imprecise about the mechanism: measured
+directly (join every `distance`-mode engagement event against the engaging
+user's and post author's stable pre-period camp label, not just distance),
+`phi` DOES discriminate true camp membership, and the gap widens with
+tribalization rather than staying fixed. **Corrected numbers** (this
+section's own first pass reported `phi` 0.666/0.832 and mean distances
+2.29/5.27 at background=0.7, computed from RAW Euclidean distance; the
+actual mechanism reads `stance_distance` RMS-normalized —
+`dynamics.agreement_metric="rms"`, the default, divides by `sqrt(D)` —
+so those numbers were too large by a factor of `sqrt(3)≈1.73`, caught
+when work-order-01's own `_camp_boundary_d_cross` produced a value that
+silently under-classified almost everything until the same unit mismatch
+was found there too): mean `phi` 0.543 (true same-camp) vs. 0.742 (true
+cross-camp) at background=0.7 (0.531 vs. 0.684 at 0.5; 0.556 vs. 0.786 at
+0.9); mean RMS-normalized distance 1.32 (same-camp) vs. 3.05 (cross-camp)
+at 0.7. The fraction near-saturated (`phi` > 0.8) now reads the opposite
+of dramatic at the low end and still tells a real story at the high end:
+0.09% of true same-camp contact vs. 12.0% of true cross-camp contact at
+background=0.7, rising to 41.0% cross-camp (same-camp stays under 0.1%
+throughout) at 0.9 — `phi` is essentially NEVER near-saturated for
+same-camp contact at any tribalization level tested, contradicting
+"saturates... alike" more directly than the first pass's own wrong-scale
+numbers did. What IS true, and is the actual mechanism behind `d_cross`'s
+80-85% selection-fraction figure above (which used the correct RMS scale
+throughout, via the pre-existing `_cross_contact_from_frames` convention —
+only this section's OWN new distance sampling had the bug): mean
+same-camp distance (1.32 at background=0.7) already exceeds
+`affect_d0=1.0`, so `d_cross=affect_d0` sits inside or past the
+lower shoulder of the curve for the same-camp class too, not just deep in
+cross-camp's saturated region — a threshold set there cannot cleanly
+separate the two even though the underlying continuous signal is
+discriminating. **Revised finding, more precise than either "saturates
+alike" or this section's own first correction: the continuous mechanism
+carries real information about camp membership at this D=3 substrate,
+concentrated in the same distance RANGE `affect_d0=1.0` already sits in
+(same-camp is not deeply saturated the way the first pass reported) — the
+threshold inherited from D=1 does not discriminate well not because it is
+too small for the population's scale, but because same- and cross-camp
+distance distributions are not separated enough on the SAME scale `d0`
+already lives at.** `d_cross`, calibrated by `_camp_boundary_d_cross` to
+the realized midpoint between the two classes (≈1.98 at background=0.5,
+≈2.40 at 0.7, ≈2.84 at 0.9 — computed from actual engagement pairs; a
+uniform-population-pairs sample gives a close but not identical ≈2.2 at
+0.7, the expected difference between sampling frames) sits closer to
+`affect_d0=1.0` than this section's first pass believed, not the "nearer
+3.5-4.0" it wrongly suggested.
 
 **H5 (fragmentation is a distinct outcome) has no support in this pass.**
 `delta_k` is exactly 0.0 on all 135 rows — `emergent_camps`' BIC-selected k
@@ -1501,13 +1526,15 @@ just added to the document. Re-run properly:
   flagged" — flagged is not measured. Actually measured this time: joined
   every `distance`-mode engagement against the engaging user's and post
   author's stable pre-period camp label and computed `phi(d)` by TRUE
-  camp pairing, not just its aggregate level. Result is more precise than
-  "saturates alike": `phi` DOES discriminate real camp membership (mean
-  0.666 same-camp vs. 0.832 cross-camp at background=0.7, widening with
-  tribalization), but both classes sit in the saturated part of the curve
-  because mean same-camp distance (2.29) is already more than double
-  `affect_d0=1.0` — the continuous signal is real, the specific threshold
-  inherited from D=1 is what wastes it. Now **fixed**, not pass.
+  camp pairing, not just its aggregate level. Result (corrected once more
+  after work-order-01 caught this measurement's own RMS-units bug — see
+  the Wave A section above) is more precise than "saturates alike": `phi`
+  DOES discriminate real camp membership (mean 0.543 same-camp vs. 0.742
+  cross-camp at background=0.7, widening with tribalization), and same-camp
+  contact is essentially NEVER near-saturated (phi>0.8 in 0.09% of it) —
+  the discrimination is real, but it lives in the same distance range
+  `affect_d0=1.0` already sits in, which is why the old threshold still
+  fails to separate the two classes cleanly. Now **fixed**, not pass.
 - **B4** was scored pass on "no new claim was made this pass" — the
   amended B1 clarification's "no new constant is not the test" applies
   identically here. Actually re-run: `grep -rn "camps is not
