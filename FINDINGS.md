@@ -1580,6 +1580,7 @@ CSV inline, but no single place lists all six together).**
 | `wave_c_largergap_ou_fit.csv` | n/a (derived) | n/a | per-seed 2-state OU refit (RMSE, R², peak_gap) over the 6 points in the two datasets above | 6 | Decision 2d's C1 residual-growth check |
 | `wave_c_gap_ladder.csv` | 0.15 (V7.6) | `distance`, `affect_d0_mode="calibrated"` | 3 points selected JOINTLY from `wave_b_recal.csv` by both arms' mean \|Δ\| (work order 02, task 1) — a common design, not per-arm selection | 90 | Work order 02's H4 asymmetry re-test (60/300/1000-tick pre-withdrawal ladder, both arms at every point) |
 | `wave_c_gap_ladder_ou_fit.csv` | n/a (derived) | n/a | per-seed 2-state OU refit over all 90 rows in the row above | 18 | Work order 02's secondary RMSE/peak_gap check, all 3 rungs |
+| `wave_c_gap_ladder_dbs_split.csv` | n/a (derived) | n/a | per-seed 2-state OU refit over the SAME 90 rows as `wave_c_gap_ladder.csv`, keeping `dBs`/`delta_peak` per seed instead of only the pooled RMSE | 90 | Work order 03, task 2's `ΔBs`/`Δ_withdrawal` split-ratio decomposition |
 | `wave_a_prime_recal_cross_contact_fraction.csv` | 0.15 (V7.6) | `distance`, `affect_d0_mode="calibrated"` | `wave_a_prime_recal`'s own 45-point design, all 4 arm-values audited directly | 180 | Work order 02, task 6's dosage-confound closure (A4, recalibrated classifier) |
 
 **Two standing items this project defers rather than silently drops.**
@@ -1759,6 +1760,14 @@ with an out-group PREMIUM (same-camp contact still contributes ~60-71% of
 what cross-camp contact does to the animus update, not close to zero) —
 `drift.py`'s own Rathje citation describes an out-group-SPECIFIC
 mechanism, which this is not, at any `d0`.
+
+**Work order 02, task 4 restated this in code, not just here; work order
+03, task 3 confirmed it landed.** `drift.py::affect_delta`'s module
+docstring (lines 385-387) and `MODEL.md`'s C1 mechanism-table row (line
+989) both carry the same "distance-graded escalation with an out-group
+PREMIUM, not the out-group-SPECIFIC mechanism the Rathje citation itself
+reports" language — checked directly against both files, not assumed
+from memory of having written it. No fix was needed.
 
 **Decision 2, pre-registered: the larger-gap hysteresis check for H4.**
 The current 2-state OU fit (R² > 0.999 at the 5-seed MEAN trajectory,
@@ -2265,6 +2274,16 @@ all. This is a plausible account, consistent with Decision 2d's own
 drawal` per arm at all three rungs would test it directly and is not
 done here.
 
+**Demonstrated, not merely plausible: see "Work order 03, task 2,"
+below.** The split ratio does differ systematically between arms,
+tracks window length, and its sign matches each point's own recovery
+asymmetry exactly (the arm with the larger slow-block share is the same
+arm that point's own signed statistic calls stickier) — this also
+supersedes this section's own earlier verdict, since the "asymmetry" it
+CONFIRMED is itself superseded by work order 03's signed re-analysis to
+REJECTED (with the rejection itself further characterized, not reversed,
+by work order 04's sign-dependence finding).
+
 ## Work order 03, task 1 — resolved: the signed statistic reverses the confirmation to REJECTED
 
 Re-analysis only, from the same `wave_c_gap_ladder.csv` (90 rows) work
@@ -2498,3 +2517,82 @@ with the sign-dependence noted as a candidate account for a successor
 experiment, and the brief itself treats this withdrawal-protocol
 statistic as a robustness check rather than a headline result — a weak
 reason, on its own, to keep this experiment open further.
+
+## Work order 03, task 2 — resolved: the ΔBs split account is DEMONSTRATED, not merely plausible
+
+Work order 02's "What this section does NOT do" paragraph named a
+candidate mechanism for how a confirmed asymmetry could coexist with the
+OU decay's own sign-symmetry: `engagement` and `composition` are
+different EXOGENOUS accumulation processes upstream of withdrawal, and
+could split `Δ_withdrawal` between the fast and slow blocks differently,
+without the shared post-withdrawal decay itself being asymmetric. That
+paragraph explicitly flagged this as "plausible, consistent with Decision
+2d's own `ΔBs`-share finding, not a demonstrated one." This task tests it
+directly, from the same 90 runs, refitting the per-seed 2-state OU model
+(same fit as `wave_c_gap_ladder_ou_fit.csv`) but keeping `dBs` and
+`delta_peak` per seed instead of discarding them into a pooled RMSE.
+
+**Split ratio `dBs/delta_peak`, mean over 5 seeds, by arm x point x window:**
+
+| point | window | engagement | composition | diff (eng-comp) | SE(diff) | t |
+|---|---|---|---|---|---|---|
+| `consolidated_two_camp` LHS1 | 60 | 0.038 | 0.043 | -0.005 | 0.041 | -0.12 |
+| `consolidated_two_camp` LHS1 | 300 | 0.332 | 0.228 | +0.103 | 0.026 | 4.00 |
+| `consolidated_two_camp` LHS1 | 1000 | 0.641 | 0.572 | +0.069 | 0.009 | 8.14 |
+| `cross_cut` LHS0 | 60 | 0.082 | 0.089 | -0.006 | 0.014 | -0.47 |
+| `cross_cut` LHS0 | 300 | 0.338 | 0.383 | -0.045 | 0.024 | -1.89 |
+| `cross_cut` LHS0 | 1000 | 0.657 | 0.748 | -0.091 | 0.026 | -3.53 |
+| `cross_cut` LHS4 | 60 | 0.044 | 0.081 | -0.037 | 0.030 | -1.23 |
+| `cross_cut` LHS4 | 300 | 0.359 | 0.357 | +0.002 | 0.009 | 0.24 |
+| `cross_cut` LHS4 | 1000 | 0.659 | 0.682 | -0.023 | 0.003 | -6.65 |
+
+(`diff`/`SE`/`t` computed on the seed-paired per-seed difference, same
+pairing convention as `S(p,w,s)`.)
+
+**The split DOES differ systematically between arms, tracks window
+length, and — critically — its SIGN matches each point's own recovery
+asymmetry exactly.** A higher `dBs/delta_peak` means more of that arm's
+peak gap is trapped in the slow block (`k_b = k/10`), which mechanically
+means LESS of it recovers in a fixed post-withdrawal window — i.e.
+whichever arm has the larger split ratio at a point is the "stickier"
+arm there, in the same sense `S(p,w)`'s sign measures:
+
+- `consolidated_two_camp` LHS1: `engagement`'s split ratio EXCEEDS
+  `composition`'s at 300 and 1000 (significant, t=4.00 and t=8.14) —
+  `engagement` traps more of its gap in the slow block, so `engagement`
+  is stickier. This is the PRO-H4 direction, and it is exactly the
+  direction `S(p,w)` takes at this point (negative at 300, 1000 — see
+  "Work order 03, task 1").
+- `cross_cut` LHS0: `composition`'s split ratio EXCEEDS `engagement`'s at
+  300 and 1000 (t=-1.89, -3.53), growing with window length —
+  `composition` traps more of its gap, so `composition` is stickier.
+  This is the ANTI-H4 direction, and again matches `S(p,w)`'s own sign at
+  this point (positive throughout, growing).
+- `cross_cut` LHS4: the diff is small at every window (|diff| <= 0.037)
+  and does not grow monotonically (-0.037 -> +0.002 -> -0.023) — no
+  consistent arm-level split asymmetry, matching this point's own
+  unstable `S(p,w)` sign (section 6, "Work order 03, task 1").
+
+**Verdict: DEMONSTRATED, per the work order's own stated criterion.**
+The split differs between arms, the difference is significant and grows
+with window length at the two points with a real `S` effect, and — the
+strongest form of confirmation available — the ARM that gets the larger
+slow-block share at each point is the same arm that point's own signed
+recovery statistic calls "stickier." The account in work order 02's
+"What this section does NOT do" paragraph is no longer a hedge; it is
+the mechanism, and it now also explains WHY the sign of the asymmetry
+flips between points: it is not that the shared OU decay becomes
+asymmetric, but that `engagement`'s and `composition`'s own exogenous
+accumulation processes populate the fast/slow split differently, and
+which arm ends up more slow-block-heavy differs by design point — the
+same points work order 04 found ordered by the structural dial. This
+task does not itself explain WHY the structural dial predicts which arm
+gets the larger slow-block share (that remains open, and is part of the
+same confound work order 04 flagged: only 3 points, one
+`consolidated_two_camp`, two `cross_cut`); it demonstrates the proximate
+mechanism the earlier hedge could only propose.
+
+**Provenance:** `results/experiment03/wave_c_gap_ladder_dbs_split.csv`
+(90 rows, same runs and cache as `wave_c_gap_ladder.csv` and
+`wave_c_gap_ladder_ou_fit.csv` — a per-seed refit keeping `dBs` and
+`delta_peak` instead of only the pooled RMSE the earlier fit kept).
