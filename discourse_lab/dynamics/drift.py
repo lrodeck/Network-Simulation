@@ -509,6 +509,7 @@ def apply_drift(
     camps: np.ndarray | None = None,
     valence: EngagementValence | None = None,
     stance_distance: np.ndarray | None = None,
+    affect_d0: float | None = None,
 ) -> None:
     """Mutates `pop.X_stored` (and the derived `pop.X_used`) in place, plus
     `state.Bs`, per spec §2.9's composition. `cfg.dynamics.drift`: "none"
@@ -587,7 +588,11 @@ def apply_drift(
                 "report_animus_increment": cfg.dynamics.report_animus_increment,
                 "mode": cfg.dynamics.affect_drive,
                 "stance_distance": stance_distance,
-                "affect_d0": cfg.dynamics.affect_d0,
+                # V8: the caller's calibrated value when affect_d0_mode=
+                # "calibrated" (TickEngine passes it); None (fixed mode, or
+                # a caller that never threads one through, e.g. isolated
+                # mechanism tests) falls back to the raw config constant.
+                "affect_d0": affect_d0 if affect_d0 is not None else cfg.dynamics.affect_d0,
             })
             aff_cols = [i for i, nm in enumerate(names) if nm in ("identification", "animus")]
             gain[:, aff_cols] += ramp * aff[:, aff_cols]

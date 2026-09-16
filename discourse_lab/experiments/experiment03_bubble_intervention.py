@@ -461,9 +461,10 @@ def _cross_contact_from_frames(
     engagement (columns `t`, `user`, `post`), look up the ENGAGING user's own
     stance at that tick (`traits`: `t`, `user`, `stance_cols`) and the post's
     own stance (`posts`: `post`, `stance_cols`), then classify the event as
-    cross-contact when their distance exceeds `d_cross` -- the SAME
-    saturation midpoint V7.3's mechanism uses (`dynamics.affect_d0`), so the
-    two thresholds cannot drift apart. Returns `(total_contact,
+    cross-contact when their distance exceeds `d_cross`. V8 (work-order-01)
+    breaks V7.4's original tie to `dynamics.affect_d0` -- the caller now
+    passes `_camp_boundary_d_cross`'s own realized camp-boundary statistic,
+    a different calibration for a different job. Returns `(total_contact,
     cross_contact)`; `total_contact` is the RAW engagement count (matching
     `delta_aff`'s existing total-volume denominator) rather than the
     post-join count, so a snapshot cadence that ever missed a tick would
@@ -528,19 +529,86 @@ def delta_aff(handle_arm, handle_none, cfg: Config, *, window_start: int, platea
 
     cross_arm, cross_none = float("nan"), float("nan")
     if handle_arm.has_traits and handle_none.has_traits and handle_arm.has_posts and handle_none.has_posts:
-        d_cross = cfg.dynamics.affect_d0
-        _, cross_arm = _cross_contact_share(
-            handle_arm, cfg, window_start=window_start, plateau_tick=plateau_tick, d_cross=d_cross,
-        )
-        _, cross_none = _cross_contact_share(
-            handle_none, cfg, window_start=window_start, plateau_tick=plateau_tick, d_cross=d_cross,
-        )
+        # V8 (work-order-01, decision 1b): d_cross is calibrated to THIS
+        # population's own realized same/cross-camp distance boundary, no
+        # longer tied to affect_d0 (V7.4's coupling). Only meaningful where
+        # camps are defined -- NaN below the gate via the SAME split
+        # _ideo_decomposition's toward_* columns use, rather than a
+        # threshold computed against a camp label that does not exist.
+        pre_tick = window_start - 1
+        stance0, _ = _stance_and_animus_at(handle_none, cfg, pre_tick)
+        camp0, _ = _camp_split_from_stance0(stance0)
+        if camp0 is not None:
+            rms = cfg.dynamics.agreement_metric == "rms"
+            d_cross = _camp_boundary_d_cross(stance0, camp0, rms=rms)
+            _, cross_arm = _cross_contact_share(
+                handle_arm, cfg, window_start=window_start, plateau_tick=plateau_tick, d_cross=d_cross,
+            )
+            _, cross_none = _cross_contact_share(
+                handle_none, cfg, window_start=window_start, plateau_tick=plateau_tick, d_cross=d_cross,
+            )
 
     return _aff_from_arrays(
         animus_arm, animus_none, _contact(handle_arm), _contact(handle_none),
         cross_contact_arm=cross_arm, cross_contact_none=cross_none,
         animus_none_window_start=animus_none_window_start,
     )
+
+
+def _camp_split_from_stance0(stance0: np.ndarray) -> tuple[np.ndarray | None, float]:
+    """Fixed-axis projection + median split, gated on Sarle bimodality --
+    the SAME camp definition `_ideo_decomposition`'s `toward_*` columns use.
+    Returns `(None, bimodality0)` below the gate (no camps to split on),
+    `(camp0, bimodality0)` above it. V8 (work-order-01, decision 1b) pulls
+    this out of `_ideo_decomposition` so `delta_aff`'s `d_cross` calibration
+    can share the identical gate -- `per_cross_contact` and `toward_own_
+    pole` must never disagree about whether camps are defined at a given
+    design point, and duplicating the gate logic is how that kind of
+    disagreement creeps in.
+    """
+    mean0, axis = _fixed_axis(stance0)
+    proj0 = (stance0 - mean0) @ axis
+    bimodality0 = float(bimodality_coefficient(proj0))
+    if not np.isfinite(bimodality0) or bimodality0 <= CAMP_BIMODAL_THRESHOLD:
+        return None, bimodality0
+    return (proj0 > np.median(proj0)).astype(np.int64), bimodality0
+
+
+def _camp_boundary_d_cross(stance0: np.ndarray, camp0: np.ndarray, rms: bool = True) -> float:
+    """V8 (work-order-01, decision 1b): `d_cross`'s own calibration,
+    independent of `affect_d0` (breaks V7.4's tie). Midpoint between the
+    realized same-camp and cross-camp classes' own mean pairwise distance --
+    a deliberately simple statistic, matching `affect_d0`'s own original
+    design intent, rather than a fitted decision boundary. Sampled the same
+    fixed-seed-pairs way `agree_delta`/`affect_d0_calibrated` are (a
+    normalization constant, not a modeling draw), so it costs nothing at
+    analysis time and needs no RNG stream of its own. NaN if the sample
+    happens to contain no pairs of one class (degenerate, not expected at
+    the population sizes this project runs).
+
+    `rms` MUST match the `rms` the caller passes to `_cross_contact_share`/
+    `_cross_contact_from_frames` -- those compare their own per-event
+    distance against this return value directly, and that distance is
+    RMS-normalized (divided by `sqrt(D)`) whenever `cfg.dynamics.
+    agreement_metric == "rms"` (the default). A raw-scale `d_cross` compared
+    against an RMS-scale event distance is a unit mismatch that silently
+    under-classifies almost everything as same-camp -- caught by this
+    project's own B1 measurement finding raw and RMS-scale distances
+    disagreed by exactly the missing `sqrt(D)` factor.
+    """
+    rng = np.random.default_rng(0)
+    n = stance0.shape[0]
+    n_sample = min(20_000, n * 4)
+    a = rng.integers(0, n, n_sample)
+    b = rng.integers(0, n, n_sample)
+    dist = np.linalg.norm(stance0[a] - stance0[b], axis=1)
+    if rms:
+        dist = dist / np.sqrt(max(stance0.shape[1], 1))
+    same = camp0[a] == camp0[b]
+    cross = ~same
+    if not same.any() or not cross.any():
+        return float("nan")
+    return float((dist[same].mean() + dist[cross].mean()) / 2.0)
 
 
 def _ideo_decomposition(
@@ -556,9 +624,7 @@ def _ideo_decomposition(
     `stance1_*` in hand — no reason to run k-means twice on the same array
     here).
     """
-    mean0, axis = _fixed_axis(stance0)
-    proj0 = (stance0 - mean0) @ axis
-    bimodality0 = float(bimodality_coefficient(proj0))
+    camp0, bimodality0 = _camp_split_from_stance0(stance0)
     delta_k = float(k1_arm - k1_none)
     delta_bic_margin = float(bic_margin_arm - bic_margin_none)
     # SS2.3: needs no camp split at all, computed unconditionally up front
@@ -566,13 +632,14 @@ def _ideo_decomposition(
     div_arm = diversity_ratio(stance0, stance1_arm)
     div_none = diversity_ratio(stance0, stance1_none)
 
-    if not np.isfinite(bimodality0) or bimodality0 <= CAMP_BIMODAL_THRESHOLD:
+    if camp0 is None:
         return DeltaIdeo(
             float("nan"), float("nan"), float("nan"), delta_k, delta_bic_margin=delta_bic_margin,
             diversity_ratio_arm=div_arm, diversity_ratio_none=div_none,
         )
 
-    camp0 = (proj0 > np.median(proj0)).astype(np.int64)
+    mean0, axis = _fixed_axis(stance0)
+    proj0 = (stance0 - mean0) @ axis
     sign0 = np.where(camp0 == 1, 1.0, -1.0)
     centroid_1 = stance0[camp0 == 1].mean(axis=0)
     centroid_0 = stance0[camp0 == 0].mean(axis=0)

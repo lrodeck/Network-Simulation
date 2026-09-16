@@ -386,13 +386,26 @@ class DynamicsConfig(Hashable):
     # a pre-V7.3 result (e.g. Experiment 01's SBM finding) under the exact
     # mechanism it was measured with.
     affect_drive: str = "distance"      # camp | distance
-    # V7.3: the saturation constant in phi(d) = d / (d + affect_d0). Fixed at
-    # the (approximate) median pairwise stance distance of a standard-normal
-    # one-axis population, not calibrated per-run like `agree_delta` — a
-    # deliberately simple constant, carried in the C10-style sensitivity
-    # sweep rather than tuned. Also V7.4's `d_cross` threshold, so the two
-    # cannot drift apart.
+    # V7.3: the saturation constant in phi(d) = d / (d + affect_d0). Originally
+    # fixed at the (approximate) median pairwise stance distance of a
+    # standard-normal ONE-AXIS population; at Experiment 03's actual D=3 this
+    # put the whole population in phi's saturated region (FINDINGS.md, the B1
+    # pre-submission-checklist measurement). V8 (work-order-01, decision 1a)
+    # calibrates `d0` per-population instead, when `affect_d0_mode=
+    # "calibrated"` (the new default) — `TickEngine` overrides this field's
+    # value with the population's own median pairwise stance distance, the
+    # SAME statistic `agree_delta` already computes (deliberately: B3 of the
+    # checklist treats them as two consumers of one number). This field's
+    # literal value is used verbatim only under `affect_d0_mode="fixed"`,
+    # kept reachable so pre-V8 results (mechanism-level V7.3 tests, Wave A′/
+    # B/C's original runs) stay reproducible under the exact constant they
+    # were measured with. No longer tied to V7.4's `d_cross` — that threshold
+    # is now calibrated separately, to the realized camp-boundary distance
+    # (`experiments/experiment03_bubble_intervention.py::_camp_boundary_d_
+    # cross`), since a mechanism's gain and an after-the-fact event
+    # classifier need different calibrations (work-order-01, decision 1).
     affect_d0: float = 1.0
+    affect_d0_mode: str = "calibrated"  # fixed | calibrated
 
     # V1: the two valence axes assigned at the moment of engagement.
     # agree/disagree is derived from the kernel's own `agreement` feature

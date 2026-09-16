@@ -163,6 +163,16 @@ assumes state-independence, a fixed coefficient — the conclusion is circular.
 *Failure signature:* "the recursion is linear and sign-symmetric, so equal
 recovery is predicted," under a config where the gain term reads state.
 
+> **Scored on content, not production.** *(added after work-order-01)* C1
+> asks whether the derivation CONTAINS the mechanism, not when or in which
+> commit it was produced. A derivation computed earlier in the same
+> investigation, reused unchanged, is not "reasoning about a flag" the way
+> B1's amendment warns against — it is still a measurement, just an
+> earlier one. Score it by re-reading what the derivation actually
+> contains; do not downgrade a genuine derivation only because it predates
+> the section citing it, and do not upgrade a stale flag only because it
+> is recent.
+
 **C2. "Not supported" and "not testable here" are distinguished explicitly, per
 hypothesis.**
 The `delta_k` / `emergent_camps` paragraph is the house standard: it states that
@@ -252,6 +262,14 @@ Group D checks. Same design, same scrutiny, both directions.
 - **Selection on noisy estimates is labelled.** Points chosen as extremes of a
   low-seed estimate are "the largest n-seed estimates," not "the largest
   effects."
+- **Derived artifacts move in the same pass as the findings, not after.**
+  *(added after work-order-01)* A notebook, a summary table, a verdict row —
+  anything that restates a finding in a second place — is corrected in the
+  SAME commit that corrects the finding itself. A prose fix with the
+  notebook cell or table row still reading the old claim is a fail, found
+  on whatever later pass actually reads that second place (this is exactly
+  how the B1 units bug and the C5 domain bug each surfaced twice: once in
+  prose, once in a derived artifact that had not been told about the fix).
 - **The existing house virtues stay.** Record the gap before closing it; test
   first; default new mechanisms off; state non-comparability at the point of
   citation. Those are working and are why the close-out rate on Review 01 was

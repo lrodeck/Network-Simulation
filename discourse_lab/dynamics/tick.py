@@ -220,6 +220,20 @@ class TickEngine:
         else:
             self.agree_delta = 0.0
 
+        # V8 (work-order-01, decision 1a): phi's own saturation constant
+        # (`dynamics/drift.py::affect_delta`'s `affect_d0`), calibrated the
+        # IDENTICAL way as `agree_delta` above -- deliberately the SAME
+        # computed value, not a separately-sampled statistic that could
+        # drift from it by chance (B3 of the pre-submission checklist: the
+        # two are now two named consumers of one population statistic).
+        # This is NOT `d_cross` (`experiment03_bubble_intervention.py`'s own
+        # camp-boundary calibration) -- the two are required to differ
+        # (V8's own pin test) since one sets a mechanism's gain from the
+        # population's TYPICAL pairwise distance and the other classifies
+        # events against the realized camp BOUNDARY, and conflating them
+        # was V7.4's own mistake.
+        self.affect_d0_calibrated = self.agree_delta
+
     def _refresh_camps(self) -> None:
         """C1.2: camp labels under the shared bimodality gate. Recomputed per
         tick because stance drifts; None (not zeros) when the population is
@@ -713,10 +727,15 @@ class TickEngine:
         # "distance" mode and the valence-assignment mechanism can never
         # silently disagree on how far apart a dyad is.
         stance_distance_e = None if features_e is None else -features_e["agreement"]
+        # V8: only the LIVE drift mechanism's gain reads the calibrated
+        # value; passing None under "fixed" mode makes apply_drift fall
+        # back to cfg.dynamics.affect_d0's literal value unchanged.
+        affect_d0_e = self.affect_d0_calibrated if self.cfg.dynamics.affect_d0_mode == "calibrated" else None
         apply_drift(
             self.cfg, self.pop, self.expr, self.drift_state, rngs["drift"], t,
             posts_e, None if delta_e is None else delta_e.astype(float), exposures_e, actions_e,
             camps=self.camps, valence=valence_e, stance_distance=stance_distance_e,
+            affect_d0=affect_d0_e,
         )
         # V7.1: instrumentation only, built from the exact inputs apply_drift
         # just consumed, via the same `affect_gate_active` the mechanism
