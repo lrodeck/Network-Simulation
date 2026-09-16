@@ -1233,11 +1233,18 @@ wired where intended and nowhere else.
 **H3b: `targeting_mode` moves `engagement` uniformly and `composition` by
 regime, in OPPOSITE directions from each other.** Paired within every
 (scenario, LHS point, seed) cell, `camp_pair`'s `delta_aff_plateau` is
-LOWER than `distance`'s for `engagement` in all 36/36 cells in every one of
-the 3 scenarios (mean gap -0.0178 `consolidated_two_camp`, -0.0091
-`cross_cut`, -0.0011 `low_tribalization`) — `distance` targeting always
-produces MORE hostility increase than `camp_pair` there, not only in the
-cells where `camp_pair` is gated off. For `composition` the interaction
+LOWER than `distance`'s for `engagement` in **24/24 MEASURABLE cells**
+(`consolidated_two_camp` and `cross_cut`, mean gap -0.0178 and -0.0091) —
+counted separately from `low_tribalization`'s 12 cells, where `camp_pair`
+is gated off (exactly 0.0 in all 12, per Wave A′'s own kernel_theta
+finding above): those are not 12 more confirmations of the same
+comparison, they are 12 cells where one side is a structural zero, listed
+here rather than folded into "36/36" as if all 36 were equally informative
+(A2 of this project's own pre-submission checklist, caught on a third
+pass — this claim had stood since Wave B's own original write-up).
+`distance` targeting always produces MORE hostility increase than
+`camp_pair` on the cells where the comparison is real, not only where
+`camp_pair` happens to be gated off. For `composition` the interaction
 flips sign by regime: in `consolidated_two_camp` (strongly, structurally
 tribalized) `camp_pair` reduces hostility MORE than `distance` (mean gap
 -0.0081, 8/12 cells favor `camp_pair`); in `low_tribalization` `distance`
@@ -1589,3 +1596,64 @@ just added to the document. Re-run properly:
 | stopping rules before the next wave | fixed | H1's own concrete Morris-design coverage stated (order 20-40 space-filling points), after three waves of deferring it without saying so |
 | selection on noisy estimates labelled | fixed | Wave C's point selection now explicitly named as "largest 2-seed ESTIMATES," not "largest effects" |
 | house virtues (record gap first, test first, default off, non-comparability stated) | pass | Consistent throughout; this pass's own new datasets follow the same pattern |
+
+## Work order 01 — decisions made, breaking the affect_d0/d_cross tie
+
+Two decisions from a follow-up review round (referred to throughout as
+"work-order-01"), plus its own acceptance criteria, which supersede parts
+of the B1 write-up two commits above (both this section and that one now
+use the corrected, RMS-aware numbers — the acceptance criteria caught a
+real units bug in the underlying measurement before any code was written
+against it, which is exactly what running acceptance criteria in advance
+is for).
+
+**Acceptance criterion A, computed before any code changed: does
+recalibrating `d0` alone even reach what it was chosen for?** With
+`phi(d) = d/(d+d0)` and REALIZED (not class-mean-approximated) same/cross
+distance distributions, the same/cross `phi` ratio `R(d0) =
+mean(phi(d_same))/mean(phi(d_cross))` decreases monotonically from 1 at
+`d0=0` to a floor as `d0→∞` — and that floor is `mean(d_same)/
+mean(d_cross)`, unchanged by ANY choice of `d0` because both numerator and
+denominator scale together. Computed directly (not approximated from
+class means) at the three backgrounds this project already had numbers
+for:
+
+| background | `d0=1.0` ratio | `d0`≈population-median ratio | floor (`d0→∞`) |
+|---|---|---|---|
+| 0.5 | 0.776 | 0.711 (at `d0`=1.855) | 0.538 |
+| 0.7 | 0.732 | 0.630 (at `d0`=2.195) | 0.433 |
+| 0.9 | 0.708 | 0.572 (at `d0`=2.571) | 0.366 |
+
+Population-median calibration moves the ratio roughly a third of the way
+from `d0=1.0` toward the floor (e.g. at background=0.7: 0.732→0.630, 34%
+of the 0.732→0.433 gap) — a real, meaningful improvement, but nowhere near
+`"camp"` mode's ratio of 0.00, and no calibration of `d0` alone can get
+there: the floor is a property of the class MEANS, which `d0` does not
+touch. **This does not invalidate breaking the tie** (`d_cross` still
+needs its own calibration, below) **— it means the phi-gain recalibration
+should be adopted knowing what it delivers.** Of the three options this
+criterion named (accept the ceiling and reframe the grounding; redesign
+`phi`'s functional form so same-camp gain can approach zero; keep `"camp"`
+as the default above the gate and reserve `"distance"` for below it, where
+`"camp"` cannot run at all) — **this project takes option 1: recalibrate
+`d0` to the population median, keep it, and state the affect channel's
+grounding precisely** (below). Option 3 would revert most of Wave
+A′/B/C's own above-gate results to a different mechanism than the one they
+were run and reported under, which decision 1's own re-run plan (below) is
+not built for and which this pass has no budget to redo from scratch.
+Option 2 is a new mechanism needing its own theoretical warrant and
+conformance tests, out of scope here. `d0`'s own realized value at the
+three backgrounds (1.855 / 2.195 / 2.571) is itself evidence for taking
+option 1 rather than deferring the whole decision: it is not a wild
+outlier from `d_cross`'s own realized boundary at the same backgrounds
+(1.98 / 2.40 / 2.84, `_camp_boundary_d_cross`) — both land in the same
+neighborhood, well above the old constant of 1.0, because (an unanticipated
+finding of this same measurement) `stance_polarization` differentiates
+only axis 0 of D=3, so two undifferentiated noise axes dominate total
+distance for both statistics almost equally. **Grounding restated
+precisely, per this criterion's own request:** this project's `"distance"`
+affect channel, even after recalibration, is distance-graded escalation
+with an out-group PREMIUM (same-camp contact still contributes ~60-71% of
+what cross-camp contact does to the animus update, not close to zero) —
+`drift.py`'s own Rathje citation describes an out-group-SPECIFIC
+mechanism, which this is not, at any `d0`.
