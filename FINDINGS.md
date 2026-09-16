@@ -1279,6 +1279,30 @@ table) both missed.** This is a single design point out of 18 unique
 not a broad crossing — the honest reading is "the sign is not universal,"
 not "the sign is unstable."
 
+**SESOI check on the fire itself (work order 02, task 3) — it clears, so
+the "fires" language stands rather than needing to weaken to "flips below
+the smallest effect of interest."** Same rule as elsewhere in this
+section, applied at this one point (recalibrated data — `delta_aff_level_
+none` does not exist in the original `wave_b.csv`, so only the current
+numbers get this treatment):
+
+| seed | `delta_aff_plateau` | `none`'s own drift | 10% SESOI line | ratio |
+|---|---|---|---|---|
+| 0 | 0.007368 | 0.019185 | 0.001919 | 3.84x |
+| 1 | 0.008467 | 0.017549 | 0.001755 | 4.83x |
+
+Both seeds clear SESOI comfortably (3.8x/4.8x), smaller than
+`composition`'s typical double-digit multiple elsewhere in this table but
+nowhere near the line — this is a real effect by the brief's own
+decision rule, not one that only survives as a sign. **What DOES limit
+this claim is seed count, stated rather than left implicit: this point
+has 2 seeds, against the brief's own 10** — the reason its weight rests on
+the cross-calibration reproduction two paragraphs up (same sign, same
+point, both mechanisms) rather than on these two seeds alone. Two
+consistent seeds under one calibration is a coincidence candidate; two
+consistent seeds reproducing again under a materially different `d0`/
+`d_cross` calibration is not the same claim.
+
 **The diversity floor rarely gets tested at this scale, because dispersion
 barely moves — checked with a sensitivity test this time, not just read
 off a flat statistic (C5 of this project's own pre-submission checklist).**
@@ -1382,18 +1406,36 @@ affective survives at roughly its original size AND stays close to the
 out-of-sample cross-check behind it. Leave-one-scenario-out prediction
 (fit on 2 scenarios, predict the third) is the sharper test: R^2 = 0.072 —
 barely above predicting the global mean, and far below what R^2 = 0.908
-implies about this fit's ability to generalize. **Revised claim: this is
-not "a genuinely good linear fit." The fit reproduces 3 scenario means
-well (unsurprising with 3 free means available) and contains one dial
-(`affective`) whose slope has independent corroboration; it has
-essentially no demonstrated ability to predict a held-out region of the
-tribalization space, which is what a response surface is for.**
-`distance`'s surface (R^2 = 0.42) was already reported as a plain, honest
-negative result — the same leave-one-scenario-out check makes it more
-decisively so (R^2 = -8.96, worse than the mean), consistent with H3b's
-own finding that `distance` targeting's effect on `composition` changes
-SIGN between regimes (`consolidated_two_camp` vs `low_tribalization`),
-which no hyperplane fit to 3 points can represent regardless of R^2.
+implies about this fit's ability to generalize. **Revised verdict (work order 02, task 5): the coefficient table above is
+NOT INTERPRETABLE, not merely caveated.** This project's own D1 (pre-
+submission checklist, blocking) is why the distinction matters: a fit
+must contain the mechanism it predicts about, and a 4-parameter surface
+fit to 3 effective design points does not, regardless of its in-sample
+R². "Not a genuinely good linear fit" understates it — the coefficients
+(`camp_pair`'s affective -0.0170, ideological -0.0102, structural
++0.0084; `distance`'s +0.0084/-0.0199/+0.0122) are not a usable
+description of what the three dials do and should not be read as one,
+independent of the ONE narrower fact that survives: `affective`'s slope
+under `camp_pair` has independent corroboration from Wave A′'s own
+one-factor sweep, which is a claim about that single dial, not about the
+table as a whole. `distance`'s surface (R^2 = 0.42) was already reported
+as a plain, honest negative result — the same leave-one-scenario-out
+check makes it more decisively so (R^2 = -8.96, worse than the mean),
+consistent with H3b's own finding that `distance` targeting's effect on
+`composition` changes SIGN between regimes (`consolidated_two_camp` vs
+`low_tribalization`), which no hyperplane fit to 3 points can represent
+regardless of R^2.
+
+**Independently replicated, not just argued once: refitting the identical
+18-point design at work order 01's recalibrated `affect_d0`/`d_cross` made
+BOTH leave-one-scenario-out numbers WORSE, not better** —
+`camp_pair` 0.072 -> -0.455, `distance` -8.99 -> -9.26 (Decision 1d).
+Negative LOO R^2 means the fit predicts worse than the held-out scenario's
+own mean; recalibration touches the affect channel and the analysis-only
+`d_cross` classifier, nothing about how `run_wave_b`'s 18 points are laid
+out, so an under-determined design behaving unpredictably across two
+materially different refits of the SAME data is exactly what D1 predicts,
+observed twice rather than asserted once.
 
 Caveat this fit shares with everything else built on Wave B: 18 points
 sitting in 3 tight, radius-0.25 neighborhoods around 3 centers is not a
@@ -1485,15 +1527,37 @@ expected, not merely unremarked, given the mechanism check above**: the
 and sign-symmetric in the gap — `k`/`k_b` do not know or care whether
 `Delta` is positive (harm) or negative (benefit), so a model where recovery
 comes from that mechanism predicts equal recovery rates in both directions,
-which is exactly what both runs show. **H4's own asymmetry claim ("the
-hostile regime is stickier than the civil one") is therefore NOT supported
-by this codebase's dynamics specifically** — partial persistence (the
-non-asymmetry-specific half of H4) holds in both directions, at a rate this
-project can now name from the OU constants alone rather than measure arm by
-arm. Re-checked at ~4x this section's own peak-gap magnitude (work-order-01
-decision 2, pre-registered before running — see "Decision 2d" below): the
-same conclusion holds, and the mechanism check above correctly predicts a
-large drop in the recovered FRACTION at the longer exposure too.
+which is exactly what both runs show. **At this comparison's own scale
+(60-tick pre-withdrawal), H4's asymmetry claim ("the hostile regime is
+stickier than the civil one") is not supported** — partial persistence
+(the non-asymmetry-specific half of H4) holds in both directions, at a
+rate this project can now name from the OU constants alone rather than
+measure arm by arm.
+
+**Superseded, not merely re-checked: work order 02's gap-ladder test
+(below, and in full under "Work order 02, task 1") found the opposite at
+the SAME points, run jointly.** Two defects in the comparison just
+above — harm and benefit measured at DIFFERENT design points, and
+statistics pooled across 3 non-independent points — meant it could not
+actually distinguish "no asymmetry" from "an asymmetry too small to see
+through those two flaws." Fixing both (a common 3-point design, per-point
+statistics) and adding a 60/300/1000-tick ladder finds a REAL, if narrow,
+asymmetry: relative asymmetry grows with exposure duration at 2 of 3
+points, clearing a pre-registered 3-sigma bar at both. Work order 01's
+own larger-gap check (decision 2, immediately below) inherited both of
+this comparison's defects and its own unit error besides, so its null
+result is superseded for the same reason.
+
+**Superseded again, by work order 03: the statistic behind that
+"confirmed" call took `|·|` before averaging over seeds, discarding
+direction. The signed re-analysis of the SAME 90 runs (see "Work order
+03, task 1") finds neither of the two growing points clears its own
+threshold, and the two do not even agree on which arm is stickier — one
+grows more anti-H4 with exposure, the other flips INTO the pro-H4
+direction. Current verdict: H4's asymmetry claim is REJECTED** — not
+merely "not yet confirmed": the direction is inconsistent across design
+points, and H4 is a directional hypothesis. See "Work order 03, task 1"
+for the numbers this rests on.
 
 **Dataset provenance, one table for the whole experiment (standing
 requirement, not previously consolidated — each number above cites its own
@@ -1514,6 +1578,10 @@ CSV inline, but no single place lists all six together).**
 | `wave_c_largergap.csv` | 0.15 (V7.6) | `distance` | the SAME 3 points as `wave_c.csv` (re-selected from the ORIGINAL `wave_b.csv`), `n_ticks_pre_withdrawal=1000` (was 60) | 15 | Decision 2's harm-side larger-gap hysteresis check (H4) |
 | `wave_c_composition_largergap.csv` | 0.15 (V7.6) | `distance`, `camp_pair` | the SAME 3 points as `wave_c_composition.csv` (re-selected from the ORIGINAL `wave_b.csv`), `n_ticks_pre_withdrawal=1000` (was 60) | 15 | Decision 2's benefit-side larger-gap hysteresis check (H4) |
 | `wave_c_largergap_ou_fit.csv` | n/a (derived) | n/a | per-seed 2-state OU refit (RMSE, R², peak_gap) over the 6 points in the two datasets above | 6 | Decision 2d's C1 residual-growth check |
+| `wave_c_gap_ladder.csv` | 0.15 (V7.6) | `distance`, `affect_d0_mode="calibrated"` | 3 points selected JOINTLY from `wave_b_recal.csv` by both arms' mean \|Δ\| (work order 02, task 1) — a common design, not per-arm selection | 90 | Work order 02's H4 asymmetry re-test (60/300/1000-tick pre-withdrawal ladder, both arms at every point) |
+| `wave_c_gap_ladder_ou_fit.csv` | n/a (derived) | n/a | per-seed 2-state OU refit over all 90 rows in the row above | 18 | Work order 02's secondary RMSE/peak_gap check, all 3 rungs |
+| `wave_c_gap_ladder_dbs_split.csv` | n/a (derived) | n/a | per-seed 2-state OU refit over the SAME 90 rows as `wave_c_gap_ladder.csv`, keeping `dBs`/`delta_peak` per seed instead of only the pooled RMSE | 90 | Work order 03, task 2's `ΔBs`/`Δ_withdrawal` split-ratio decomposition |
+| `wave_a_prime_recal_cross_contact_fraction.csv` | 0.15 (V7.6) | `distance`, `affect_d0_mode="calibrated"` | `wave_a_prime_recal`'s own 45-point design, all 4 arm-values audited directly | 180 | Work order 02, task 6's dosage-confound closure (A4, recalibrated classifier) |
 
 **Two standing items this project defers rather than silently drops.**
 H1's falsifier has now been searched for across Wave A (one background,
@@ -1612,7 +1680,7 @@ just added to the document. Re-run properly:
 | A1 — sign claims paired with magnitude + SESOI [blocking] | fixed, one stated limitation | Original Wave A and Wave A′ H2 now carry full SESOI tables; Wave A′ H3/Wave B H3b's `delta_aff_plateau` magnitude claims still lack one (`delta_aff_level_none` does not exist in `wave_a_prime.csv`/`wave_b.csv` — would need a re-run to close) |
 | A2 — exclude degenerate cells from counts | pass | Already excluded/labeled at every site checked (ideological=0.1 gate, engagement's own kernel_theta gate) |
 | A3 — seeds are not independent draws | fixed | Standing caveat added where seed-cell counts first appear |
-| A4 — per-contact denominator's selection fraction characterized | fixed, reversed a prior claim | Audited directly (45 points × 4 arms): `d_cross` selects 80-85% of ALL contact almost everywhere — not restrictive. The "dosage confound resolved" claim from the previous commit was wrong; rewritten to "open, untested" |
+| A4 — per-contact denominator's selection fraction characterized | fixed, reversed a prior claim | Audited directly (45 points × 4 arms): `d_cross` selects 80-85% of ALL contact almost everywhere — not restrictive. The "dosage confound resolved" claim from the previous commit was wrong; rewritten to "open, untested". Closed, not just re-opened: work order 01 recalibrated `d_cross` to the realized camp boundary, and work order 02's re-audit on that classifier finds 42-46% selected (genuinely restrictive, varying by point) — `engagement`'s backfire sign survives 40/40 |
 | A5 — each comparison against its own matched reference | fixed | H2/SESOI tables recomputed as median-of-per-point-ratios, not ratio-of-pooled-medians; changed two conclusions (engagement's H2 contribution, exposure's SESOI uniformity) |
 | B1 — new/reused constants measured in their actual regime [blocking] | fixed (was wrongly scored pass) | `phi(d)` measured directly by true camp pairing: discriminates real membership but both classes saturate because `affect_d0=1.0` sits well below the true same-camp distance scale (~2.3) |
 | B2 — thresholds reported as realized distributions | pass | Bimodality gate, k pinned/stable, cross-contact selection fraction, and (this pass) `phi` by true camp pairing all reported as measured distributions |
@@ -1692,6 +1760,14 @@ with an out-group PREMIUM (same-camp contact still contributes ~60-71% of
 what cross-camp contact does to the animus update, not close to zero) —
 `drift.py`'s own Rathje citation describes an out-group-SPECIFIC
 mechanism, which this is not, at any `d0`.
+
+**Work order 02, task 4 restated this in code, not just here; work order
+03, task 3 confirmed it landed.** `drift.py::affect_delta`'s module
+docstring (lines 385-387) and `MODEL.md`'s C1 mechanism-table row (line
+989) both carry the same "distance-graded escalation with an out-group
+PREMIUM, not the out-group-SPECIFIC mechanism the Rathje citation itself
+reports" language — checked directly against both files, not assumed
+from memory of having written it. No fix was needed.
 
 **Decision 2, pre-registered: the larger-gap hysteresis check for H4.**
 The current 2-state OU fit (R² > 0.999 at the 5-seed MEAN trajectory,
@@ -1795,17 +1871,35 @@ entirely.**
   flips" claim. The recalibrated data has the same 2 positive rows at the
   identical point, smaller in magnitude (0.0074-0.0085 vs. 0.0099-0.0126)
   — confirming the finding is real and substrate-independent, not an
-  artifact of either calibration.
-- **The dosage-confound check for `engagement`.** Re-run is not needed to
-  re-answer this specifically — it was already left OPEN (not resolved
-  either way) in the pre-submission-checklist pass, because `d_cross`'s
-  classification did not discriminate well AT ANY calibration tried
-  there. `d_cross` is now calibrated properly (camp-boundary, not tied to
-  `affect_d0`), which is progress on the classifier itself, but answering
-  "is the backfire a dosage artifact" with the new classifier needs a
-  fresh `delta_aff_per_cross_contact` audit analogous to the original
-  A4 one — not run this pass; still open, now on a better-calibrated tool
-  than before rather than a broken one.
+  artifact of either calibration. **SESOI-checked (work order 02, task
+  3), not just sign-checked: both seeds clear the brief's own 10% line by
+  3.8x/4.8x** — a real effect, not one dismissible as below this
+  project's smallest effect of interest, though resting on only 2 seeds
+  at this specific point (the cross-calibration reproduction above is
+  what carries this claim, not seed count).
+- **The dosage-confound check for `engagement` — CLOSED (work order 02,
+  task 6): NOT a dosage artifact.** Left OPEN in the pre-submission-
+  checklist pass because `d_cross`'s classification did not discriminate
+  well at ANY calibration tried there (A4: 80-85% of ALL contact
+  selected almost everywhere). Re-audited on the recalibrated classifier,
+  same shape as A4 (45 points x 4 arm-values, `wave_a_prime_recal`'s own
+  design, `n_users=1000`, `n_ticks_total=160`,
+  `results/experiment03/wave_a_prime_recal_cross_contact_fraction.csv`,
+  874s): the cross-contact selection fraction now averages **42-46%**
+  across arms (median 42.6-46.0%, range 22.5-58.4%) — genuinely
+  restrictive and, unlike A4's own finding, varying substantially by
+  design point rather than pinned near one value. `engagement`'s backfire
+  sign survives intact under this now-informative denominator: **40/40
+  measurable points positive** (5 below-gate, same as `delta_aff_plateau`
+  and `delta_aff_per_contact`'s own counts). More precisely: the
+  `per_cross_contact`/`per_contact` RATIO is not a constant rescale (which
+  would mean the restriction adds no information) — median 2.17x, range
+  1.71x-3.89x, tracking each point's own `1/cross_contact_fraction`
+  almost exactly, confirming the denominator is doing real per-point work.
+  **Revised claim: `engagement`'s hostility-raising backfire is not an
+  artifact of measuring more contact overall — isolating cross-camp
+  contact specifically does not shrink or reverse it, and its per-event
+  rate is if anything LARGER once diluting same-camp contact is removed.**
 - **Response-surface coefficients (`camp_pair`, `composition`).**
   affective -0.0170→-0.0121, ideological -0.0102→-0.0068, structural
   +0.0084→+0.0072, R²=0.908→0.883 (similar), but **leave-one-scenario-out
@@ -1825,11 +1919,17 @@ entirely.**
   features under different `targeting_mode`s, not the animus-update
   mechanism), so an unchanged count here is confirmatory, not
   uninformative.
-- **Wave C (H4): no asymmetry, still.** Harm recovery_fraction
+- **Wave C (H4): recalibration barely moves these numbers either way —
+  the asymmetry finding itself is superseded by work order 02, below,
+  and work order 02's own "confirmed" call is in turn superseded by
+  work order 03's signed re-analysis to REJECTED (see "Work order 03,
+  task 1") — neither is about this recalibration.** Harm recovery_fraction
   0.6250→0.6298 (SD 0.0253→0.0206), benefit 0.6078→0.6157 (SD
   0.0270→0.0198) — both sides moved together, by less than their own
   seed spread, keeping the harm/benefit difference small in both
-  datasets. Peak gaps shrank somewhat (e.g. the largest point:
+  datasets AT THIS (per-arm-selected, pooled) design; work order 02's
+  common-design, per-point re-test later found a real asymmetry the
+  pooling here could not see. Peak gaps shrank somewhat (e.g. the largest point:
   0.0356→0.0240) — recalibration lowers `engagement`/`composition`'s
   overall animus impact a little, consistent with the response-surface
   coefficients shrinking too, but does not touch the recovery MECHANISM
@@ -1903,12 +2003,37 @@ degrading. The OU model's prediction stands at the new scale too: this is
 the same linear mechanism describing a larger gap, not a fit that happens
 to still work by coincidence.
 
-**C2 (harm/benefit asymmetry): NOT confirmed — still no asymmetry.**
+**Same comparison, in units that do not depend on the gap magnitude
+(work order 02, task 2).** The 0.000181-vs-0.000156 comparison above is
+absolute RMSE across points whose peak gaps differ 3.5-4.4x — informative
+for the pre-registered threshold (which was itself set in absolute units
+deliberately, unlike C2's), but not the fairest single number for the
+"is the residual growing" question on its own. `RMSE / |peak_gap|`, mean
+of the 6 per-point ratios: **0.01175 at the short gap, 0.00355 at the
+larger one — a 3.3x DECLINE**, not growth. A dropped term quadratic in the
+gap would raise absolute RMSE ~16x for a 4x gap increase; it rose 1.16x,
+and the normalized ratio falls. Both unit choices agree on the verdict;
+the normalized one rules out "the absolute comparison happened to favor
+no-growth because the gaps were also growing" as a competing explanation.
+
+**C2 (harm/benefit asymmetry): NOT confirmed by this pre-registration's
+OWN threshold — and that threshold turned out to be the wrong test
+(work order 02, tasks 1 and 7).**
 `composition` (benefit) recovery_fraction mean **0.2121** (SD 0.0104,
 n=15); `engagement` (harm) mean **0.2339** (SD 0.0108, n=15); difference
 **0.0218**, against baseline difference 0.0172 and the pre-registered
 threshold of >0.081 (~3x the original pooled SD). The two distributions
-still overlap almost completely.
+still overlap almost completely — **but this threshold was fixed in
+`recovery_fraction`'s SHORT-gap absolute units, and `recovery_fraction`'s
+own SD fell ~2.5x at this larger gap (0.0270/0.0253 -> 0.0104/0.0108
+above), so 0.081 was functioning as roughly an 8-sigma bar here, not the
+3-sigma one it was set to be** — checked directly and named as this
+project's own standing checklist amendment, not asserted. This section's
+own verdict stands as the record of what THIS pre-registration found;
+work order 02's own re-test, on a scale-relative statistic and a design
+that also fixes the arm/point confound and cross-point pooling this
+section's points still carry, found asymmetry confirmed. See "Work order
+02, task 1" for the numbers.
 
 **A real change neither threshold was built to catch, checked rather than
 left as a loose end: recovery_fraction itself collapses at the new
@@ -1940,3 +2065,534 @@ DOES change with exposure duration is the absolute fraction a
 fixed-length withdrawal window recovers — a named property of the OU
 mechanism's two timescales, not a reason to suspect the harm/benefit
 comparison itself.
+
+## Work order 02, task 1 — pre-registered: the gap-ladder H4 re-test on a common design
+
+**Why this needs a second re-test, not a footnote on the first.** Decision
+2d's C2 threshold (0.081) was 3x the SHORT-gap pooled SD of
+`recovery_fraction`. At the larger gap, `recovery_fraction`'s own SD fell
+~2.5x alongside its mean (composition 0.0270→0.0104, engagement
+0.0253→0.0108) — so the SAME absolute threshold, applied there, was
+functioning as roughly an 8-sigma bar, not the 3-sigma one it was set to
+be. The pre-registration stands as recorded and its verdict is not being
+retro-fitted; this section registers a DIFFERENT, scale-relative test
+before running anything new. Two more defects, both older than the
+larger-gap run: harm and benefit were measured at DIFFERENT design points
+(only `cross_cut` LHS0 overlapped), confounding arm with point; and each
+side's 15 rows are 3 points x 5 seeds, not 15 independent draws, so
+pooling across points overstates precision. This section's own design
+fixes both.
+
+**Points, selected before running, from `wave_b_recal.csv`.** Ranked by
+the mean of `engagement`'s and `composition`'s own `|delta_aff_plateau|`
+(each averaged over its 2 Wave B seeds first) at every
+(`scenario`, `lhs_index`, `targeting_mode`) triple where NEITHER arm is
+degenerate (`low_tribalization` x `camp_pair` is the one family where
+`engagement` is structurally 0.0 at every LHS index — excluded, though it
+was never close to the top of this ranking anyway). Top 3, all under
+`distance` targeting:
+
+| point | composition \|Δ\| | engagement \|Δ\| | mean | affective | ideological | structural |
+|---|---|---|---|---|---|---|
+| `consolidated_two_camp` LHS1 | 0.00792 | 0.03082 | 0.01937 | 0.9464 | 0.8849 | 0.7319 |
+| `cross_cut` LHS0 | 0.01146 | 0.01558 | 0.01352 | 0.6714 | 0.5867 | 0.0126 |
+| `cross_cut` LHS4 | 0.01395 | 0.00964 | 0.01180 | 0.5441 | 0.8641 | 0.2978 |
+
+4th place (`cross_cut` LHS5, mean 0.01143) trails LHS4 by only ~3% —
+close, stated rather than silently assumed decisive. These are **"largest
+2-seed estimates," not "largest effects"**: Wave B ran 2 seeds per point,
+so this ranking is itself a noisy estimate, named as one. All 3 points
+happen to already appear in work order 01's own point lists (LHS1 and
+LHS0 on the harm side, LHS4 on the benefit side) — continuity, not a
+selection artifact, since the ranking here was computed fresh from both
+arms jointly.
+
+**Gap ladder.** `n_ticks_pre_withdrawal` in {60, 300, 1000}; burn-in and
+post-withdrawal fixed at 60 (`n_ticks_total` = 180, 420, 1120), `targeting_
+mode="distance"` throughout (the mode all 3 points were selected under),
+`n_users=1000`, seeds 0-4. Both arms run at all 3 points x 3 windows: 3 x
+2 x 3 x 5 = 90 arm-runs. The matched `none` run at a given (point, window,
+seed) does not depend on `arm` (`run_hysteresis`'s `none` call takes no
+targeting-mode or arm argument), so the two arms' `none` twins are the
+SAME config and only 3 x 3 x 5 = 45 of them are ever actually computed,
+reused (cache hit) for the second arm. The existing 60-tick and 1000-tick
+data (`wave_c.csv`/`wave_c_composition.csv`/`wave_c_largergap*.csv`) are
+at the OLD, per-arm-selected points, not these — all three rungs here are
+fresh runs, none reused. Budget: the 1000-tick rung is the dominant cost;
+scaling from work order 01's measured 1356s for 15 rows (3 points x 5
+seeds x 1 arm, ALSO paying for 15 unique `none` runs) to this rung's 45
+unique arm-runs plus 15 unique `none` runs (60 total unique sims vs.
+that run's 30), a rough estimate is 60-100 minutes for the 1000-tick rung
+alone, with 300-tick and 60-tick scaling down roughly with tick count
+(~40% and ~17% of that respectively) — actual total to be reported
+against this estimate, not silently substituted for it.
+
+**Primary statistic — written down before looking at any new number.**
+Per point `p`, window `w`, seed `s` (seed-PAIRED between arms: seed `s`'s
+`engagement` run and seed `s`'s `composition` run share the same burn-in
+population realization, differing only in which arm is applied, so
+pairing by seed index cancels population-level noise the way an unpaired
+comparison cannot):
+
+    A(p, w, s) = |rec_engagement(p,w,s) - rec_composition(p,w,s)| / mean(rec_engagement(p,w,s), rec_composition(p,w,s))
+    A(p, w)    = mean over s of A(p, w, s)            [point estimate, n=5]
+    SD(p, w)   = sample SD (ddof=1) over s of A(p, w, s)   [uncertainty]
+
+computed WITHIN each point, never pooled across the 3 points (that pooling
+is exactly A3's own objection). This is one specific, defensible reading
+of the work order's "per-seed values give A's across-seed SD" instruction,
+stated explicitly because the alternative (a ratio-of-seed-MEANS point
+estimate with a separately-estimated SD) was also consistent with that
+wording and the two are not identical — this project takes the mean-of-
+paired-ratios convention throughout this section.
+
+**Asymmetry confirmed only if BOTH hold:**
+- `A(p, 60) < A(p, 300) < A(p, 1000)` (strict monotone increase) at **at
+  least 2 of the 3 points**; AND
+- at those points, `A(p, 1000) - A(p, 60)` exceeds **3 x SD(p, 60)**.
+
+**Asymmetry rejected if:** `A` is flat or non-monotonic at 2 or more
+points, or the increase clears the 3-sigma bar nowhere. Rejection settles
+H4's asymmetry as absent for this build, at gap magnitudes spanning ~4x,
+on a common design free of both defects above — the verdict the existing
+data cannot support either way.
+
+**Reported as context, not as part of the test:** absolute
+`recovery_fraction` per point and window (expected to fall with window
+length per Decision 2d's own two-timescale account, which this ladder
+will show at a third magnitude rather than two), and per-point absolute
+differences alongside the pooled numbers so the pooled-vs-clustered
+distinction A3 raised is visible directly rather than argued abstractly.
+
+**Secondary, on the same 90 runs.** Per-seed 2-state OU refit at all three
+rungs, reporting **RMSE / peak_gap** (not absolute RMSE, per task 2 below)
+at each (point, arm, window). Already known from the two magnitudes work
+order 01 measured: this ratio fell (~0.0092 to ~0.0031, decreasing, not
+growing) while absolute RMSE rose only 1.16x against a 3.5-4.4x gap
+increase — the opposite of what a dropped term quadratic in the gap would
+predict (~16x for a 4x gap). A third rung reads the trend across three
+points instead of two, on the same common-design points the primary
+statistic uses.
+
+## Work order 02, task 1 — resolved: asymmetry CONFIRMED on a common design
+
+**Superseded, not merely re-checked: work order 03's signed re-analysis
+(below, "Work order 03, task 1") reverses this section's verdict to
+REJECTED.** This section's `A(p,w,s) = |rec_eng - rec_comp| / mean(...)`
+took an absolute value before averaging over seeds, which discards
+direction and — on per-seed values scattered near zero — systematically
+overstates magnitude (`E|X| > |E X|`). The signed statistic run on the
+SAME 90 runs finds the two "confirming" points do not clear their own
+threshold and do not even point the same direction. This section is kept
+below for the record (it is what work order 02's pre-registration
+committed to computing, and the numbers are correct given that
+pre-registered statistic), not because its verdict stands.
+
+All 90 runs complete (3 points x 2 arms x 3 windows x 5 seeds, fresh —
+see the provenance table). Both analyses below follow the pre-
+registration above exactly; neither was adjusted after seeing a number.
+
+**Primary statistic, per point:**
+
+| point | A(60) | A(300) | A(1000) | SD(60) | monotonic? | increase | 3xSD(60) | clears? |
+|---|---|---|---|---|---|---|---|---|
+| `consolidated_two_camp` LHS1 | 0.0589 | 0.1075 | 0.1927 | 0.0428 | yes | 0.1338 | 0.1284 | yes (+4.2%) |
+| `cross_cut` LHS0 | 0.0571 | 0.0796 | 0.3010 | 0.0808 | yes | 0.2440 | 0.2424 | yes (+0.6%) |
+| `cross_cut` LHS4 | 0.0293 | 0.0131 | 0.0743 | 0.0219 | **no** (dips at 300) | 0.0450 | 0.0656 | no |
+
+**Verdict, applying the pre-registered rule exactly: ASYMMETRY CONFIRMED.**
+2 of 3 points are monotonic (`consolidated_two_camp` LHS1, `cross_cut`
+LHS0), and BOTH clear their own point's `3 x SD(60)` bar — the
+pre-registration's own "confirmed" branch, not the "rejected" one.
+**Stated precisely rather than rounded up: this is a narrow confirmation,
+not an overwhelming one.** `cross_cut` LHS0 clears by 0.6% — a margin
+inside ordinary seed-to-seed noise for a 5-seed SD estimate — and
+`consolidated_two_camp` LHS1 clears by 4.2%, comfortable but not large.
+`cross_cut` LHS4, the one point that does NOT confirm, is also the point
+where `composition`'s own effect is largest relative to `engagement`'s
+(the reverse of the other two) — noted as a fact about which point
+behaves differently, not explained away with a new hypothesis this pass
+has no data to test.
+
+**Why this reverses Decision 2d's C2 null, not a contradiction of it:**
+Decision 2d's own C2 threshold was itself methodologically sound in
+INTENT (a pre-registered 3-sigma bar) but wrong in TWO other ways this
+section's design fixes: harm and benefit were measured at DIFFERENT
+points (confounding arm with design point — only 1 of 3 points
+overlapped), and the 15-row-per-side statistics were pooled across 3
+non-independent points rather than computed per point (A3's own
+objection). This section's design uses the SAME 3 points for both arms
+and computes `A` within each point, never pooled. Fixing those two
+defects — not the units fix from task 2, which was about C1 — is what
+surfaces the confirmation C2 missed. Decision 2d's own verdict stands as
+recorded (a pre-registration is not retro-fitted); this section
+supersedes it as the more soundly designed test of the same question.
+
+**Context, not part of the test:** absolute `recovery_fraction` falls
+with window length for both arms at all 3 points (e.g.
+`consolidated_two_camp` LHS1: engagement 0.642->0.450->0.241, composition
+0.638->0.498->0.293) — the same two-timescale mechanism Decision 2d
+already established (more of the gap migrates into the slow `Bs` block
+before withdrawal). The per-point absolute differences make the
+pooled-vs-clustered distinction concrete: `cross_cut` LHS0's absolute
+difference at window 1000 (0.0588) is larger than `consolidated_two_camp`
+LHS1's (0.0516) even though the LATTER's relative asymmetry `A` is
+smaller at every window — pooling the three points' absolute differences
+together, as Decision 2d's C2 did, cannot see this because a large
+absolute difference at a point with large `recovery_fraction` values
+(diluting the relative signal) looks the same as a large absolute
+difference at a point with small ones.
+
+**Secondary: OU RMSE/peak_gap ratio across three points, not two — same
+conclusion, more decisively.** Mean of the 6 per-point-arm ratios at each
+window: **0.0177 (60) -> 0.0099 (300) -> 0.0050 (1000)** — a clean,
+monotonic DECLINE, not the growth a dropped term quadratic in the gap
+would produce. Fit quality stays high throughout (R² 0.82-0.94 at the
+single lowest-signal seed, 0.95-0.999 typically). C1's own "residual
+stays flat" conclusion is now checked at a third magnitude and holds
+there too: the OU mechanism describes the larger gaps at least as well,
+not worse, contrary to what a missing feedback term would predict.
+
+**What this section does NOT do.** It does not re-litigate Decision 2d's
+own two conclusions on their own terms (C1 stands, re-confirmed above;
+C2 is superseded, not overturned by a flaw in the original reasoning —
+the flaw was in the DESIGN feeding it). It does not explain WHY
+`cross_cut` LHS4 fails to confirm while the other two do — a real
+open question, not papered over with an unearned story. **It does not
+reconcile this confirmed asymmetry with the OU DECAY mechanism's own
+sign-symmetry (§5a, above), which this section leaves standing rather
+than treating as contradicted:** `k`/`k_b` still do not know or care
+about the sign of `Δ`, and nothing here re-measures that. `recovery_
+fraction` depends on how `Δ_withdrawal` is SPLIT between the fast and
+slow blocks at the moment of withdrawal, not only on the shared decay
+constants — and `engagement`'s and `composition`'s own EXOGENOUS
+accumulation processes (hostile contact vs. civil contact, entirely
+different mechanisms upstream of withdrawal) could populate that split
+differently without the shared post-withdrawal decay being asymmetric at
+all. This is a plausible account, consistent with Decision 2d's own
+`ΔBs`-share finding, not a demonstrated one — decomposing `ΔBs`/`Δ_with
+drawal` per arm at all three rungs would test it directly and is not
+done here.
+
+**Demonstrated, not merely plausible: see "Work order 03, task 2,"
+below.** The split ratio does differ systematically between arms,
+tracks window length, and its sign matches each point's own recovery
+asymmetry exactly (the arm with the larger slow-block share is the same
+arm that point's own signed statistic calls stickier) — this also
+supersedes this section's own earlier verdict, since the "asymmetry" it
+CONFIRMED is itself superseded by work order 03's signed re-analysis to
+REJECTED (with the rejection itself further characterized, not reversed,
+by work order 04's sign-dependence finding).
+
+## Work order 03, task 1 — resolved: the signed statistic reverses the confirmation to REJECTED
+
+Re-analysis only, from the same `wave_c_gap_ladder.csv` (90 rows) work
+order 02 collected — no new simulation. `A(p,w,s)` took `|rec_eng -
+rec_comp|` before averaging over seeds; direction was discarded. The
+signed statistic keeps the same seed-pairing (unchanged — it was the
+right call) and drops only the absolute value:
+
+    S(p, w, s) = (rec_eng(p,w,s) - rec_comp(p,w,s)) / mean(rec_eng(p,w,s), rec_comp(p,w,s))
+    S(p, w)    = mean over s   [n=5]
+    SD(p, w)   = sample SD over s, ddof=1
+
+Positive `S` means `engagement` (harm) recovers MORE than `composition`
+(benefit) — the direction OPPOSITE H4's claim that the hostile regime is
+stickier. Negative `S` is H4's own predicted direction.
+
+**1. `S(p,w)` and `SD(p,w)`:**
+
+| point | S(60) | S(300) | S(1000) | SD(60) |
+|---|---|---|---|---|
+| `consolidated_two_camp` LHS1 | +0.0096 | -0.0930 | -0.1927 | 0.0778 |
+| `cross_cut` LHS0 | +0.0556 | +0.0647 | +0.3010 | 0.0821 |
+| `cross_cut` LHS4 | +0.0090 | -0.0080 | +0.0743 | 0.0381 |
+
+**2. Sign consistency: not consistent, and the flip lands exactly on the
+point work order 02 leaned on hardest.** Of the 45 (point, window, seed)
+triples, 26 (57.8%) are positive (anti-H4 direction), 19 (42.2%) negative
+(pro-H4). At the (point, window)-mean level:
+
+- `cross_cut` LHS0 is positive at all 3 windows and grows MORE positive
+  with exposure (+0.056 -> +0.065 -> +0.301) — anti-H4 throughout, and
+  more strongly anti-H4 at the longest window. This matches Decision 2d's
+  old pooled direction (harm 0.2339 > benefit 0.2121, also anti-H4) and
+  simply extends it.
+- `consolidated_two_camp` LHS1 starts positive (+0.0096, anti-H4, and
+  indistinguishable from zero) at window 60, then FLIPS to negative at
+  300 and 1000 (-0.093, -0.193) — into the pro-H4 direction, the OPPOSITE
+  of Decision 2d's old pooled direction and the opposite of LHS0's own
+  sign.
+- `cross_cut` LHS4 oscillates (+, -, +) with no stable sign.
+
+Two of the three points do not agree with each other on which arm is
+stickier, let alone with a single directional claim. Work order 02's `|A|`
+statistic could not see this because both a growing anti-H4 effect
+(LHS0) and a late-emerging pro-H4 effect (LHS1) look identical once the
+sign is discarded — `|A|` growing was reported as "the asymmetry," but
+the two points that grow are not growing the SAME asymmetry.
+
+**3. Monotonicity + threshold, re-run on `S`:**
+
+| point | monotone? | \|S(1000)-S(60)\| | 3×SD(60) | SE of that bar (±35%) | clears? |
+|---|---|---|---|---|---|
+| `consolidated_two_camp` LHS1 | yes (monotone decrease) | 0.2024 | 0.2335 | ±0.0826 | no (-13.3%) |
+| `cross_cut` LHS0 | yes (\|S\| increases, same sign) | 0.2454 | 0.2462 | ±0.0870 | no (-0.3%) |
+| `cross_cut` LHS4 | no (sign oscillates) | 0.0654 | 0.1143 | ±0.0404 | no |
+
+Same 2 of 3 points are monotonic as under `|A|` (LHS1, LHS0) — the
+correction does not change WHICH points grow, only what growing means.
+But under the signed statistic, NEITHER clears its own point's `3×SD(60)`
+bar: LHS1 misses by 13.3%, LHS0 by 0.3% (a bare miss, the mirror image of
+its bare 0.6% CLEAR under `|A|`). `cross_cut` LHS4 does not resolve to
+monotone — the work order's own hypothesis that its dip under `|A|` was a
+sign-crossing artifact does not hold; its sign genuinely oscillates
+(+0.009, -0.008, +0.074), which is a different and messier pattern than a
+single crossing. **The ladder does not become 3/3.**
+
+**PRIMARY VERDICT ON THE SIGNED STATISTIC: REJECTED.** Fewer than 2 of the
+3 monotonic points clear the magnitude bar (0 of 2) — the pre-
+registration's own rejection branch, not a downgrade to "ambiguous."
+
+**4. The verdict CHANGES.** Work order 02's task 1 reported CONFIRMED;
+the signed re-analysis of the identical 90 runs reports REJECTED. The
+work order's own prediction ("it probably does not [change]") does not
+hold here — the direction check is what changes it, not just the
+narrower magnitude test. Both facts matter and neither alone would have
+been enough: the magnitude bar is missed by margins (13.3%, 0.3%) of the
+same order as the bars' own ±35% estimation error, so a magnitude-only
+re-run at n=5 would have been a coin flip either way; what removes the
+ambiguity is that the two nominally-growing points do not even agree on
+which arm is stickier, which no amount of additional precision on `A`
+alone (an unsigned quantity) could ever have revealed.
+
+**5. Threshold uncertainty, stated for the record.** `SD(p,60)` comes
+from 5 seeds; its own standard error is `SD/sqrt(2x4)`, about 35% of
+itself, so the `3xSD(60)` bar's standard error is about 35% of the bar.
+Under the ORIGINAL `|A|` statistic, both reported "clears" were inside
+that band: `cross_cut` LHS0 cleared by 0.6% of its bar (SE ±35%),
+`consolidated_two_camp` LHS1 by 4.2% (SE ±35%) — both margins are
+roughly an order of magnitude smaller than the bar's own uncertainty.
+Under the signed statistic, both misses are of the same size and
+therefore also inside that band. **The pre-registered rule's binary
+output is not decisive in EITHER direction at n=5** — CONFIRMED and
+REJECTED were both within one noisy threshold's own noise band of each
+other. The signed re-analysis is reported as the standing verdict because
+it corrects a real defect (direction-blindness) in the prior statistic,
+not because its own margin is any more statistically decisive than the
+one it replaces.
+
+**6. Work order 04: the rejection is sign-dependence, not absence of
+asymmetry — named as a result, not left implicit in a failed directional
+test.** REJECTED is the correct pre-registered outcome (no single
+direction holds across the space), but it is not the same finding as "no
+asymmetry." Two of the three points show an asymmetry that grows
+MONOTONICALLY with exposure duration, each internally consistent — they
+simply grow in opposite directions, and the ordering lines up with the
+one dial these three points span most:
+
+| point | scenario | affective | ideological | structural | S(60) | S(300) | S(1000) | pattern |
+|---|---|---|---|---|---|---|---|---|
+| `consolidated_two_camp` LHS1 | consolidated | 0.946 | 0.885 | **0.732** | +0.010 | -0.093 | -0.193 | monotone, grows pro-H4 |
+| `cross_cut` LHS4 | cross-cut | 0.544 | 0.864 | **0.298** | +0.009 | -0.008 | +0.074 | oscillates, no stable sign |
+| `cross_cut` LHS0 | cross-cut | 0.671 | 0.587 | **0.013** | +0.056 | +0.065 | +0.301 | monotone, grows anti-H4 |
+
+Sorted by the structural dial, the pattern reads: high structural
+sorting (0.732) grows pro-H4 (harm becomes stickier — H4's own
+prediction), near-zero structural sorting (0.013) grows anti-H4 (benefit
+becomes stickier instead), and the middle value (0.298) is exactly where
+a statistic that crosses zero somewhere in between would be expected to
+show no stable sign. **This is the same shape as H1's own falsifier**:
+a sign flip somewhere in the tribalization space is the substantive
+finding, not an artifact to be explained away — H1 treats a flip in the
+intervention's own effect as the interesting outcome; this is a flip in
+a DIFFERENT quantity (which arm's post-withdrawal effect is stickier),
+found the same way, in the same space.
+
+**Numeric backing for "internally consistent," not just a read of the
+table above (section 7's `mean(D)/SE`, carrying section 7's own
+exploratory label):** all three points show a change in the signed
+statistic across the ladder that is large relative to its own seed
+noise — `mean(D)/SE` = -4.03 (`consolidated_two_camp` LHS1), +4.34
+(`cross_cut` LHS0), +2.23 (`cross_cut` LHS4). Even LHS4, whose SIGN
+oscillates, has a net change across the full ladder that is not
+nothing — consistent with "no stable sign" (a mid-crossing point) rather
+than "no effect." These are exploratory, post-hoc statistics (section 7)
+and cannot revise REJECTED; they characterize what the rejection
+consists of, which is what this section is for.
+
+**The caveat this needs, stated plainly rather than left implicit:**
+scenario and structural sorting are confounded in these three points.
+`consolidated_two_camp` LHS1 is the only `consolidated_two_camp` point in
+the ladder; both `cross_cut` points sit lower on the structural dial. So
+"sign tracks structural sorting" and "sign tracks scenario" cannot be
+told apart here, and the ordering above rests on 3 points, one of which
+(LHS4) has no stable sign to order in the first place. **This is a
+hypothesis the data suggests and this design cannot test, not a finding
+in its own right** — recorded as a candidate account for the next
+experiment to design around, not as part of what work order 03 verified.
+
+**7. Work order 04, task 2 — EXPLORATORY, cannot change the verdict —
+corrected in work order 05 (the first version compared `SD(D)` against
+the wrong baseline):**
+the pre-registration's `3xSD(p,60)` bar used the seed spread at the short
+window alone; the quantity actually being tested is a difference between
+two windows, so the paired per-seed difference is the more natural noise
+scale:
+
+    D(p, s) = S(p, 1000, s) - S(p, 60, s)   [seeds shared across windows]
+
+| point | mean(D) | SD(D) | SE(mean D) | mean(D)/SE |
+|---|---|---|---|---|
+| `consolidated_two_camp` LHS1 | -0.2024 | 0.1123 | 0.0502 | -4.03 |
+| `cross_cut` LHS0 | +0.2454 | 0.1264 | 0.0565 | +4.34 |
+| `cross_cut` LHS4 | +0.0654 | 0.0657 | 0.0294 | +2.23 |
+
+`mean(D)` reproduces `S(p,1000)-S(p,60)` from section 3 exactly, as it
+must (a mean of paired differences equals the difference of means).
+
+**Whether pairing helps is not answered by comparing `SD(D)` to either
+endpoint's own `SD` — that was the wrong baseline, caught in work order
+05.** A difference is noisier than its parts regardless of correlation;
+`SD(D)` exceeding `SD(60)` or `SD(1000)` individually says nothing about
+whether pairing helped. The right comparison is against the UNPAIRED
+baseline `sqrt(Var(60) + Var(1000))` — the noise `D` would have if the
+two windows' seeds were independent draws rather than the same 5 runs
+measured twice:
+
+| point | SD(60) | SD(1000) | unpaired baseline | SD(D) | pairing | implied r |
+|---|---|---|---|---|---|---|
+| `consolidated_two_camp` LHS1 | 0.0778 | 0.0582 | 0.0972 | 0.1123 | hurts | -0.35 |
+| `cross_cut` LHS0 | 0.0821 | 0.1493 | 0.1704 | 0.1264 | helps | +0.53 |
+| `cross_cut` LHS4 | 0.0381 | 0.0467 | 0.0603 | 0.0657 | hurts | -0.19 |
+
+(`SD(1000)` for `cross_cut` LHS4 — not reported in the previous pass —
+is 0.0467, from the same per-(point,window) aggregation as section 1's
+table; it is now evaluable like the other two.)
+
+Pairing HELPS at `cross_cut` LHS0 (`SD(D)`=0.126 against an unpaired
+0.170, implied seed correlation +0.53 across windows) and HURTS at both
+`consolidated_two_camp` LHS1 (implied r=-0.35) and `cross_cut` LHS4
+(implied r=-0.19) — the two flaws in the earlier version of this
+paragraph (comparing to the wrong baseline, and misreading LHS4's own
+comparison as "below both" when 0.0657 is above both 0.0381 and 0.0467)
+partly compounded: fixing the baseline is what makes LHS0's result read
+as "pairing helps" rather than "in between," which the endpoint
+comparison could not show either way.
+
+**At n=5, none of this is distinguishable from zero, and that is the
+actual scoping conclusion.** A correlation's standard error at n=5 is
+roughly `1/sqrt(n-3)` = 1/sqrt(2) ~ 0.71 — both +0.53 and -0.35 (and
+-0.19) sit well inside one SE of zero, and of each other. The honest
+statement for a future design is **not** "pairing does not help" (the
+first version's error) or "pairing helps, use it" (the naive read of
+LHS0 alone) but: **the seed correlation across windows cannot be
+estimated at this sample size — size a future design assuming
+independent endpoints (the conservative, unpaired baseline), and treat
+any pairing benefit that materializes as a bonus, not a planned
+saving.** Per the work order's own labeling throughout: exploratory,
+computed after the data was seen, and does not revise REJECTED (swapping
+the noise scale after seeing two margins miss by 13.3%/0.3% under the
+pre-registered scale is exactly the move pre-registration exists to
+prevent) — its only role is scoping a successor design's precision.
+
+**Recommended, not executed here — superseded by work order 04's own
+correction:** adding seeds at the 60-tick rung would cut the bar's SE
+from ~35% to ~19% at n=15, but that only sharpens a magnitude test at
+these SAME 3 points. The open question §6 raises is different — whether
+the sign tracks the structural dial — and more seeds at three confounded
+points cannot answer that at any precision. The investment that could is
+MORE POINTS: 6-8 points spanning the structural dial at roughly fixed
+affective/ideological values, both scenarios represented at both ends
+(breaking the scenario/structural confound), 2 windows (60 and 1000 —
+the ladder already shows the middle rung adds little) rather than 3, 5
+seeds, pre-registering a rank-correlation test on `sign(S(p,1000))`
+against the structural coordinate rather than a per-point magnitude bar.
+Either design is a new simulation increment needing its own
+pre-registration before running, and neither is done as part of this
+(analysis-only) work order. Whether it is worth running at all is a
+separate, genuinely open call: H4 was one hypothesis among several in
+Experiment 03's brief, it is now recorded as REJECTED on a sound design
+with the sign-dependence noted as a candidate account for a successor
+experiment, and the brief itself treats this withdrawal-protocol
+statistic as a robustness check rather than a headline result — a weak
+reason, on its own, to keep this experiment open further.
+
+## Work order 03, task 2 — resolved: the ΔBs split account is DEMONSTRATED, not merely plausible
+
+Work order 02's "What this section does NOT do" paragraph named a
+candidate mechanism for how a confirmed asymmetry could coexist with the
+OU decay's own sign-symmetry: `engagement` and `composition` are
+different EXOGENOUS accumulation processes upstream of withdrawal, and
+could split `Δ_withdrawal` between the fast and slow blocks differently,
+without the shared post-withdrawal decay itself being asymmetric. That
+paragraph explicitly flagged this as "plausible, consistent with Decision
+2d's own `ΔBs`-share finding, not a demonstrated one." This task tests it
+directly, from the same 90 runs, refitting the per-seed 2-state OU model
+(same fit as `wave_c_gap_ladder_ou_fit.csv`) but keeping `dBs` and
+`delta_peak` per seed instead of discarding them into a pooled RMSE.
+
+**Split ratio `dBs/delta_peak`, mean over 5 seeds, by arm x point x window:**
+
+| point | window | engagement | composition | diff (eng-comp) | SE(diff) | t |
+|---|---|---|---|---|---|---|
+| `consolidated_two_camp` LHS1 | 60 | 0.038 | 0.043 | -0.005 | 0.041 | -0.12 |
+| `consolidated_two_camp` LHS1 | 300 | 0.332 | 0.228 | +0.103 | 0.026 | 4.00 |
+| `consolidated_two_camp` LHS1 | 1000 | 0.641 | 0.572 | +0.069 | 0.009 | 8.14 |
+| `cross_cut` LHS0 | 60 | 0.082 | 0.089 | -0.006 | 0.014 | -0.47 |
+| `cross_cut` LHS0 | 300 | 0.338 | 0.383 | -0.045 | 0.024 | -1.89 |
+| `cross_cut` LHS0 | 1000 | 0.657 | 0.748 | -0.091 | 0.026 | -3.53 |
+| `cross_cut` LHS4 | 60 | 0.044 | 0.081 | -0.037 | 0.030 | -1.23 |
+| `cross_cut` LHS4 | 300 | 0.359 | 0.357 | +0.002 | 0.009 | 0.24 |
+| `cross_cut` LHS4 | 1000 | 0.659 | 0.682 | -0.023 | 0.003 | -6.65 |
+
+(`diff`/`SE`/`t` computed on the seed-paired per-seed difference, same
+pairing convention as `S(p,w,s)`.)
+
+**The split DOES differ systematically between arms, tracks window
+length, and — critically — its SIGN matches each point's own recovery
+asymmetry exactly.** A higher `dBs/delta_peak` means more of that arm's
+peak gap is trapped in the slow block (`k_b = k/10`), which mechanically
+means LESS of it recovers in a fixed post-withdrawal window — i.e.
+whichever arm has the larger split ratio at a point is the "stickier"
+arm there, in the same sense `S(p,w)`'s sign measures:
+
+- `consolidated_two_camp` LHS1: `engagement`'s split ratio EXCEEDS
+  `composition`'s at 300 and 1000 (significant, t=4.00 and t=8.14) —
+  `engagement` traps more of its gap in the slow block, so `engagement`
+  is stickier. This is the PRO-H4 direction, and it is exactly the
+  direction `S(p,w)` takes at this point (negative at 300, 1000 — see
+  "Work order 03, task 1").
+- `cross_cut` LHS0: `composition`'s split ratio EXCEEDS `engagement`'s at
+  300 and 1000 (t=-1.89, -3.53), growing with window length —
+  `composition` traps more of its gap, so `composition` is stickier.
+  This is the ANTI-H4 direction, and again matches `S(p,w)`'s own sign at
+  this point (positive throughout, growing).
+- `cross_cut` LHS4: the diff is small at every window (|diff| <= 0.037)
+  and does not grow monotonically (-0.037 -> +0.002 -> -0.023) — no
+  consistent arm-level split asymmetry, matching this point's own
+  unstable `S(p,w)` sign (section 6, "Work order 03, task 1").
+
+**Verdict: DEMONSTRATED, per the work order's own stated criterion.**
+The split differs between arms, the difference is significant and grows
+with window length at the two points with a real `S` effect, and — the
+strongest form of confirmation available — the ARM that gets the larger
+slow-block share at each point is the same arm that point's own signed
+recovery statistic calls "stickier." The account in work order 02's
+"What this section does NOT do" paragraph is no longer a hedge; it is
+the mechanism, and it now also explains WHY the sign of the asymmetry
+flips between points: it is not that the shared OU decay becomes
+asymmetric, but that `engagement`'s and `composition`'s own exogenous
+accumulation processes populate the fast/slow split differently, and
+which arm ends up more slow-block-heavy differs by design point — the
+same points work order 04 found ordered by the structural dial. This
+task does not itself explain WHY the structural dial predicts which arm
+gets the larger slow-block share (that remains open, and is part of the
+same confound work order 04 flagged: only 3 points, one
+`consolidated_two_camp`, two `cross_cut`); it demonstrates the proximate
+mechanism the earlier hedge could only propose.
+
+**Provenance:** `results/experiment03/wave_c_gap_ladder_dbs_split.csv`
+(90 rows, same runs and cache as `wave_c_gap_ladder.csv` and
+`wave_c_gap_ladder_ou_fit.csv` — a per-seed refit keeping `dBs` and
+`delta_peak` instead of only the pooled RMSE the earlier fit kept).

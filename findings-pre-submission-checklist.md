@@ -270,6 +270,37 @@ Group D checks. Same design, same scrutiny, both directions.
   on whatever later pass actually reads that second place (this is exactly
   how the B1 units bug and the C5 domain bug each surfaced twice: once in
   prose, once in a derived artifact that had not been told about the fix).
+- **A pre-registered threshold is specified in units invariant to the
+  manipulation being tested.** *(added after work-order-02)* If the
+  experiment changes a statistic's scale, a threshold fixed in that
+  statistic's absolute units is not the test that was registered. Before
+  registering, ask what the manipulation does to the statistic's mean and
+  spread; if either moves, register a ratio, a fraction-of-mean, or a
+  within-run standardized quantity instead.
+  *Failure signature:* a threshold derived from a baseline run's SD, applied
+  to a run whose SD the manipulation was expected to change.
+  *Current instance:* C2's 0.081 bar, set at 3x the short-gap pooled SD,
+  applied to larger-gap data whose SD had fallen by ~2.5x, where it
+  functioned as an 8-sigma bar.
+- **A statistic that tests a directional claim is not passed through
+  `|·|` (or any other convexity) before averaging over noisy units.**
+  *(added after work-order-03)* `E|X| > |E X|` — taking an absolute value
+  first turns pure per-seed noise around a true value of ~0 into apparent
+  magnitude, and can manufacture a spurious "monotonic increase" purely
+  from the true effect growing (so noise's relative share of `|X|`
+  shrinks), with no way to tell that story apart from a genuine growing
+  asymmetry until the sign is checked. Average the signed statistic first;
+  apply `|·|` afterward only if magnitude, not direction, is what the
+  hypothesis actually needs — and if the hypothesis IS directional, never
+  apply it at all.
+  *Failure signature:* two design points both showing `|A|` "growing with
+  exposure," reported together as one confirmed asymmetry, when their
+  signed values are growing in OPPOSITE directions.
+  *Current instance:* work order 02's H4 gap-ladder statistic
+  (`A = |rec_eng - rec_comp| / mean(...)`) reported CONFIRMED at 2 of 3
+  points; the signed version of the same 90 runs found neither point
+  clears its own threshold, and the two do not agree on which arm is
+  stickier — work order 03, task 1.
 - **The existing house virtues stay.** Record the gap before closing it; test
   first; default new mechanisms off; state non-comparability at the point of
   citation. Those are working and are why the close-out rate on Review 01 was
