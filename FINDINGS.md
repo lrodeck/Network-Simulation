@@ -1279,6 +1279,30 @@ table) both missed.** This is a single design point out of 18 unique
 not a broad crossing — the honest reading is "the sign is not universal,"
 not "the sign is unstable."
 
+**SESOI check on the fire itself (work order 02, task 3) — it clears, so
+the "fires" language stands rather than needing to weaken to "flips below
+the smallest effect of interest."** Same rule as elsewhere in this
+section, applied at this one point (recalibrated data — `delta_aff_level_
+none` does not exist in the original `wave_b.csv`, so only the current
+numbers get this treatment):
+
+| seed | `delta_aff_plateau` | `none`'s own drift | 10% SESOI line | ratio |
+|---|---|---|---|---|
+| 0 | 0.007368 | 0.019185 | 0.001919 | 3.84x |
+| 1 | 0.008467 | 0.017549 | 0.001755 | 4.83x |
+
+Both seeds clear SESOI comfortably (3.8x/4.8x), smaller than
+`composition`'s typical double-digit multiple elsewhere in this table but
+nowhere near the line — this is a real effect by the brief's own
+decision rule, not one that only survives as a sign. **What DOES limit
+this claim is seed count, stated rather than left implicit: this point
+has 2 seeds, against the brief's own 10** — the reason its weight rests on
+the cross-calibration reproduction two paragraphs up (same sign, same
+point, both mechanisms) rather than on these two seeds alone. Two
+consistent seeds under one calibration is a coincidence candidate; two
+consistent seeds reproducing again under a materially different `d0`/
+`d_cross` calibration is not the same claim.
+
 **The diversity floor rarely gets tested at this scale, because dispersion
 barely moves — checked with a sensitivity test this time, not just read
 off a flat statistic (C5 of this project's own pre-submission checklist).**
@@ -1795,7 +1819,12 @@ entirely.**
   flips" claim. The recalibrated data has the same 2 positive rows at the
   identical point, smaller in magnitude (0.0074-0.0085 vs. 0.0099-0.0126)
   — confirming the finding is real and substrate-independent, not an
-  artifact of either calibration.
+  artifact of either calibration. **SESOI-checked (work order 02, task
+  3), not just sign-checked: both seeds clear the brief's own 10% line by
+  3.8x/4.8x** — a real effect, not one dismissible as below this
+  project's smallest effect of interest, though resting on only 2 seeds
+  at this specific point (the cross-calibration reproduction above is
+  what carries this claim, not seed count).
 - **The dosage-confound check for `engagement`.** Re-run is not needed to
   re-answer this specifically — it was already left OPEN (not resolved
   either way) in the pre-submission-checklist pass, because `d_cross`'s
