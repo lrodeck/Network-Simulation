@@ -2363,10 +2363,98 @@ it corrects a real defect (direction-blindness) in the prior statistic,
 not because its own margin is any more statistically decisive than the
 one it replaces.
 
-**Recommended, not executed here:** adding seeds at the 60-tick rung
-only (cheapest of the three, and `SD(60)` is what every bar in this
-table is built from) would cut the bar's SE from ~35% to ~19% at n=15
-and could settle whether either point's magnitude test is real. This is
-a new simulation increment and, per this project's standing practice,
-would need its own pre-registration before running — not done as part of
-this (analysis-only) work order.
+**6. Work order 04: the rejection is sign-dependence, not absence of
+asymmetry — named as a result, not left implicit in a failed directional
+test.** REJECTED is the correct pre-registered outcome (no single
+direction holds across the space), but it is not the same finding as "no
+asymmetry." Two of the three points show an asymmetry that grows
+MONOTONICALLY with exposure duration, each internally consistent — they
+simply grow in opposite directions, and the ordering lines up with the
+one dial these three points span most:
+
+| point | scenario | affective | ideological | structural | S(60) | S(300) | S(1000) | pattern |
+|---|---|---|---|---|---|---|---|---|
+| `consolidated_two_camp` LHS1 | consolidated | 0.946 | 0.885 | **0.732** | +0.010 | -0.093 | -0.193 | monotone, grows pro-H4 |
+| `cross_cut` LHS4 | cross-cut | 0.544 | 0.864 | **0.298** | +0.009 | -0.008 | +0.074 | oscillates, no stable sign |
+| `cross_cut` LHS0 | cross-cut | 0.671 | 0.587 | **0.013** | +0.056 | +0.065 | +0.301 | monotone, grows anti-H4 |
+
+Sorted by the structural dial, the pattern reads: high structural
+sorting (0.732) grows pro-H4 (harm becomes stickier — H4's own
+prediction), near-zero structural sorting (0.013) grows anti-H4 (benefit
+becomes stickier instead), and the middle value (0.298) is exactly where
+a statistic that crosses zero somewhere in between would be expected to
+show no stable sign. **This is the same shape as H1's own falsifier**:
+a sign flip somewhere in the tribalization space is the substantive
+finding, not an artifact to be explained away — H1 treats a flip in the
+intervention's own effect as the interesting outcome; this is a flip in
+a DIFFERENT quantity (which arm's post-withdrawal effect is stickier),
+found the same way, in the same space.
+
+**The caveat this needs, stated plainly rather than left implicit:**
+scenario and structural sorting are confounded in these three points.
+`consolidated_two_camp` LHS1 is the only `consolidated_two_camp` point in
+the ladder; both `cross_cut` points sit lower on the structural dial. So
+"sign tracks structural sorting" and "sign tracks scenario" cannot be
+told apart here, and the ordering above rests on 3 points, one of which
+(LHS4) has no stable sign to order in the first place. **This is a
+hypothesis the data suggests and this design cannot test, not a finding
+in its own right** — recorded as a candidate account for the next
+experiment to design around, not as part of what work order 03 verified.
+
+**7. Work order 04, task 2 — EXPLORATORY, cannot change the verdict:**
+the pre-registration's `3xSD(p,60)` bar used the seed spread at the short
+window alone; the quantity actually being tested is a difference between
+two windows, so the paired per-seed difference is the more natural noise
+scale:
+
+    D(p, s) = S(p, 1000, s) - S(p, 60, s)   [seeds shared across windows]
+
+| point | mean(D) | SD(D) | SE(mean D) | mean(D)/SE |
+|---|---|---|---|---|
+| `consolidated_two_camp` LHS1 | -0.2024 | 0.1123 | 0.0502 | -4.03 |
+| `cross_cut` LHS0 | +0.2454 | 0.1264 | 0.0565 | +4.34 |
+| `cross_cut` LHS4 | +0.0654 | 0.0657 | 0.0294 | +2.23 |
+
+`mean(D)` reproduces `S(p,1000)-S(p,60)` from section 3 exactly, as it
+must (a mean of paired differences equals the difference of means). The
+work order's own expectation was that pairing shared seeds would make
+`SD(D)` smaller than either endpoint's `SD`, since both windows share the
+same burn-in realization. **That expectation does not hold at 2 of these
+3 points, checked rather than assumed:** `SD(D)` (0.112, 0.126) exceeds
+BOTH `SD(60)` (0.078, 0.082) and `SD(1000)` (0.058, 0.149) at
+`consolidated_two_camp` LHS1 and is between the two at `cross_cut` LHS0;
+only `cross_cut` LHS4 shows `SD(D)` below both. Positive seed-to-seed
+correlation across windows would shrink `Var(D)` below the sum of the two
+endpoint variances; what these numbers show instead is `Var(D)` at or
+above that sum at 2 of 3 points — the per-seed noise between window 60
+and window 1000 is not the positively-correlated "same realization"
+pattern the pairing argument assumes, at least not at these points. Per
+the work order's own labeling: this is exploratory and does not revise
+REJECTED (the test was not specified before the data was seen, and
+swapping the noise scale after seeing two margins miss by 13.3%/0.3%
+under the pre-registered scale is exactly the move pre-registration
+exists to prevent) — its value is only for scoping what precision a
+future design should expect, and it says that expectation should not
+assume pairing helps here.
+
+**Recommended, not executed here — superseded by work order 04's own
+correction:** adding seeds at the 60-tick rung would cut the bar's SE
+from ~35% to ~19% at n=15, but that only sharpens a magnitude test at
+these SAME 3 points. The open question §6 raises is different — whether
+the sign tracks the structural dial — and more seeds at three confounded
+points cannot answer that at any precision. The investment that could is
+MORE POINTS: 6-8 points spanning the structural dial at roughly fixed
+affective/ideological values, both scenarios represented at both ends
+(breaking the scenario/structural confound), 2 windows (60 and 1000 —
+the ladder already shows the middle rung adds little) rather than 3, 5
+seeds, pre-registering a rank-correlation test on `sign(S(p,1000))`
+against the structural coordinate rather than a per-point magnitude bar.
+Either design is a new simulation increment needing its own
+pre-registration before running, and neither is done as part of this
+(analysis-only) work order. Whether it is worth running at all is a
+separate, genuinely open call: H4 was one hypothesis among several in
+Experiment 03's brief, it is now recorded as REJECTED on a sound design
+with the sign-dependence noted as a candidate account for a successor
+experiment, and the brief itself treats this withdrawal-protocol
+statistic as a robustness check rather than a headline result — a weak
+reason, on its own, to keep this experiment open further.
