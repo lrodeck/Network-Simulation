@@ -1940,3 +1940,111 @@ DOES change with exposure duration is the absolute fraction a
 fixed-length withdrawal window recovers — a named property of the OU
 mechanism's two timescales, not a reason to suspect the harm/benefit
 comparison itself.
+
+## Work order 02, task 1 — pre-registered: the gap-ladder H4 re-test on a common design
+
+**Why this needs a second re-test, not a footnote on the first.** Decision
+2d's C2 threshold (0.081) was 3x the SHORT-gap pooled SD of
+`recovery_fraction`. At the larger gap, `recovery_fraction`'s own SD fell
+~2.5x alongside its mean (composition 0.0270→0.0104, engagement
+0.0253→0.0108) — so the SAME absolute threshold, applied there, was
+functioning as roughly an 8-sigma bar, not the 3-sigma one it was set to
+be. The pre-registration stands as recorded and its verdict is not being
+retro-fitted; this section registers a DIFFERENT, scale-relative test
+before running anything new. Two more defects, both older than the
+larger-gap run: harm and benefit were measured at DIFFERENT design points
+(only `cross_cut` LHS0 overlapped), confounding arm with point; and each
+side's 15 rows are 3 points x 5 seeds, not 15 independent draws, so
+pooling across points overstates precision. This section's own design
+fixes both.
+
+**Points, selected before running, from `wave_b_recal.csv`.** Ranked by
+the mean of `engagement`'s and `composition`'s own `|delta_aff_plateau|`
+(each averaged over its 2 Wave B seeds first) at every
+(`scenario`, `lhs_index`, `targeting_mode`) triple where NEITHER arm is
+degenerate (`low_tribalization` x `camp_pair` is the one family where
+`engagement` is structurally 0.0 at every LHS index — excluded, though it
+was never close to the top of this ranking anyway). Top 3, all under
+`distance` targeting:
+
+| point | composition \|Δ\| | engagement \|Δ\| | mean | affective | ideological | structural |
+|---|---|---|---|---|---|---|
+| `consolidated_two_camp` LHS1 | 0.00792 | 0.03082 | 0.01937 | 0.9464 | 0.8849 | 0.7319 |
+| `cross_cut` LHS0 | 0.01146 | 0.01558 | 0.01352 | 0.6714 | 0.5867 | 0.0126 |
+| `cross_cut` LHS4 | 0.01395 | 0.00964 | 0.01180 | 0.5441 | 0.8641 | 0.2978 |
+
+4th place (`cross_cut` LHS5, mean 0.01143) trails LHS4 by only ~3% —
+close, stated rather than silently assumed decisive. These are **"largest
+2-seed estimates," not "largest effects"**: Wave B ran 2 seeds per point,
+so this ranking is itself a noisy estimate, named as one. All 3 points
+happen to already appear in work order 01's own point lists (LHS1 and
+LHS0 on the harm side, LHS4 on the benefit side) — continuity, not a
+selection artifact, since the ranking here was computed fresh from both
+arms jointly.
+
+**Gap ladder.** `n_ticks_pre_withdrawal` in {60, 300, 1000}; burn-in and
+post-withdrawal fixed at 60 (`n_ticks_total` = 180, 420, 1120), `targeting_
+mode="distance"` throughout (the mode all 3 points were selected under),
+`n_users=1000`, seeds 0-4. Both arms run at all 3 points x 3 windows: 3 x
+2 x 3 x 5 = 90 arm-runs. The matched `none` run at a given (point, window,
+seed) does not depend on `arm` (`run_hysteresis`'s `none` call takes no
+targeting-mode or arm argument), so the two arms' `none` twins are the
+SAME config and only 3 x 3 x 5 = 45 of them are ever actually computed,
+reused (cache hit) for the second arm. The existing 60-tick and 1000-tick
+data (`wave_c.csv`/`wave_c_composition.csv`/`wave_c_largergap*.csv`) are
+at the OLD, per-arm-selected points, not these — all three rungs here are
+fresh runs, none reused. Budget: the 1000-tick rung is the dominant cost;
+scaling from work order 01's measured 1356s for 15 rows (3 points x 5
+seeds x 1 arm, ALSO paying for 15 unique `none` runs) to this rung's 45
+unique arm-runs plus 15 unique `none` runs (60 total unique sims vs.
+that run's 30), a rough estimate is 60-100 minutes for the 1000-tick rung
+alone, with 300-tick and 60-tick scaling down roughly with tick count
+(~40% and ~17% of that respectively) — actual total to be reported
+against this estimate, not silently substituted for it.
+
+**Primary statistic — written down before looking at any new number.**
+Per point `p`, window `w`, seed `s` (seed-PAIRED between arms: seed `s`'s
+`engagement` run and seed `s`'s `composition` run share the same burn-in
+population realization, differing only in which arm is applied, so
+pairing by seed index cancels population-level noise the way an unpaired
+comparison cannot):
+
+    A(p, w, s) = |rec_engagement(p,w,s) - rec_composition(p,w,s)| / mean(rec_engagement(p,w,s), rec_composition(p,w,s))
+    A(p, w)    = mean over s of A(p, w, s)            [point estimate, n=5]
+    SD(p, w)   = sample SD (ddof=1) over s of A(p, w, s)   [uncertainty]
+
+computed WITHIN each point, never pooled across the 3 points (that pooling
+is exactly A3's own objection). This is one specific, defensible reading
+of the work order's "per-seed values give A's across-seed SD" instruction,
+stated explicitly because the alternative (a ratio-of-seed-MEANS point
+estimate with a separately-estimated SD) was also consistent with that
+wording and the two are not identical — this project takes the mean-of-
+paired-ratios convention throughout this section.
+
+**Asymmetry confirmed only if BOTH hold:**
+- `A(p, 60) < A(p, 300) < A(p, 1000)` (strict monotone increase) at **at
+  least 2 of the 3 points**; AND
+- at those points, `A(p, 1000) - A(p, 60)` exceeds **3 x SD(p, 60)**.
+
+**Asymmetry rejected if:** `A` is flat or non-monotonic at 2 or more
+points, or the increase clears the 3-sigma bar nowhere. Rejection settles
+H4's asymmetry as absent for this build, at gap magnitudes spanning ~4x,
+on a common design free of both defects above — the verdict the existing
+data cannot support either way.
+
+**Reported as context, not as part of the test:** absolute
+`recovery_fraction` per point and window (expected to fall with window
+length per Decision 2d's own two-timescale account, which this ladder
+will show at a third magnitude rather than two), and per-point absolute
+differences alongside the pooled numbers so the pooled-vs-clustered
+distinction A3 raised is visible directly rather than argued abstractly.
+
+**Secondary, on the same 90 runs.** Per-seed 2-state OU refit at all three
+rungs, reporting **RMSE / peak_gap** (not absolute RMSE, per task 2 below)
+at each (point, arm, window). Already known from the two magnitudes work
+order 01 measured: this ratio fell (~0.0092 to ~0.0031, decreasing, not
+growing) while absolute RMSE rose only 1.16x against a 3.5-4.4x gap
+increase — the opposite of what a dropped term quadratic in the gap would
+predict (~16x for a 4x gap). A third rung reads the trend across three
+points instead of two, on the same common-design points the primary
+statistic uses.
