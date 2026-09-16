@@ -1255,13 +1255,29 @@ not interchangeable implementations of "the same" manipulation — which one
 does more, in which direction, depends on how structurally sorted the
 population already is.
 
-**H1: still no sign flip anywhere Wave B sampled.** `composition` is
-negative and `engagement` is non-negative (zero only in the
-now-well-understood gated cells) across all 216 rows, 3 scenarios, both
-targeting modes — extending, not just repeating, Wave A′'s 45/45.
-`exposure` stays small and sign-varies by scenario (positive in
-`consolidated_two_camp`, ~0 elsewhere) but never crosses within a scenario.
-H1's falsifier has still not fired anywhere this project has looked.
+**H1: it DOES fire, once, and this was true of the ORIGINAL Wave B data
+too — missed until work-order-01's own before/after check surfaced it.**
+`composition` is positive at 2/72 rows: both seeds of
+`consolidated_two_camp`, LHS index 1, `targeting_mode="distance"` — the
+single most-tribalized corner of that scenario's own LHS neighborhood
+(affective=0.946, ideological=0.885, structural=0.732), and NOT a
+recalibration artifact (the pre-recalibration `wave_b.csv` has the
+identical 70-negative/2-positive split at the identical point,
+0.0099/0.0126 there vs. 0.0074/0.0085 post-recalibration — same sign,
+smaller magnitude). `engagement` is non-negative everywhere (zero only in
+the now-well-understood gated cells) across all 216 rows, extending Wave
+A′'s 45/45. `exposure` stays small and sign-varies by scenario (positive
+in `consolidated_two_camp`, mixed elsewhere). **Revised: H1's falsifier
+has fired, narrowly — a real, seed-consistent sign crossing exists WITHIN
+`consolidated_two_camp`'s own neighborhood, at its most extreme corner,
+under `distance` targeting specifically (the paired `camp_pair` value at
+the identical point stays negative, -0.0102) — not "not yet falsified,"
+a genuine but narrow exception the two prior write-ups of this exact
+dataset (the original Wave B commit, and this document's own Verdict
+table) both missed.** This is a single design point out of 18 unique
+`distance`-mode ones sampled, and a single scenario's own extreme corner,
+not a broad crossing — the honest reading is "the sign is not universal,"
+not "the sign is unstable."
 
 **The diversity floor rarely gets tested at this scale, because dispersion
 barely moves — checked with a sensitivity test this time, not just read
@@ -1324,10 +1340,14 @@ arm) — the actual (weak) signal, matching Wave A′.
 experiment03-bubble-intervention.md's §5.3 names a response-surface fit
 over the LHS points as the deliverable, and it was not built: 6 points x 2
 seeds per scenario cannot support fitting one, let alone the ~30-point,
-10-seed design the brief itself specifies. But H1's falsifier having fired
-nowhere across Wave A, Wave A′, AND Wave B (no sign flip anywhere any of
-the three waves swept) changes what the surface is FOR. It was originally
-going to locate a crossing (H1); there is none to locate. What is left, and
+10-seed design the brief itself specifies. H1's falsifier DOES fire once
+in this data (above — a narrow exception found on a later pass, not
+absent), but a single design point at one scenario's own extreme corner is
+not a crossing a PLANE could usefully locate — a linear surface fit
+against 18 points has no way to represent an exception at one corner
+without also distorting its fit everywhere else, so the surface's job
+changes for a related but distinct reason than "there is no crossing":
+there is one, but it is not surface-shaped. What is left, and
 is a smaller, tractable ask on exactly the same LHS points, is mapping HOW
 `composition`'s hostility reduction scales across the 3 dials, rather than
 reporting Wave A′'s two `affective`-sweep endpoints (-0.0040 at level 0.1,
@@ -1484,12 +1504,21 @@ CSV inline, but no single place lists all six together).**
 | `wave_b.csv` | 0.15 (V7.6) | `distance` | LHS around 3 named scenario centers, not one value | 216 | Wave B (H3b, diversity floor, response surface) |
 | `wave_c.csv` | 0.15 (V7.6) | `distance` | the 3 largest-|effect| `engagement`/`distance` points from `wave_b.csv` | 15 | Wave C harm-side hysteresis |
 | `wave_c_composition.csv` | 0.15 (V7.6) | `distance` | the 3 largest-|effect| `composition` points from `wave_b.csv` | 15 | Wave C benefit-side hysteresis (H4 asymmetry check) |
+| `wave_a_prime_recal.csv` | 0.15 (V7.6) | `distance`, `affect_d0_mode="calibrated"` (work-order-01) | 0.5 | 135 | Wave A′ re-run at the recalibrated `d0` (population median, per-population — not one fixed value across rows); supersedes `wave_a_prime.csv` for any claim this section's own before/after comparison covers, which stays as the pre-recalibration reference |
+| `wave_b_recal.csv` | 0.15 (V7.6) | `distance`, `affect_d0_mode="calibrated"` | LHS around 3 named scenario centers | 216 | Wave B re-run at the recalibrated `d0`; same relationship to `wave_b.csv` as above |
+| `wave_c_recal.csv` | 0.15 (V7.6) | `distance`, `affect_d0_mode="calibrated"` | re-selected from `wave_b_recal.csv` — checked directly, the SAME 3 points as `wave_c.csv` (`select_hysteresis_points`'s top-3-by-magnitude ranking for `engagement` did not change, only the magnitudes did) | 15 | Wave C harm-side hysteresis, recalibrated |
+| `wave_c_composition_recal.csv` | 0.15 (V7.6) | `distance`, `affect_d0_mode="calibrated"` | re-selected from `wave_b_recal.csv` — checked directly, NOT the same 3 points as `wave_c_composition.csv`: 2 of 3 match (`cross_cut` LHS 4/`distance`, LHS 0/`camp_pair`), the third changed from `cross_cut` LHS 4/`camp_pair` to `cross_cut` LHS 3/`distance` — the ranking is close enough for recalibration to reorder it, stated rather than assumed unchanged | 15 | Wave C benefit-side hysteresis, recalibrated |
 
 **Two standing items this project defers rather than silently drops.**
 H1's falsifier has now been searched for across Wave A (one background,
 0.7), Wave A′ (one background, 0.5, full dial range), and Wave B (3
-scenario neighborhoods) without firing — deferred three times to "a
-denser design" without ever stating what would actually settle it. Stated
+scenario neighborhoods) — and DOES fire, once, narrowly (`composition`
+positive at `consolidated_two_camp`'s own most extreme LHS corner under
+`distance` targeting, found on a later pass through data this project
+already had — Wave B section above). One confirmed exception at one
+scenario's own corner does not settle whether OTHER crossings exist
+elsewhere in the cube — deferred three times to "a denser design" without
+ever stating what would actually settle THAT broader question. Stated
 now: a real Morris elementary-effects design needs multiple (a handful,
 e.g. 4-6) random trajectories through the full 3-dial cube, each
 perturbing one dial at a time from a random base point — order 20-40 design
@@ -1705,3 +1734,121 @@ own C1/C2 (acceptance-criteria doc for this work order):
   `engagement`/`composition` still differ only in `composition`'s added
   `valence_gamma0` — unchanged by this decision, which touches
   `n_ticks_pre_withdrawal` only, never the arm definitions.
+
+## Decision 1d — the recalibrated re-run, and what actually moved
+
+Wave A′, Wave B, Wave C (harm), and Wave C (benefit) re-run at
+`affect_d0_mode="calibrated"` (2822s total, no errors; datasets in the
+provenance table above). Reported as before/after pairs per the work
+order's own instruction, not as silent replacements.
+
+**Headline: almost nothing that mattered changed sign or qualitative
+shape. What moved was magnitude, by a modest and consistent amount, and
+one genuinely new finding surfaced that predates this recalibration
+entirely.**
+
+- **Wave A′'s SESOI ratios on `toward_own_pole`** (the H2-analog):
+  22.7%/24.1%/20.9% (composition/engagement/exposure, OLD) →
+  18.9%/25.5%/14.2% (NEW). All six numbers clear the brief's 10% SESOI
+  comfortably both before and after; composition and exposure moved down,
+  engagement up, none crossed the line in either direction. **New this
+  pass, because `delta_aff_level_none` did not exist when Wave A′
+  originally ran:** a full SESOI check on `delta_aff_plateau` itself —
+  `composition` clears overwhelmingly (19.8x median, 40/40 points),
+  `engagement` clears well (2.8x median, 39/40), but **`exposure`'s
+  median ratio is 0.81 — BELOW 1.0, and only 13/40 points individually
+  clear it.** `exposure`'s animus effect, over the full dial range, is
+  mostly indistinguishable from `none`'s own drift by the brief's own
+  rule — a real finding this section could not make before, not a
+  consequence of recalibration.
+- **The camp-aware-targeting finding (carried-over item 1's own open
+  question) is RESOLVED, not just carried forward again.** At the
+  identical gated design point (ideological=0.1), `engagement` is STILL
+  an EXACT 0.0 on every measure across all 5 seeds under the recalibrated
+  mechanism — bit-for-bit the same null result as before recalibration —
+  while `composition` is STILL measurable and consistent (-0.00509 to
+  -0.00535 across seeds, essentially the same magnitude as pre-
+  recalibration's -0.0046 to -0.0060). Recalibrating `affect_d0`/`d_cross`
+  touches the AFFECT channel and the analysis-only classifier; it does
+  not touch `exposure/kernel.py::compute_features`'s `CONDITIONAL_
+  FEATURES` gate on `outgroup`, which is what actually freezes
+  `engagement`'s `kernel_theta` override below the bimodality gate. Since
+  changing the affect-channel calibration changed NOTHING about
+  `engagement`'s below-gate behavior, the "near-uniform gain" competing
+  explanation is ruled out by construction, not just by assumption: if
+  that had been the mechanism, recalibrating the gain would have moved
+  it. **The camp-aware-targeting name stands, now on separated evidence
+  rather than an unruled-out competitor.**
+- **A genuinely new finding, NOT caused by recalibration, surfaced by
+  doing this comparison at all: H1's falsifier fires once.** Reported
+  above (Wave B section) and in the Verdict table (notebook) — `wave_b.
+  csv`, the ORIGINAL pre-recalibration dataset, already contains 2
+  positive `composition` rows out of 216 (both seeds of `consolidated_
+  two_camp` LHS=1, `distance` targeting), missed by every previous pass
+  through this document including this section's own earlier "Zero sign
+  flips" claim. The recalibrated data has the same 2 positive rows at the
+  identical point, smaller in magnitude (0.0074-0.0085 vs. 0.0099-0.0126)
+  — confirming the finding is real and substrate-independent, not an
+  artifact of either calibration.
+- **The dosage-confound check for `engagement`.** Re-run is not needed to
+  re-answer this specifically — it was already left OPEN (not resolved
+  either way) in the pre-submission-checklist pass, because `d_cross`'s
+  classification did not discriminate well AT ANY calibration tried
+  there. `d_cross` is now calibrated properly (camp-boundary, not tied to
+  `affect_d0`), which is progress on the classifier itself, but answering
+  "is the backfire a dosage artifact" with the new classifier needs a
+  fresh `delta_aff_per_cross_contact` audit analogous to the original
+  A4 one — not run this pass; still open, now on a better-calibrated tool
+  than before rather than a broken one.
+- **Response-surface coefficients (`camp_pair`, `composition`).**
+  affective -0.0170→-0.0121, ideological -0.0102→-0.0068, structural
+  +0.0084→+0.0072, R²=0.908→0.883 (similar), but **leave-one-scenario-out
+  R² = 0.072→-0.455 — WORSE, not better.** This is independent
+  replication of the D1 finding from the pre-submission-checklist pass:
+  the fit's headline R² is stable-looking, but its actual out-of-sample
+  behavior is unstable across two different calibrations of the same
+  under-determined design (3 effective neighborhoods, 4 parameters) —
+  exactly what D1 predicts an under-determined fit will do, not a
+  coincidence specific to one dataset. `distance` mode: R²=0.415→0.403,
+  LOO R²=-8.99→-9.26 (already a clear negative result, now more so).
+- **H3b (`engagement`, `camp_pair` vs. `distance`), B1's own n-count
+  check:** 24/24 measurable cells both before and after (the 12
+  `low_tribalization` cells stay an exact structural 0.0 both times) —
+  this comparison is orthogonal to the affect-channel recalibration by
+  construction (it is about the KERNEL's `outgroup`/`cross_distance`
+  features under different `targeting_mode`s, not the animus-update
+  mechanism), so an unchanged count here is confirmatory, not
+  uninformative.
+- **Wave C (H4): no asymmetry, still.** Harm recovery_fraction
+  0.6250→0.6298 (SD 0.0253→0.0206), benefit 0.6078→0.6157 (SD
+  0.0270→0.0198) — both sides moved together, by less than their own
+  seed spread, keeping the harm/benefit difference small in both
+  datasets. Peak gaps shrank somewhat (e.g. the largest point:
+  0.0356→0.0240) — recalibration lowers `engagement`/`composition`'s
+  overall animus impact a little, consistent with the response-surface
+  coefficients shrinking too, but does not touch the recovery MECHANISM
+  (OU reversion), so `recovery_fraction` itself barely moves.
+- **B3, checked not assumed: `agree_delta` is provably unchanged.**
+  `dynamics/tick.py`'s `agree_delta` computation was not edited by V8 at
+  all — `affect_d0_calibrated` is a new line added immediately after it,
+  reading its already-computed value, not a modification to how it is
+  computed. The full test suite (400 passed, 2 xfailed, 1 xpassed,
+  including V1's endogenous-valence tests that exercise `agree_delta`
+  directly) passing with zero regressions is the actual check, not an
+  assumption resting on the diff being small.
+- **B5: H1's falsifier record does not just "reset" — it resolves to a
+  confirmed, narrow exception**, true under both the old and new
+  calibration (above). The Verdict table's H1 row is corrected
+  accordingly (notebook, same pass as this finding, per this project's
+  own amended checklist).
+
+**What this section does NOT do.** No fresh per-cross-contact dosage
+audit on the recalibrated data (open, above). No re-run of Wave A
+(original, `affect_drive="camp"`) or `wave_a_reinstrumented.csv` — both
+stay on `affect_d0_mode` irrelevant to them (`"camp"` mode never reads
+`affect_d0` for its own gain; the provenance table already marks them as
+historical baselines). No attempt to re-derive a response surface that
+would actually validate out of sample — decision 1d's own finding is that
+this fit is unstable across calibrations, which is evidence AGAINST
+spending more effort on the current 18-point design rather than a reason
+to keep refitting it.
