@@ -2678,3 +2678,68 @@ Wave A′/B/C and the hysteresis work under it, is a large compute
 commitment (the recalibration re-run alone, a strictly smaller change,
 took 2822s) explicitly left for a follow-up session with that budget
 allocated, not executed here.
+
+## Change spec V8.5 — `affect_phi_width`'s separability-scaled rule, and the honest ratio audit
+
+Two changes to V8.4, both before the re-run budget was spent — neither
+invalidates anything, since `affect_phi_shape` still defaults to
+`"saturating"`.
+
+**V8.5.1 — the IQR width rule replaced.** A fixed IQR divisor could not
+serve both regimes: narrow enough (÷6) to beat the saturating shape's
+0.435 same/cross floor when sorted, it gave a transition half-width of
+±0.2 on a population with no camps at all below the gate — a step
+function, reintroducing the discontinuity V7.3 removed. `dynamics/
+tick.py` now calibrates `affect_phi_width` as `(mu_hi - mu_lo) / (6 *
+eta)`, with `mu_lo`/`mu_hi`/`eta` from `metrics.polarization.otsu_
+threshold_and_separability` on the same pairwise-distance sample
+`affect_d0` is calibrated from — deterministic, no fitting, no camp
+labels. `phi_width_from_separability` (`dynamics/drift.py`) reproduces
+the change spec's own worked example exactly (`eta=0.90` → `w=0.55`,
+`phi_same=0.063`, `phi_cross=0.937`, `ratio=0.067`, all at `d0=(mu_lo+
+mu_hi)/2` — a pin, not just a shape check).
+
+**V8.5.2 — the ratio re-audit, and the honest result.** Classification
+accuracy (V8.4's own audit) fixes where `affect_d0` sits and says nothing
+about the width; the number the change lives or dies on is the realized
+same/cross `phi` ratio, measured directly on `wave_a_prime_recal`-scale
+populations (`n_users=1000`, same ideological sweep as before, 5 seeds
+each):
+
+| ideological | bimodality | has camps | `eta` | realized ratio | classification accuracy |
+|---|---|---|---|---|---|
+| 0.1 (below gate) | 0.34-0.36 | no | 0.64-0.66 | 0.61-0.69 | n/a |
+| 0.5 (shared background) | 0.57-0.60 | weakly | 0.69-0.71 | 0.32-0.34 | 0.83-0.85 |
+| 0.7 | 0.69-0.71 | yes | 0.76-0.78 | 0.21-0.23 | 0.91-0.94 |
+| 0.9 (sorted) | 0.78-0.79 | yes | 0.83-0.85 | 0.14-0.18 | 0.93-0.98 |
+
+**Neither of V8.5.2's own gate criteria is met.** At ideological=0.9 the
+ratio is ~0.16, not below the 0.10 target — a real improvement over
+`"saturating"`'s 0.435 floor (roughly a 2.7x reduction), but short of
+the bar. Below the gate, the ratio is ~0.65, closer to 1 (no manufactured
+separation) than to 0, but not "near 1" as targeted either. A synthetic
+population with less noise relative to signal (2 undifferentiated noise
+axes alongside 1 camp-carrying axis, this project's own generator shape,
+but with a larger separation-to-noise ratio) clears the 0.10 target
+easily (`eta≈0.96`, ratio≈0.045 — `tests/test_change_spec_v8.py`),
+confirming the shortfall is this population's own noise-floor geometry
+at the scale in use, not a bug in the width formula: `otsu_threshold_
+and_separability` reproduces the spec's own worked numbers exactly, and
+`eta` at ideological=0.9 (0.83-0.85) sits meaningfully below the spec's
+own illustrative `eta=0.90` row, which is most of the gap between the
+achieved ~0.16 and the hoped-for ~0.067.
+
+**Per V8.5.2's own gate ("do not start the Wave A′/B/C re-run until (1)
+is below 0.10 in the sorted regime and (3) is near 1 below the gate"):
+that re-run is NOT started.** `affect_phi_shape` stays at its
+`"saturating"` default; nothing downstream is invalidated. Closing this
+gap — a wider separation-to-noise ratio in the population generator, a
+different width formula, or accepting a higher target ratio — is future
+work, not attempted here to avoid curve-fitting a threshold this
+session did not set.
+
+**Provenance:** `tests/test_change_spec_v8.py::
+test_phi_v8_5_1_realized_ratio_on_wave_a_prime_recal_scale_populations`
+pins the measured range so a future change to the width formula, the
+population generator, or the scale in use shows up as a test change, not
+a silent drift in an unmeasured number.

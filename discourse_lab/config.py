@@ -414,18 +414,30 @@ class DynamicsConfig(Hashable):
     # "sigmoid" replaces it with a logistic centred at `affect_d0` (now read
     # as a location, not a saturation constant) with scale `affect_phi_
     # width`: unlike the saturating form, a logistic's STEEPNESS is a free
-    # parameter decoupled from its centre, so it can push the same/cross
-    # ratio arbitrarily close to zero where camps are well-separated,
-    # instead of being floor-bounded by construction. "saturating" (the
-    # default) is the pre-V8.4 mechanism, byte-identical.
+    # parameter decoupled from its centre, so IN PRINCIPLE it can push the
+    # same/cross ratio arbitrarily close to zero at a well-separated
+    # population, instead of being floor-bounded by construction. MEASURED
+    # on this project's own population scale (V8.5.2, FINDINGS.md "Change
+    # spec V8.5"): ~0.16-0.18 at a clearly-sorted design point -- a real
+    # improvement on the 0.435 floor, but short of the 0.10 target; the
+    # Wave A'/B/C re-run this mechanism change would call for has NOT been
+    # started on the strength of that number. "saturating" (the default) is
+    # the pre-V8.4 mechanism, byte-identical.
     affect_phi_shape: str = "saturating"  # saturating | sigmoid
-    # V8.4(a): the audited choice (see tests/test_change_spec_v8.py) is the
-    # population's own pairwise-distance IQR, calibrated the SAME way as
+    # V8.5.1 (superseding V8.4(a)'s original IQR rule -- a fixed divisor
+    # could not serve both regimes: narrow enough to beat the saturating
+    # shape's 0.435 floor when sorted, it manufactured a step function on an
+    # unimodal population with no real separation). The audited choice (see
+    # tests/test_change_spec_v8.py, "Change spec V8.5") is `(mu_hi - mu_lo)
+    # / (6 * eta)`, `mu_lo`/`mu_hi`/`eta` from `metrics.polarization.
+    # otsu_threshold_and_separability` on the population's own pairwise-
+    # distance sample -- narrow where the population is genuinely sorted
+    # (high `eta`), wide where it is not. Calibrated the SAME way as
     # `affect_d0` under `affect_d0_mode="calibrated"` (`TickEngine` overrides
     # this field there, reusing the identical sample `affect_d0_calibrated`
-    # itself is computed from — one population statistic, two named
-    # consumers, not two chances to disagree). This field's literal value
-    # is used verbatim only under `affect_d0_mode="fixed"`.
+    # itself is computed from — one population statistic, several named
+    # consumers, not several chances to disagree). This field's literal
+    # value is used verbatim only under `affect_d0_mode="fixed"`.
     affect_phi_width: float = 1.0
 
     # V1: the two valence axes assigned at the moment of engagement.

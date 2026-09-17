@@ -42,6 +42,63 @@ def camps_and_bimodality(stance: np.ndarray) -> tuple[np.ndarray | None, float]:
     return stance_clusters(stance), bimodality
 
 
+def otsu_threshold_and_separability(x: np.ndarray, n_bins: int = 256) -> tuple[float, float, float, float]:
+    """Otsu's method on a 1-D sample: the threshold `m` maximizing between-
+    class variance, `eta` = between-class / total variance AT that
+    threshold (1.0 for two perfectly separated point masses, near 0 for a
+    sample with no real split), and the two classes' own means `mu_lo`,
+    `mu_hi`. Deterministic — no fitting, no seed, no labels supplied by the
+    caller — the same property that makes `bimodality_coefficient` usable
+    as a gate rather than a judgment call.
+
+    V8.5.1: this is what calibrates `affect_phi_width`'s scale (`dynamics/
+    tick.py`) — a single statistic that is high (narrow width, sharp
+    discrimination) when the population's pairwise-distance sample is
+    genuinely two classes, and low (wide width, smooth grading) when it is
+    one, replacing a fixed IQR divisor that could not serve both regimes.
+
+    The threshold search runs on a histogram (`n_bins`, standard Otsu) for
+    speed; `mu_lo`/`mu_hi`/`eta` are then computed by actually splitting the
+    raw sample at `m`, not approximated from bin centers, so they are exact
+    in the caller's own units regardless of `n_bins`.
+    """
+    x = np.asarray(x, dtype=float)
+    lo, hi = float(x.min()), float(x.max())
+    if hi <= lo:
+        return lo, 0.0, lo, lo
+
+    hist, edges = np.histogram(x, bins=n_bins, range=(lo, hi))
+    p = hist.astype(float) / hist.sum()
+    centers = (edges[:-1] + edges[1:]) / 2.0
+    cum_w = np.cumsum(p)
+    cum_mean = np.cumsum(p * centers)
+    global_mean = cum_mean[-1]
+
+    # exclude the last bin boundary: w1 would be exactly 0 there (every
+    # point is "below" the sample max), a degenerate one-class threshold
+    w0 = cum_w[:-1]
+    w1 = 1.0 - w0
+    valid = w0 > 0
+    mu0 = np.divide(cum_mean[:-1], w0, out=np.zeros_like(w0), where=valid)
+    mu1 = np.divide(global_mean - cum_mean[:-1], w1, out=np.zeros_like(w1), where=w1 > 0)
+    between = w0 * w1 * (mu0 - mu1) ** 2
+
+    t = int(np.argmax(between))
+    m = float(edges[t + 1])
+
+    below, above = x <= m, x > m
+    if not below.any() or not above.any():
+        return m, 0.0, global_mean, global_mean
+    mu_lo, mu_hi = float(x[below].mean()), float(x[above].mean())
+
+    total_var = float(np.var(x))
+    if total_var <= 0:
+        return m, 0.0, mu_lo, mu_hi
+    between_var = float(below.mean() * above.mean() * (mu_hi - mu_lo) ** 2)
+    eta = float(between_var / total_var)
+    return m, eta, mu_lo, mu_hi
+
+
 def emergent_camps(stance: np.ndarray, k_max: int = 5, seed: int = 0) -> dict:
     """V6(2) (change spec V1-V6): k as a MEASUREMENT, not an assumption.
 
