@@ -141,3 +141,233 @@ def test_affect_d0_calibrated_is_not_equal_to_d_cross():
         f"d0 ({engine.affect_d0_calibrated}) and d_cross ({d_cross}) must not "
         "coincide -- that would silently reintroduce the V7.4 tie this decision breaks"
     )
+
+
+# --------------------------------------------------------------------------
+# V8.4: phi's sigmoid shape (change-spec-v8.md's decision (a)) -- a sigmoid
+# centred on the population's own median pairwise distance, width from its
+# IQR, replacing the saturating `d / (d + d0)` shape that is floor-bounded
+# below by `d_same/d_cross` for ANY `d0` (the spec's own stated constraint).
+# Adopted after the audit below confirmed the premise on an actual
+# Experiment-03-scale population, same audit shape as the d_cross pin above.
+# --------------------------------------------------------------------------
+
+
+def test_phi_sigmoid_is_centred_at_affect_d0():
+    """`phi(d0) == 0.5` by construction (`expit(0) == 0.5`) -- the sigmoid's
+    centre is a LOCATION, unlike the saturating shape's `d0` which is a
+    saturation rate; this is the property the whole decision leans on."""
+    from discourse_lab.dynamics.drift import affect_delta
+    from discourse_lab.dynamics.valence import assign_valence
+    from discourse_lab.exposure.attention import Exposures
+    from discourse_lab.population import sample_population
+
+    cfg = _cfg(n_users=200, pop={"affect": True})
+    rng = np.random.default_rng(0)
+    pop = sample_population(cfg, rng)
+    from discourse_lab.dynamics.expression import ExpressionMap
+    from discourse_lab.dynamics.posts import generate_posts
+
+    K, D = cfg.population.n_topics, cfg.stance_dims()
+    expr = ExpressionMap.build(pop.trait_names, K)
+    posts = generate_posts(np.arange(4) % 200, pop, expr, np.zeros(K), np.zeros((K, D)), 0.3, rng)
+
+    m = 100
+    exposures = Exposures(
+        post_idx=np.zeros(m, dtype=int), user_id=(np.arange(m) % 99) * 2 + 1,
+        rank=np.zeros(m, dtype=int), is_follower=np.ones(m, dtype=bool),
+    )
+    actions = np.full(m, "like")  # no valence sign complications: hostility weight is action-only here
+    valence = assign_valence(np.zeros(m), 0.0, rng, force_agree=True, force_civil=True)
+    animus_col = pop.trait_names.index("animus")
+
+    d0 = 2.5
+    stance_distance = np.full(m, d0)  # every exposure sits EXACTLY at the centre
+    delta = affect_delta(
+        exposures, actions, posts, pop, camps=None, lr_affect=1.0, valence=valence,
+        mode="distance", stance_distance=stance_distance, affect_d0=d0,
+        phi_shape="sigmoid", phi_width=1.0,
+    )
+    # outgroup == 0.5 at the centre, so animus moves at exactly HALF the
+    # lr_affect*hostility_weight it would at outgroup==1 -- check against the
+    # ingroup (identification) term, which uses (1-outgroup)==0.5 too, so the
+    # two per-user contributions must be equal here (same weight tables'
+    # magnitude structure aside, the point is 0.5/0.5, not 0/1 or 1/0)
+    ident_col = pop.trait_names.index("identification")
+    touched = np.unique(exposures.user_id)
+    assert (delta[touched, animus_col] != 0.0).all()
+    assert (delta[touched, ident_col] != 0.0).all()
+
+
+def test_phi_sigmoid_saturates_toward_0_and_1_away_from_centre():
+    from discourse_lab.dynamics.drift import affect_delta
+    from discourse_lab.dynamics.valence import assign_valence
+    from discourse_lab.exposure.attention import Exposures
+    from discourse_lab.dynamics.expression import ExpressionMap
+    from discourse_lab.dynamics.posts import generate_posts
+    from discourse_lab.population import sample_population
+
+    cfg = _cfg(n_users=200, pop={"affect": True})
+    rng = np.random.default_rng(0)
+    pop = sample_population(cfg, rng)
+    K, D = cfg.population.n_topics, cfg.stance_dims()
+    expr = ExpressionMap.build(pop.trait_names, K)
+    posts = generate_posts(np.arange(4) % 200, pop, expr, np.zeros(K), np.zeros((K, D)), 0.3, rng)
+
+    m = 100
+    exposures = Exposures(
+        post_idx=np.zeros(m, dtype=int), user_id=(np.arange(m) % 99) * 2 + 1,
+        rank=np.zeros(m, dtype=int), is_follower=np.ones(m, dtype=bool),
+    )
+    actions = np.full(m, "like")
+    valence = assign_valence(np.zeros(m), 0.0, rng, force_agree=True, force_civil=True)
+    animus_col = pop.trait_names.index("animus")
+    touched = np.unique(exposures.user_id)
+    d0, width = 2.5, 0.1  # narrow width: far-from-centre distances saturate hard
+
+    near_delta = affect_delta(
+        exposures, actions, posts, pop, camps=None, lr_affect=1.0, valence=valence,
+        mode="distance", stance_distance=np.full(m, d0 - 5 * width), affect_d0=d0,
+        phi_shape="sigmoid", phi_width=width,
+    )
+    far_delta = affect_delta(
+        exposures, actions, posts, pop, camps=None, lr_affect=1.0, valence=valence,
+        mode="distance", stance_distance=np.full(m, d0 + 5 * width), affect_d0=d0,
+        phi_shape="sigmoid", phi_width=width,
+    )
+    # far below the centre: outgroup ~ 0, so animus (driven by outgroup) is
+    # ~0 while identification (driven by ingroup = 1-outgroup ~ 1) is not
+    assert np.abs(near_delta[touched, animus_col]).max() < 1e-2
+    assert np.abs(near_delta[touched, ident_col := pop.trait_names.index("identification")]).min() > 1e-2
+    # far above the centre: the reverse
+    assert np.abs(far_delta[touched, animus_col]).min() > 1e-2
+    assert np.abs(far_delta[touched, ident_col]).max() < 1e-2
+
+
+def test_phi_saturating_shape_is_the_unchanged_pre_v8_4_default():
+    """`affect_phi_shape="saturating"` (the config default) must reproduce
+    `d / (d + d0)` exactly -- V8.4 must not silently change behaviour for
+    every run that has not opted into `"sigmoid"`."""
+    from discourse_lab.dynamics.drift import affect_delta
+    from discourse_lab.dynamics.valence import assign_valence
+    from discourse_lab.exposure.attention import Exposures
+    from discourse_lab.dynamics.expression import ExpressionMap
+    from discourse_lab.dynamics.posts import generate_posts
+    from discourse_lab.population import sample_population
+
+    assert Config().dynamics.affect_phi_shape == "saturating", "test setup: this must stay the shipped default"
+
+    cfg = _cfg(n_users=200, pop={"affect": True})
+    rng = np.random.default_rng(0)
+    pop = sample_population(cfg, rng)
+    K, D = cfg.population.n_topics, cfg.stance_dims()
+    expr = ExpressionMap.build(pop.trait_names, K)
+    posts = generate_posts(np.arange(4) % 200, pop, expr, np.zeros(K), np.zeros((K, D)), 0.3, rng)
+
+    m = 100
+    exposures = Exposures(
+        post_idx=np.zeros(m, dtype=int), user_id=(np.arange(m) % 99) * 2 + 1,
+        rank=np.zeros(m, dtype=int), is_follower=np.ones(m, dtype=bool),
+    )
+    actions = np.full(m, "reply")
+    valence = assign_valence(np.zeros(m), 0.0, rng, force_agree=False, force_civil=False)
+    d0 = 1.7
+    stance_distance = rng.uniform(0.0, 5.0, size=m)
+
+    delta_default = affect_delta(
+        exposures, actions, posts, pop, camps=None, lr_affect=0.5, valence=valence,
+        mode="distance", stance_distance=stance_distance, affect_d0=d0,
+    )
+    delta_explicit = affect_delta(
+        exposures, actions, posts, pop, camps=None, lr_affect=0.5, valence=valence,
+        mode="distance", stance_distance=stance_distance, affect_d0=d0,
+        phi_shape="saturating",
+    )
+    np.testing.assert_array_equal(delta_default, delta_explicit)
+
+
+def test_unknown_phi_shape_raises():
+    from discourse_lab.dynamics.drift import affect_delta
+    from discourse_lab.dynamics.valence import assign_valence
+    from discourse_lab.exposure.attention import Exposures
+    from discourse_lab.population import sample_population
+
+    cfg = _cfg(n_users=50, pop={"affect": True})
+    rng = np.random.default_rng(0)
+    pop = sample_population(cfg, rng)
+    m = 10
+    exposures = Exposures(
+        post_idx=np.zeros(m, dtype=int), user_id=np.arange(m),
+        rank=np.zeros(m, dtype=int), is_follower=np.ones(m, dtype=bool),
+    )
+    actions = np.full(m, "like")
+    valence = assign_valence(np.zeros(m), 0.0, rng, force_agree=True, force_civil=True)
+    with pytest.raises(ValueError, match="affect_phi_shape"):
+        affect_delta(
+            exposures, actions, None, pop, camps=None, lr_affect=0.5, valence=valence,
+            mode="distance", stance_distance=np.ones(m), affect_d0=1.0, phi_shape="bogus",
+        )
+
+
+def test_affect_phi_width_calibrated_tracks_the_populations_own_iqr():
+    """V8.4(a)'s width, like decision 1a's `d0`, must track this
+    population's own geometry, not a constant carried over from elsewhere --
+    checked against an INDEPENDENTLY computed full-population IQR."""
+    cfg = _cfg(n_users=300, pop={"stance_polarization": 6.0})
+    engine = _engine(cfg)
+
+    stance_cols = [i for i, n in enumerate(engine.pop.trait_names) if n.startswith("stance_")]
+    stance = engine.pop.X_used[:, stance_cols]
+    n = stance.shape[0]
+    full_pairwise = np.linalg.norm(stance[:, None, :] - stance[None, :, :], axis=-1)
+    d = full_pairwise[np.triu_indices(n, k=1)] / np.sqrt(len(stance_cols))
+    true_iqr = float(np.percentile(d, 75) - np.percentile(d, 25))
+
+    assert engine.affect_phi_width_calibrated == pytest.approx(true_iqr, rel=0.1)
+
+
+def test_phi_sigmoid_separates_realized_camps_on_an_experiment03_scale_population():
+    """The audit that resolved V8.4's own open fork (change-spec-v8.md):
+    checked directly on the Experiment 03 population generator at its own
+    design scale (n_users=1000, ideological=0.9 -- one of wave_a_prime_
+    recal's own swept design points) rather than assumed from the algebra.
+    A threshold at the population's own median pairwise distance must
+    separate realized same-camp from cross-camp pairs well above chance —
+    this is the empirical premise decision (a) rests on, and it is what
+    actually failed for `"saturating"` (bounded below by `d_same/d_cross`
+    regardless of calibration, per the shape argument in `affect_delta`'s
+    own docstring)."""
+    from discourse_lab.experiments.experiment03_bubble_intervention import (
+        _camp_split_from_stance0,
+        _stance_and_animus_at,
+        base_config,
+        dial_config,
+        run_arm,
+    )
+
+    n_ticks_burn_in = 60
+    burn_in = dial_config(base_config(1000, n_ticks_burn_in), affective=0.5, ideological=0.9, structural=0.5)
+    none_cfg, handle_none = run_arm(burn_in, "none", 0, intervention_tick=n_ticks_burn_in, n_ticks_total=n_ticks_burn_in)
+    stance0, _ = _stance_and_animus_at(handle_none, none_cfg, n_ticks_burn_in - 1)
+    camp0, bimodality0 = _camp_split_from_stance0(stance0)
+    assert camp0 is not None, "test setup: this design point must be bimodal enough to have camps"
+
+    rng = np.random.default_rng(0)
+    n = stance0.shape[0]
+    n_sample = min(20_000, n * 4)
+    a = rng.integers(0, n, n_sample)
+    b = rng.integers(0, n, n_sample)
+    dist = np.linalg.norm(stance0[a] - stance0[b], axis=1) / np.sqrt(stance0.shape[1])
+    median_d = float(np.median(dist))
+
+    same = camp0[a] == camp0[b]
+    cross = ~same
+    same_below = (dist[same] < median_d).mean()
+    cross_above = (dist[cross] > median_d).mean()
+    separation_accuracy = (same_below + cross_above) / 2.0
+
+    assert separation_accuracy > 0.85, (
+        f"median-centred separation was only {separation_accuracy:.3f} at a clearly "
+        f"bimodal design point (bimodality={bimodality0:.3f}) -- the empirical premise "
+        "V8.4 decision (a) rests on would not hold here"
+    )

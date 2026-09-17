@@ -41,7 +41,21 @@ import pyarrow.parquet as pq
 #    engagement is assigned a valence at the moment it happens; a run
 #    written before this cannot answer "was this a civil disagreement" and
 #    must be recomputed, not just re-read.
-RUN_FORMAT = 6
+# 7: V8.1 — traits gained `animus_bs`/`identification_bs`, the affect block's
+#    OU mean-reversion target (`dynamics/drift.py::DriftState.Bs`), on runs
+#    with `population.affect=True`. Previously `Bs` was engine-internal and
+#    never persisted, so the split ratio a run's post-withdrawal recovery
+#    implies could only be recovered by least-squares fitting a two-state
+#    model against the trajectory (notebook cell 46) — a one-parameter fit
+#    whose R² > 0.999 could not fail. A run written before this has no
+#    `animus_bs`/`identification_bs` columns and must be recomputed.
+RUN_FORMAT = 7
+
+# V8.1: the affect-block trait names whose `Bs` gets persisted alongside the
+# traits frame, same shape, no new file — see `population/traits.py::AFFECT`.
+# Duplicated as a literal tuple (not imported) to keep this module's schema
+# functions free of a dependency on `population.traits` at import time.
+AFFECT_BS_TRAITS: tuple[str, ...] = ("identification", "animus")
 
 POST_DIM_COLUMNS = (
     "arousal", "valence", "provocativeness", "novelty", "specificity", "quality", "length",
@@ -96,12 +110,18 @@ def exposures_schema() -> pa.Schema:
     ])
 
 
-def traits_schema(n_traits: int) -> pa.Schema:
+def traits_schema(n_traits: int, bs_traits: tuple[str, ...] = ()) -> pa.Schema:
     """spec §3.5: "Persist: X snapshots (every k ticks)". One row per user per
-    snapshot, stored traits (unconstrained), flattened like stance is."""
-    return pa.schema(
-        [("t", pa.int64()), ("user", pa.int64())] + [(f"x_{i}", pa.float64()) for i in range(n_traits)]
-    )
+    snapshot, stored traits (unconstrained), flattened like stance is.
+
+    V8.1: `bs_traits` (population.affect=True runs only) appends one
+    `{name}_bs` column per affect trait — `DriftState.Bs` at that same
+    snapshot tick, in the same stored space as `x_i`. Empty for a run
+    without the affect block, so the schema is unchanged there.
+    """
+    fields = [("t", pa.int64()), ("user", pa.int64())] + [(f"x_{i}", pa.float64()) for i in range(n_traits)]
+    fields += [(f"{name}_bs", pa.float64()) for name in bs_traits]
+    return pa.schema(fields)
 
 
 def salient_events_schema() -> pa.Schema:
@@ -159,6 +179,18 @@ class RunWriter:
         self.seed = seed
         self.stance_dims = cfg.stance_dims()
         self._writers: dict[str, pq.ParquetWriter] = {}
+        # V8.1: known at construction time from the config alone (affect is
+        # a population-shape switch, not a per-tick condition), so the
+        # traits schema is fixed for the whole run rather than depending on
+        # whichever tick happens to write first.
+        if cfg.population.affect:
+            from discourse_lab.population.traits import trait_names
+
+            self._bs_traits = AFFECT_BS_TRAITS
+            self._trait_index = {name: i for i, name in enumerate(trait_names(cfg))}
+        else:
+            self._bs_traits = ()
+            self._trait_index = {}
         meta = {
             "config": cfg.to_dict(),
             "config_json": cfg.to_json(),
@@ -279,14 +311,32 @@ class RunWriter:
         ]
         self.write_table("salient_events", schema, pa.RecordBatch.from_arrays(arrays, schema=schema))
 
-    def write_traits(self, t: int, x_stored: np.ndarray) -> None:
+    def write_traits(self, t: int, x_stored: np.ndarray, bs: np.ndarray | None = None) -> None:
+        """`bs` (V8.1): `DriftState.Bs` at this same tick, full (n, n_traits)
+        width like `x_stored` — the caller need not slice out the affect
+        columns itself. Required when `cfg.population.affect` is True
+        (the schema was fixed to expect it at construction); ignored
+        otherwise, so a caller that always passes it costs nothing on a
+        non-affect run.
+        """
         n_users, n_traits = x_stored.shape
-        schema = traits_schema(n_traits)
+        schema = traits_schema(n_traits, self._bs_traits)
         arrays = [
             pa.array(np.full(n_users, t, dtype=np.int64), type=pa.int64()),
             pa.array(np.arange(n_users, dtype=np.int64), type=pa.int64()),
         ] + [pa.array(np.asarray(x_stored[:, i], dtype=np.float64), type=pa.float64())
              for i in range(n_traits)]
+        if self._bs_traits:
+            if bs is None:
+                raise ValueError(
+                    "population.affect=True but write_traits got no `bs` — "
+                    "the caller must pass DriftState.Bs (or X_stored, before "
+                    "the first drift tick) alongside x_stored"
+                )
+            arrays += [
+                pa.array(np.asarray(bs[:, self._trait_index[name]], dtype=np.float64), type=pa.float64())
+                for name in self._bs_traits
+            ]
         self.write_table("traits", schema, pa.RecordBatch.from_arrays(arrays, schema=schema))
 
     def ensure_empty(self, name: str, schema: pa.Schema) -> None:
@@ -390,6 +440,11 @@ class RunHandle:
         downstream (e.g. a log-link trait centered near a negative stored
         mean can trip a `population mean <= 0` guard in a metric that never
         sees the real, positive values).
+
+        V8.1: any `{name}_bs` column (the trait's persisted `DriftState.Bs`)
+        goes through the SAME link as `name` itself — `Bs` is a target in
+        stored space, so converting it to used units is exactly converting
+        the used-space value that stored target corresponds to.
         """
         from discourse_lab.population.links import to_used
         from discourse_lab.population.traits import trait_table
@@ -402,6 +457,11 @@ class RunHandle:
             if spec.name in tr.columns and spec.link != "identity":
                 tr = tr.with_columns(
                     pl.Series(spec.name, to_used(tr[spec.name].to_numpy(), spec.link))
+                )
+            bs_col = f"{spec.name}_bs"
+            if bs_col in tr.columns and spec.link != "identity":
+                tr = tr.with_columns(
+                    pl.Series(bs_col, to_used(tr[bs_col].to_numpy(), spec.link))
                 )
         return tr
 

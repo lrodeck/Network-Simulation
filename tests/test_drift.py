@@ -128,6 +128,41 @@ def test_gains_ramped_from_zero_means_no_drift_at_tick_zero():
     assert np.abs(pop.X_stored - x0).max() < 5 * cfg.dynamics.noise_sigma
 
 
+def test_bs_initialises_to_x_stored_and_then_moves_at_k_b():
+    """Change spec V8.1: `Bs` starts at the population's own baseline
+    (`DriftState.ensure_initialized`), then on every later tick moves
+    toward THAT SAME TICK's own just-updated `X_stored` at the block's
+    `k_b` rate -- `apply_drift`'s last two lines read the NEW `pop.X_stored`
+    (this tick's gain/reversion already folded in), not the value
+    `X_stored` held at the start of the tick, so the recurrence checked
+    here is the exact post-step invariant, not an approximation of it.
+    """
+    cfg, rng, pop, expr, K, D = _setup(n_users=64)
+    state = DriftState()
+    x0 = pop.X_stored.copy()
+    state.ensure_initialized(x0)
+    assert np.array_equal(state.Bs, x0)  # Bs[t=0] == X_stored[t=0]
+
+    _, k_b = block_rates(cfg, pop.trait_names)
+
+    authors = rng.choice(64, size=30, replace=True)
+    posts = generate_posts(authors, pop, expr, np.zeros(K), np.zeros((K, D)), eta=0.3, rng=rng)
+    engagement_delta = rng.poisson(2.0, size=len(posts)).astype(float)
+    exposures = Exposures(
+        post_idx=rng.integers(0, len(posts), 100), user_id=rng.integers(0, 64, 100),
+        rank=np.zeros(100, dtype=int),
+    )
+    actions = rng.choice(["like", "reply", "repost", "skip"], size=100)
+
+    bs_before = state.Bs.copy()
+    apply_drift(
+        cfg, pop, expr, state, rng, t=1, posts=posts, engagement_delta=engagement_delta,
+        exposures=exposures, actions=actions,
+    )
+    expected = bs_before + k_b[None, :] * (pop.X_stored - bs_before)
+    np.testing.assert_allclose(state.Bs, expected, rtol=1e-10, atol=1e-12)
+
+
 def test_no_runaway_over_1000_ticks_with_all_channels_live():
     cfg = dataclasses.replace(
         Config(),

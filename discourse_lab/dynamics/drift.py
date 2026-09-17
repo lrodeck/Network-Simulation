@@ -42,6 +42,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import numpy as np
+from scipy.special import expit
 
 from discourse_lab.config import Config
 from discourse_lab.dynamics.expression import POST_DIM_LINKS, POST_DIMS, ExpressionMap
@@ -338,6 +339,8 @@ def affect_delta(
     mode: str = "camp",
     stance_distance: np.ndarray | None = None,
     affect_d0: float = 1.0,
+    phi_shape: str = "saturating",
+    phi_width: float = 1.0,
 ) -> np.ndarray:
     """C1.3 `affect_update`, registered as a drift op below so it composes
     additively with the other channels and shows up in the op-norm diagnostic.
@@ -370,30 +373,47 @@ def affect_delta(
       Requires `camps` (None below the Sarle bimodality gate — see
       `metrics/polarization.py::camps_and_bimodality` — freezes the whole
       op, which is exactly the coupling V7.1's `affect_gated` instruments).
-    - `"distance"`: `outgroup = phi(d(s_i, s_j))`, `phi(d) = d / (d + d0)`,
-      a saturating monotone map of the dyad's full per-axis stance distance
-      (`stance_distance`, the SAME per-exposure array V3's
-      `assign_valence_endogenous` uses for `P(agree)` — imported via the
-      caller, not recomputed here, so the two mechanisms can never silently
-      disagree on distance). `ingroup = 1 - phi(d)` is the natural
-      continuous analogue of the binary's `1 - outgroup`: a close dyad
-      reads as in-group-like, a distant one as out-group-like, with no
-      camp label and no bimodality gate anywhere in this branch — a
-      population that has not yet sorted into two camps still has a
-      measurable affect channel under this mode.
+    - `"distance"`: `outgroup = phi(d(s_i, s_j))`, a monotone map of the
+      dyad's full per-axis stance distance (`stance_distance`, the SAME
+      per-exposure array V3's `assign_valence_endogenous` uses for
+      `P(agree)` — imported via the caller, not recomputed here, so the two
+      mechanisms can never silently disagree on distance). `ingroup =
+      1 - phi(d)` is the natural continuous analogue of the binary's
+      `1 - outgroup`: a close dyad reads as in-group-like, a distant one as
+      out-group-like, with no camp label and no bimodality gate anywhere in
+      this branch — a population that has not yet sorted into two camps
+      still has a measurable affect channel under this mode. `phi_shape`
+      (V8.4) picks the functional form:
 
-    **Grounding, stated precisely (FINDINGS.md, "Work order 01 — decisions
-    made, breaking the affect_d0/d_cross tie"; not corrected until then):**
-    this is distance-graded escalation with an out-group PREMIUM, not the
-    out-group-SPECIFIC mechanism Rathje et al. (2021) report — same-camp
-    contact still contributes ~60-71% of what cross-camp contact does to
-    the animus update (measured at `affect_d0`'s calibrated value; the
-    ratio does not depend much on `d0` specifically, since both `d0` and
-    the realized camp boundary land in the same neighborhood). Rathje et
-    al.'s own finding is about out-group content's effect on SHARING (the
-    `outgroup` feature in `exposure/kernel.py`, a different mechanism
-    entirely); citing it as grounding for `affect_delta` specifically
-    overstates what this function implements.
+        - `"saturating"` (pre-V8.4 default): `phi(d) = d / (d + d0)`.
+          **Grounding, stated precisely (FINDINGS.md, "Work order 01 —
+          decisions made, breaking the affect_d0/d_cross tie"):** this is
+          distance-graded escalation with an out-group PREMIUM, not the
+          out-group-SPECIFIC mechanism Rathje et al. (2021) report —
+          same-camp contact still contributes ~60-71% of what cross-camp
+          contact does to the animus update (measured at `affect_d0`'s
+          calibrated value), and the ratio is bounded below by
+          `d_same/d_cross` for ANY choice of `d0` — the saturating SHAPE is
+          the constraint, not the calibration. Rathje et al.'s own finding
+          is about out-group content's effect on SHARING (the `outgroup`
+          feature in `exposure/kernel.py`, a different mechanism entirely);
+          citing it as grounding for `affect_delta` specifically overstates
+          what this function implements under this shape.
+        - `"sigmoid"` (V8.4 decision (a)): `phi(d) = expit((d - d0) /
+          phi_width)`, a logistic centred at `d0` (now read as a location,
+          not a saturation constant) with scale `phi_width`. Audited on
+          `wave_a_prime_recal`'s own populations (`tests/
+          test_change_spec_v8.py`) before adoption: with `d0`/`phi_width`
+          calibrated to the population's own median/IQR pairwise distance
+          (`affect_d0_mode="calibrated"`), a threshold at the median
+          separates realized same-camp from cross-camp pairs at ~93-98%
+          accuracy where the population is clearly bimodal (well above the
+          Sarle gate), degrading gracefully toward chance as bimodality
+          weakens approaching the gate — never gated on camps existing, so
+          it stays usable below it too, just with less to separate. Because
+          a logistic's steepness is free of its centre, this is NOT
+          floor-bounded the way `"saturating"` is: same-camp gain can be
+          pushed arbitrarily close to zero at a well-separated population.
     """
     n = pop.X_stored.shape[0]
     names = pop.trait_names
@@ -406,7 +426,12 @@ def affect_delta(
     if mode == "distance":
         if stance_distance is None:
             return delta
-        outgroup = stance_distance / (stance_distance + affect_d0)
+        if phi_shape == "saturating":
+            outgroup = stance_distance / (stance_distance + affect_d0)
+        elif phi_shape == "sigmoid":
+            outgroup = expit((stance_distance - affect_d0) / phi_width)
+        else:
+            raise ValueError(f"unknown affect_phi_shape {phi_shape!r}; expected 'saturating' or 'sigmoid'")
     elif mode == "camp":
         if camps is None:
             return delta
@@ -453,6 +478,8 @@ def affect_update(ctx: dict) -> np.ndarray:
         mode=ctx.get("mode", "camp"),
         stance_distance=ctx.get("stance_distance"),
         affect_d0=ctx.get("affect_d0", 1.0),
+        phi_shape=ctx.get("phi_shape", "saturating"),
+        phi_width=ctx.get("phi_width", 1.0),
     )
 
 
@@ -523,6 +550,7 @@ def apply_drift(
     valence: EngagementValence | None = None,
     stance_distance: np.ndarray | None = None,
     affect_d0: float | None = None,
+    affect_phi_width: float | None = None,
 ) -> None:
     """Mutates `pop.X_stored` (and the derived `pop.X_used`) in place, plus
     `state.Bs`, per spec §2.9's composition. `cfg.dynamics.drift`: "none"
@@ -541,6 +569,10 @@ def apply_drift(
     (`dynamics/valence.py`), because the affect op's hostility term is keyed
     on (action, valence), not action alone. `affect_gate_active` is the
     single source of truth for whether the op will run; see its docstring.
+    `affect_phi_width` (V8.4, `dynamics.affect_phi_shape="sigmoid"`) mirrors
+    `affect_d0`'s own None-means-fall-back-to-the-config-constant discipline
+    — the caller's calibrated IQR when `affect_d0_mode="calibrated"`, or
+    None to use `cfg.dynamics.affect_phi_width` verbatim.
     """
     mode = cfg.dynamics.drift
     if mode == "none":
@@ -606,6 +638,10 @@ def apply_drift(
                 # a caller that never threads one through, e.g. isolated
                 # mechanism tests) falls back to the raw config constant.
                 "affect_d0": affect_d0 if affect_d0 is not None else cfg.dynamics.affect_d0,
+                "phi_shape": cfg.dynamics.affect_phi_shape,
+                "phi_width": (
+                    affect_phi_width if affect_phi_width is not None else cfg.dynamics.affect_phi_width
+                ),
             })
             aff_cols = [i for i, nm in enumerate(names) if nm in ("identification", "animus")]
             gain[:, aff_cols] += ramp * aff[:, aff_cols]

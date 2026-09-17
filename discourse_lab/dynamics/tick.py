@@ -217,8 +217,13 @@ class TickEngine:
             if self.cfg.dynamics.agreement_metric == "rms":
                 dist = dist / np.sqrt(max(len(stance_cols), 1))
             self.agree_delta = float(np.median(dist))
+            # V8.4(a): the SAME sample, so `affect_phi_width_calibrated`
+            # can never disagree with `affect_d0_calibrated` about which
+            # pairwise-distance draw it is describing.
+            self._pairwise_dist_iqr = float(np.percentile(dist, 75) - np.percentile(dist, 25))
         else:
             self.agree_delta = 0.0
+            self._pairwise_dist_iqr = 0.0
 
         # V8 (work-order-01, decision 1a): phi's own saturation constant
         # (`dynamics/drift.py::affect_delta`'s `affect_d0`), calibrated the
@@ -233,6 +238,13 @@ class TickEngine:
         # events against the realized camp BOUNDARY, and conflating them
         # was V7.4's own mistake.
         self.affect_d0_calibrated = self.agree_delta
+        # V8.4(a): `phi`'s sigmoid width under `affect_phi_shape="sigmoid"`,
+        # calibrated from the SAME sample's IQR whenever `affect_d0_mode=
+        # "calibrated"` -- audited on wave_a_prime_recal's own populations
+        # (tests/test_change_spec_v8.py) before adoption. Irrelevant under
+        # `affect_phi_shape="saturating"` (computed anyway; it is cheap and
+        # keeping it unconditional avoids a second special case here).
+        self.affect_phi_width_calibrated = self._pairwise_dist_iqr
 
     def _refresh_camps(self) -> None:
         """C1.2: camp labels under the shared bimodality gate. Recomputed per
@@ -731,11 +743,15 @@ class TickEngine:
         # value; passing None under "fixed" mode makes apply_drift fall
         # back to cfg.dynamics.affect_d0's literal value unchanged.
         affect_d0_e = self.affect_d0_calibrated if self.cfg.dynamics.affect_d0_mode == "calibrated" else None
+        # V8.4(a): same discipline for the sigmoid's width.
+        affect_phi_width_e = (
+            self.affect_phi_width_calibrated if self.cfg.dynamics.affect_d0_mode == "calibrated" else None
+        )
         apply_drift(
             self.cfg, self.pop, self.expr, self.drift_state, rngs["drift"], t,
             posts_e, None if delta_e is None else delta_e.astype(float), exposures_e, actions_e,
             camps=self.camps, valence=valence_e, stance_distance=stance_distance_e,
-            affect_d0=affect_d0_e,
+            affect_d0=affect_d0_e, affect_phi_width=affect_phi_width_e,
         )
         # V7.1: instrumentation only, built from the exact inputs apply_drift
         # just consumed, via the same `affect_gate_active` the mechanism
