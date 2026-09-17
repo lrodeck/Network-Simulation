@@ -399,21 +399,30 @@ def affect_delta(
           feature in `exposure/kernel.py`, a different mechanism entirely);
           citing it as grounding for `affect_delta` specifically overstates
           what this function implements under this shape.
-        - `"sigmoid"` (V8.4 decision (a)): `phi(d) = expit((d - d0) /
-          phi_width)`, a logistic centred at `d0` (now read as a location,
-          not a saturation constant) with scale `phi_width`. Audited on
-          `wave_a_prime_recal`'s own populations (`tests/
-          test_change_spec_v8.py`) before adoption: with `d0`/`phi_width`
-          calibrated to the population's own median/IQR pairwise distance
-          (`affect_d0_mode="calibrated"`), a threshold at the median
-          separates realized same-camp from cross-camp pairs at ~93-98%
-          accuracy where the population is clearly bimodal (well above the
-          Sarle gate), degrading gracefully toward chance as bimodality
-          weakens approaching the gate — never gated on camps existing, so
-          it stays usable below it too, just with less to separate. Because
-          a logistic's steepness is free of its centre, this is NOT
-          floor-bounded the way `"saturating"` is: same-camp gain can be
-          pushed arbitrarily close to zero at a well-separated population.
+        - `"sigmoid"` (V8.4 decision (a), width rule superseded by V8.5.1):
+          `phi(d) = expit((d - d0) / phi_width)`, a logistic centred at `d0`
+          (now read as a location, not a saturation constant) with scale
+          `phi_width`. Audited on `wave_a_prime_recal`'s own populations
+          (`tests/test_change_spec_v8.py`, "Change spec V8.5") before
+          adoption: with `d0` calibrated to the population's own median
+          pairwise distance and `phi_width` from `otsu_threshold_and_
+          separability`'s class-mean gap over separability (V8.5.1,
+          `phi_width_from_separability`) — never gated on camps existing,
+          so it stays usable below it too, just with less to separate.
+          Because a logistic's steepness is free of its centre, this is NOT
+          floor-bounded the way `"saturating"` is in principle — but
+          **measured, not assumed, on this project's own population scale
+          (FINDINGS.md, "Change spec V8.5"): same/cross realized-`phi`
+          ratio ~0.16-0.18 at a clearly-sorted design point (down from
+          `"saturating"`'s 0.435 floor, a real improvement, but short of
+          the 0.10 target V8.5.2 set), ~0.60-0.69 below the bimodality
+          gate (better than a step function, not "near 1" either).** This
+          population's own noise-floor geometry appears to cap achievable
+          Otsu separability short of what unlocks the target ratio; a
+          synthetic population with less noise relative to signal clears
+          it easily (`tests/test_change_spec_v8.py`). Per V8.5.2's own
+          gate, the Wave A′/B/C re-run this mechanism change would call
+          for has NOT been started on the strength of these numbers.
     """
     n = pop.X_stored.shape[0]
     names = pop.trait_names
@@ -462,6 +471,26 @@ def affect_delta(
     delta[:, animus_col] = mean_animus
     delta[:, ident_col] = mean_ident
     return delta
+
+
+def phi_width_from_separability(mu_lo: float, mu_hi: float, eta: float, eta_floor: float = 0.05) -> float:
+    """V8.5.1: `affect_phi_width`'s calibrated value under `phi_shape=
+    "sigmoid"`, `(mu_hi - mu_lo) / (6 * eta)` — `mu_lo`/`mu_hi`/`eta` from
+    `metrics.polarization.otsu_threshold_and_separability` on the
+    population's own pairwise-distance sample. Replaces a fixed IQR divisor,
+    which cannot serve both regimes: at the measured class means, IQR/1-2
+    lands at or above the saturating shape's 0.435 floor (the sigmoid buys
+    nothing), while IQR/6 (needed to clear it) manufactures a step function
+    on a population with no real separation at all (FINDINGS.md, "Change
+    spec V8.5"). `eta` — high when the population is genuinely sorted,
+    low when it is not — is what makes one formula narrow the width where
+    separation is real and widen it where it is not.
+
+    `eta_floor` (~0.05) keeps `w` from diverging on a degenerate population
+    (`eta` can be exactly 0 when Otsu's own threshold puts every sampled
+    pair on one side of it).
+    """
+    return (mu_hi - mu_lo) / (6.0 * max(eta, eta_floor))
 
 
 @register("drift_op", "affect_update")
@@ -569,9 +598,10 @@ def apply_drift(
     (`dynamics/valence.py`), because the affect op's hostility term is keyed
     on (action, valence), not action alone. `affect_gate_active` is the
     single source of truth for whether the op will run; see its docstring.
-    `affect_phi_width` (V8.4, `dynamics.affect_phi_shape="sigmoid"`) mirrors
-    `affect_d0`'s own None-means-fall-back-to-the-config-constant discipline
-    — the caller's calibrated IQR when `affect_d0_mode="calibrated"`, or
+    `affect_phi_width` (V8.4/V8.5.1, `dynamics.affect_phi_shape="sigmoid"`)
+    mirrors `affect_d0`'s own None-means-fall-back-to-the-config-constant
+    discipline — the caller's Otsu-separability-calibrated width
+    (`phi_width_from_separability`) when `affect_d0_mode="calibrated"`, or
     None to use `cfg.dynamics.affect_phi_width` verbatim.
     """
     mode = cfg.dynamics.drift

@@ -51,7 +51,7 @@ import numpy as np
 from discourse_lab.config import Config, effective_dynamics
 from discourse_lab.dynamics.cascade import BRANCHING_ACTIONS, CascadeState, derive_posts, r_eff
 from discourse_lab.dynamics.discourse_state import update_discourse
-from discourse_lab.dynamics.drift import DriftState, affect_gate_active, apply_drift
+from discourse_lab.dynamics.drift import DriftState, affect_gate_active, apply_drift, phi_width_from_separability
 from discourse_lab.dynamics.expression import ExpressionMap
 from discourse_lab.dynamics.hawkes import (
     HawkesThreads,
@@ -82,7 +82,7 @@ from discourse_lab.exposure.kernel import apply_kernel_learned, kernel_with_scal
 from discourse_lab.exposure.selection import apply_selection
 from discourse_lab.llm.adjudication import detect_salient_events
 from discourse_lab.measures import attention_gini, bubble_index, salience_stance_agreement
-from discourse_lab.metrics.polarization import camps_and_bimodality
+from discourse_lab.metrics.polarization import camps_and_bimodality, otsu_threshold_and_separability
 from discourse_lab.network import Graph
 from discourse_lab.population import Population
 from discourse_lab.dynamics.rewire import RewireState
@@ -217,13 +217,23 @@ class TickEngine:
             if self.cfg.dynamics.agreement_metric == "rms":
                 dist = dist / np.sqrt(max(len(stance_cols), 1))
             self.agree_delta = float(np.median(dist))
-            # V8.4(a): the SAME sample, so `affect_phi_width_calibrated`
-            # can never disagree with `affect_d0_calibrated` about which
-            # pairwise-distance draw it is describing.
-            self._pairwise_dist_iqr = float(np.percentile(dist, 75) - np.percentile(dist, 25))
+            # V8.5.1: the SAME sample, so `affect_phi_width_calibrated` can
+            # never disagree with `affect_d0_calibrated` about which
+            # pairwise-distance draw it is describing. `otsu_m` is not used
+            # to relocate `affect_d0` (that stays the population median,
+            # V8's own calibration) -- it is the intermediate Otsu's class
+            # split needs `mu_lo`/`mu_hi`/`eta` from.
+            otsu_m, otsu_eta, otsu_mu_lo, otsu_mu_hi = otsu_threshold_and_separability(dist)
+            self.affect_phi_otsu_m = otsu_m
+            self.affect_phi_otsu_eta = otsu_eta
+            self.affect_phi_mu_lo = otsu_mu_lo
+            self.affect_phi_mu_hi = otsu_mu_hi
         else:
             self.agree_delta = 0.0
-            self._pairwise_dist_iqr = 0.0
+            self.affect_phi_otsu_m = 0.0
+            self.affect_phi_otsu_eta = 0.0
+            self.affect_phi_mu_lo = 0.0
+            self.affect_phi_mu_hi = 0.0
 
         # V8 (work-order-01, decision 1a): phi's own saturation constant
         # (`dynamics/drift.py::affect_delta`'s `affect_d0`), calibrated the
@@ -238,13 +248,18 @@ class TickEngine:
         # events against the realized camp BOUNDARY, and conflating them
         # was V7.4's own mistake.
         self.affect_d0_calibrated = self.agree_delta
-        # V8.4(a): `phi`'s sigmoid width under `affect_phi_shape="sigmoid"`,
-        # calibrated from the SAME sample's IQR whenever `affect_d0_mode=
-        # "calibrated"` -- audited on wave_a_prime_recal's own populations
-        # (tests/test_change_spec_v8.py) before adoption. Irrelevant under
+        # V8.5.1: `phi`'s sigmoid width under `affect_phi_shape="sigmoid"`,
+        # calibrated from the Otsu separability of the SAME sample -- a
+        # fixed IQR divisor could not serve both regimes (a divisor narrow
+        # enough to clear the saturating shape's 0.435 floor when sorted
+        # manufactured a step function when unimodal). Audited on
+        # wave_a_prime_recal's own populations (tests/test_change_spec_v8.py,
+        # "Change spec V8.5") before adoption. Irrelevant under
         # `affect_phi_shape="saturating"` (computed anyway; it is cheap and
         # keeping it unconditional avoids a second special case here).
-        self.affect_phi_width_calibrated = self._pairwise_dist_iqr
+        self.affect_phi_width_calibrated = phi_width_from_separability(
+            self.affect_phi_mu_lo, self.affect_phi_mu_hi, self.affect_phi_otsu_eta,
+        )
 
     def _refresh_camps(self) -> None:
         """C1.2: camp labels under the shared bimodality gate. Recomputed per
