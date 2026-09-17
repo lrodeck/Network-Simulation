@@ -2596,3 +2596,85 @@ mechanism the earlier hedge could only propose.
 (90 rows, same runs and cache as `wave_c_gap_ladder.csv` and
 `wave_c_gap_ladder_ou_fit.csv` — a per-seed refit keeping `dBs` and
 `delta_peak` instead of only the pooled RMSE the earlier fit kept).
+
+## Change spec V8.1-V8.4 — persisted `Bs`, `split_ratio`, the linked-metric registry, and phi's shape
+
+Four items. The first three were fully specified; the fourth (`phi`) named
+an open design fork that needed a decision before it could be written.
+
+**V8.1 — `Bs` is now measured, not fit.** `DriftState.Bs`'s affect-block
+columns persist on the traits frame as `animus_bs`/`identification_bs`
+(`RUN_FORMAT` 6 -> 7), same shape as `x_i`, no new file. `Bs[t=0] ==
+X_stored[t=0]` and `Bs[t+1] - Bs[t] == k_b*(X_stored[t+1] - Bs[t])` are
+pinned directly on `DriftState` (`tests/test_drift.py`); persistence and
+the used-space link conversion are pinned on an actual run
+(`tests/test_posts_store.py`). A run without the affect block, or with
+drift off, degrades correctly (no columns; falls back to `X_stored`
+itself, which is what `Bs` conceptually equals when it never moves).
+
+**V8.2 — `split_ratio` replaces the notebook-cell-46 least-squares fit.**
+`_hysteresis_from_arrays` (`experiments/experiment03_bubble_intervention.py`)
+now reads the MEASURED `Bs` gap at the peak tick instead of fitting the
+2-state OU model's one free parameter against the post-withdrawal
+trajectory. `recovery_fraction` stays as a derived convenience field,
+`== b * (1 - split_ratio)` for `b` from `recovery_b(k, n_ticks)`, checked
+on an actual 5-seed-averaged run (`tests/test_experiment03.py`): mean
+`recovery_fraction` 0.174 against `b*(1-mean split_ratio)` 0.176 at
+`n_users=800`, dial (1.0, 0.7, 0.9), `engagement`/`distance` — within
+0.03, well inside the tolerance the conformance test uses. The identity
+held: the 2-state OU model genuinely describes the post-withdrawal
+dynamics at this design point, which is what cell 47 previously claimed
+without being able to show.
+
+**V8.3 — the linked-metric registry, seeded with all four known links.**
+`registry.register(..., derives_from=...)` records the clean parent/child
+case (`recovery_fraction` derives from `split_ratio`); `registry.
+ALGEBRAIC_LINKS` records the three messier cross-metric identities
+(`ingroup`/`outgroup` in `affect_delta`'s `"distance"` mode,
+`toward_mean`/`toward_own_pole`, `algorithmic_share`/`rank_penalty`).
+`registry.check_comparison(a, b)` raises on any of the four —chosen over
+warning, per the spec's own reasoning that a warning here would be
+ignored on the evidence of every other warning in this codebase.
+
+**V8.4 — decision (a) adopted, after auditing the premise it rests on.**
+The constraint: `phi(d) = d/(d+d0)` bounds the same/cross ratio below by
+`d_same/d_cross` for ANY `d0` — the saturating SHAPE is the constraint,
+not the calibration. The fork was between calibrating a logistic sigmoid
+on the population's own pairwise-distance distribution (mechanism change,
+re-runs everything after V7.3) and leaving `phi` alone and narrowing the
+claim instead (costs nothing, leaves the bimodality gate as a hard
+discontinuity). The open weakness named in the spec — whether
+`wave_a_prime_recal`'s populations are bimodal enough at the design
+points in use for a median-centred sigmoid to actually separate the
+classes — was checkable, and was checked (`tests/test_change_spec_v8.py::
+test_phi_sigmoid_separates_realized_camps_on_an_experiment03_scale_population`,
+same audit shape as the `d_cross` pin test):
+
+| ideological dial | bimodality (Sarle) | has camps | median-threshold separation accuracy | median vs. `d_cross` |
+|---|---|---|---|---|
+| 0.1 (below gate) | 0.34-0.36 | no | n/a — no classes to separate | n/a |
+| 0.5 (the shared Wave A′ background) | 0.57-0.60 (barely above the 5/9 gate) | yes, weakly | 83-85% | median 4.5-7.0% below `d_cross` |
+| 0.9 (fully bimodal) | 0.77-0.79 | yes | 93-98% | median within 0-14% of `d_cross`, usually <10% |
+
+At design points where camps are clearly formed, a threshold at the
+population's own median pairwise distance separates realized same-camp
+from cross-camp pairs well (93-98%), and the median tracks `d_cross`
+closely — the empirical premise decision (a) needs. Separation degrades
+gracefully (not catastrophically) toward the gate, where camps are by
+definition weakly formed and hard to separate under any statistic — a
+limiting case, not a counter-argument. Below the gate the population is
+genuinely unimodal, matching the design intent that `"distance"` mode
+grades smoothly there rather than claiming out-group specificity that
+does not exist yet.
+
+**Implemented, not yet re-run.** `dynamics.affect_phi_shape: "saturating"
+| "sigmoid"` (default `"saturating"`, byte-identical to pre-V8.4) and
+`dynamics.affect_phi_width` (calibrated from the same pairwise-distance
+sample's IQR as `affect_d0`, under `affect_d0_mode="calibrated"`) are
+wired through `affect_delta` -> `apply_drift` -> `TickEngine`, mechanism-
+level tested (`tests/test_change_spec_v8.py`). Actually switching
+`affect_phi_shape` to `"sigmoid"` as the shipped default, and re-running
+Wave A′/B/C and the hysteresis work under it, is a large compute
+commitment (the recalibration re-run alone, a strictly smaller change,
+took 2822s) explicitly left for a follow-up session with that budget
+allocated, not executed here.

@@ -407,6 +407,27 @@ class DynamicsConfig(Hashable):
     affect_d0: float = 1.0
     affect_d0_mode: str = "calibrated"  # fixed | calibrated
 
+    # V8.4 decision (a): `phi(d) = d / (d + affect_d0)` is bounded BELOW by
+    # `d_same/d_cross` for any `d0` -- the harmonic-saturating SHAPE is the
+    # constraint, not the calibration (0.435 at Experiment 03's background
+    # 0.7, work-order-01's own grounding note in `affect_delta`'s docstring).
+    # "sigmoid" replaces it with a logistic centred at `affect_d0` (now read
+    # as a location, not a saturation constant) with scale `affect_phi_
+    # width`: unlike the saturating form, a logistic's STEEPNESS is a free
+    # parameter decoupled from its centre, so it can push the same/cross
+    # ratio arbitrarily close to zero where camps are well-separated,
+    # instead of being floor-bounded by construction. "saturating" (the
+    # default) is the pre-V8.4 mechanism, byte-identical.
+    affect_phi_shape: str = "saturating"  # saturating | sigmoid
+    # V8.4(a): the audited choice (see tests/test_change_spec_v8.py) is the
+    # population's own pairwise-distance IQR, calibrated the SAME way as
+    # `affect_d0` under `affect_d0_mode="calibrated"` (`TickEngine` overrides
+    # this field there, reusing the identical sample `affect_d0_calibrated`
+    # itself is computed from — one population statistic, two named
+    # consumers, not two chances to disagree). This field's literal value
+    # is used verbatim only under `affect_d0_mode="fixed"`.
+    affect_phi_width: float = 1.0
+
     # V1: the two valence axes assigned at the moment of engagement.
     # agree/disagree is derived from the kernel's own `agreement` feature
     # (thresholded against each tick's own median, so the split needs no

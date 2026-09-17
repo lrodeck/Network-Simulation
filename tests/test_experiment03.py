@@ -8,6 +8,8 @@ false zero) if `_ideo_decomposition` regressed to that shape.
 
 from __future__ import annotations
 
+import dataclasses
+
 import numpy as np
 import polars as pl
 import pytest
@@ -33,7 +35,9 @@ from discourse_lab.experiments.experiment03_bubble_intervention import (
     diversity_ratio,
     dispersion,
     lhs_design_points,
+    recovery_b,
     run_arm,
+    run_hysteresis,
     select_hysteresis_points,
 )
 
@@ -496,6 +500,86 @@ def test_hysteresis_recovery_fraction_is_nan_when_there_is_no_peak_gap_to_recove
     result = _hysteresis_from_arrays(zeros, zeros, zeros, zeros)
     assert result["peak_gap"] == 0.0
     assert np.isnan(result["recovery_fraction"])
+
+
+def test_hysteresis_split_ratio_is_nan_without_measured_bs():
+    """V8.1/V8.2: a caller with no `Bs` to hand (a run predating RUN_FORMAT
+    7, or without the affect block) gets NaN, not a silently-computed
+    number from the wrong quantity."""
+    result = _hysteresis_from_arrays(
+        animus_arm_peak=np.array([2.0]), animus_none_peak=np.array([0.0]),
+        animus_arm_final=np.array([1.0]), animus_none_final=np.array([1.0]),
+    )
+    assert np.isnan(result["split_ratio"])
+
+
+def test_hysteresis_split_ratio_reads_the_measured_bs_gap_at_the_peak():
+    result = _hysteresis_from_arrays(
+        animus_arm_peak=np.array([2.0, 2.0]), animus_none_peak=np.array([0.0, 0.0]),  # peak_gap = 2.0
+        animus_arm_final=np.array([1.0, 1.0]), animus_none_final=np.array([1.0, 1.0]),
+        bs_arm_peak=np.array([1.4, 1.4]), bs_none_peak=np.array([0.4, 0.4]),  # dBs_peak = 1.0
+    )
+    assert result["split_ratio"] == pytest.approx(0.5)  # 1.0 / 2.0
+
+
+def test_hysteresis_split_ratio_is_nan_when_there_is_no_peak_gap_to_recover_from():
+    zeros = np.zeros(5)
+    result = _hysteresis_from_arrays(zeros, zeros, zeros, zeros, bs_arm_peak=zeros, bs_none_peak=zeros)
+    assert np.isnan(result["split_ratio"])
+
+
+def test_run_hysteresis_reports_a_measured_split_ratio():
+    """Wiring smoke test for `run_hysteresis` itself (V8.1/V8.2): it must
+    read each run's `animus_bs` and hand it to `_hysteresis_from_arrays`,
+    not just the pre-V8.1 `animus` arrays -- checked as an effect (a real,
+    non-NaN `split_ratio` comes back), not by re-asserting the plumbing."""
+    burn_in = dial_config(base_config(400, 60), affective=1.0, ideological=0.7, structural=0.9)
+    result = run_hysteresis(
+        burn_in, "engagement", seed=0, intervention_tick=20, withdrawal_tick=50, n_ticks_total=60,
+        targeting_mode="distance",
+    )
+    assert "split_ratio" in result
+    assert not np.isnan(result["split_ratio"])
+
+
+def test_split_ratio_and_recovery_fraction_satisfy_the_documented_identity_on_a_real_run():
+    """Change spec V8.2's own acceptance criterion: `recovery_fraction ==
+    b * (1 - split_ratio)` (`b` from `recovery_b`, computed off
+    `cfg.dynamics.affect_ou_k`), checked on ACTUAL runs' measured `Bs`
+    rather than asserted from the algebra alone. `recovery_fraction`'s own
+    docstring is explicit that this holds within tolerance, not to machine
+    precision (real post-withdrawal ticks keep generating fresh exposures
+    that perturb the pure 2-state relaxation) -- if it did NOT hold even
+    approximately, that would mean the 2-state OU model does not actually
+    describe the post-withdrawal dynamics, which is exactly what this
+    check exists to catch.
+
+    Averaged over 5 seeds (FINDINGS.md's own hysteresis convention): a
+    single seed's `peak_gap` at this scale is small enough that dividing
+    `final_gap` by it amplifies per-seed noise a great deal, while
+    `split_ratio` -- built from `Bs`, the SLOW block -- is markedly more
+    stable seed to seed; averaging each seed's own `recovery_fraction` and
+    `split_ratio` (not pooling raw per-user arrays first) is what actually
+    cancels that noise, the same reason the notebook's own analysis never
+    reads a single seed's ratio at face value either.
+    """
+    burn_in = dial_config(base_config(800, 60), affective=1.0, ideological=0.7, structural=0.9)
+    withdrawal_tick, n_ticks_total = 50, 60
+
+    recoveries, splits = [], []
+    for seed in range(5):
+        result = run_hysteresis(
+            burn_in, "engagement", seed=seed, intervention_tick=20,
+            withdrawal_tick=withdrawal_tick, n_ticks_total=n_ticks_total, targeting_mode="distance",
+        )
+        assert not np.isnan(result["split_ratio"]), "test setup: this run must have a measured split ratio"
+        assert result["peak_gap"] != 0.0, "test setup: this run must have a real peak gap to divide by"
+        recoveries.append(result["recovery_fraction"])
+        splits.append(result["split_ratio"])
+
+    b = recovery_b(burn_in.dynamics.affect_ou_k, n_ticks_total - withdrawal_tick)
+    expected_recovery = b * (1.0 - float(np.mean(splits)))
+    assert float(np.mean(recoveries)) == pytest.approx(expected_recovery, abs=0.03)
 
 
 def test_select_hysteresis_points_arm_filter_finds_a_smaller_effect_the_default_would_skip():

@@ -68,6 +68,7 @@ from discourse_lab.analysis import set_param
 from discourse_lab.config import Config
 from discourse_lab.metrics import bimodality_coefficient
 from discourse_lab.metrics.polarization import CAMP_BIMODAL_THRESHOLD, emergent_camps
+from discourse_lab.registry import register
 from discourse_lab.runner import cached_run, load_run
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -406,6 +407,26 @@ def _stance_and_animus_at(handle, cfg: Config, tick: int) -> tuple[np.ndarray, n
         at_t["animus"].to_numpy() if "animus" in at_t.columns else np.full(at_t.height, np.nan)
     )
     return stance, animus
+
+
+def _animus_bs_at(handle, cfg: Config, tick: int) -> np.ndarray:
+    """V8.1: this run's per-user `animus_bs` (the persisted `DriftState.Bs`,
+    converted to used units by `traits_used`) at the snapshot nearest
+    `tick`. NaN-filled on a run written before RUN_FORMAT 7, or without the
+    affect block, so `split_ratio` degrades to NaN rather than raising —
+    the same discipline `_stance_and_animus_at` already applies to `animus`
+    on a population without the affect block.
+    """
+    tr = handle.traits_used(cfg)
+    at_t = tr.filter(pl.col("t") == tick).sort("user")
+    if at_t.height == 0:
+        raise ValueError(
+            f"no trait snapshot at t={tick} (dynamics.snapshot_every="
+            f"{cfg.dynamics.snapshot_every}; pick a tick on that cadence)"
+        )
+    if "animus_bs" not in at_t.columns:
+        return np.full(at_t.height, np.nan)
+    return at_t["animus_bs"].to_numpy()
 
 
 def _fixed_axis(stance0: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -1043,9 +1064,49 @@ def run_wave_b_and_save(**kwargs) -> pl.DataFrame:
 # Wave C (SS5.2): hysteresis -- withdraw the intervention, see what persists
 # --------------------------------------------------------------------------
 
+def recovery_b(k: float, n_ticks: int) -> float:
+    """`b = [M^n]_{0,1}` of the 2-state OU model `M = [[1-k, k], [k_b, 1-k_b]]`
+    (`k_b = k/10`, spec §2.9), `n_ticks` after withdrawal. `recovery_fraction`'s
+    own docstring identity (change spec V8.2) names this the current
+    constants' `b`: `recovery_fraction == b * (1 - split_ratio)`.
+    """
+    k_b = k / 10.0
+    m = np.array([[1.0 - k, k], [k_b, 1.0 - k_b]])
+    return float(np.linalg.matrix_power(m, n_ticks)[0, 1])
+
+
+@register("cross_run_metric", "split_ratio")
+def _split_ratio_registration() -> None:
+    """Registered for its registry metadata only (V8.3), under its own
+    `"cross_run_metric"` kind rather than `"outcome"` -- `outcomes.py`'s
+    `"outcome"` registry has its own established contract (exactly the six
+    single-run, `RunHandle`-callable constructs in its own doc-conformance
+    tests); `split_ratio` is a cross-run hysteresis quantity computed by
+    `_hysteresis_from_arrays` from TWO `RunHandle`s, and does not fit it.
+    """
+    raise NotImplementedError(
+        "split_ratio is computed by _hysteresis_from_arrays, not called "
+        "through the registry directly"
+    )
+
+
+@register("cross_run_metric", "recovery_fraction", derives_from=("split_ratio",))
+def _recovery_fraction_registration() -> None:
+    """Registered for its registry metadata only (V8.3) — see
+    `_split_ratio_registration`. `derives_from=("split_ratio",)` is the
+    identity `recovery_fraction == b * (1 - split_ratio)` (see `recovery_b`
+    and `_hysteresis_from_arrays`'s own docstring); `check_comparison`
+    raises if the two are ever compared as independent evidence again."""
+    raise NotImplementedError(
+        "recovery_fraction is computed by _hysteresis_from_arrays, not "
+        "called through the registry directly"
+    )
+
+
 def _hysteresis_from_arrays(
     animus_arm_peak: np.ndarray, animus_none_peak: np.ndarray,
     animus_arm_final: np.ndarray, animus_none_final: np.ndarray,
+    bs_arm_peak: np.ndarray | None = None, bs_none_peak: np.ndarray | None = None,
 ) -> dict:
     """Pure-array core of `run_hysteresis`, split out so the recovery-
     fraction math is unit-testable on toy inputs without a persisted run
@@ -1055,8 +1116,35 @@ def _hysteresis_from_arrays(
     `peak_gap`/`final_gap` are the animus gap (arm minus none), each pair
     read at the SAME tick so both share whatever background drift `none`
     itself has at that point (V7.2's `ideo_level_*` discipline, applied
-    here). `recovery_fraction = 1 - final_gap / peak_gap`: 1.0 is full
-    recovery (gap fully closed), 0.0 is fully sticky (gap unchanged since
+    here).
+
+    **`recovery_fraction` is a DERIVED convenience field (change spec
+    V8.2), not independent evidence.** With `a = [M^n]_{0,0}` and
+    `b = [M^n]_{0,1} = 1 - a` (`recovery_b`, `M` the 2-state OU model of
+    spec §2.9, `n` the number of ticks since withdrawal) and
+    `s = split_ratio` below:
+
+        recovery_fraction = 1 - a - b*s = b * (1 - s)
+
+    (algebra, IF the two-state OU model is exactly right: `final_gap =
+    a*peak_gap + b*dBs_peak`, its own homogeneous evolution of
+    `(peak_gap, dBs_peak)` from withdrawal to the final tick — divide
+    through by `peak_gap` and use `a = 1 - b`). The model is an
+    approximation — real post-withdrawal ticks keep generating fresh
+    exposures/engagements that perturb the trajectory around what a pure
+    2-state relaxation predicts — so `recovery_fraction ≈ b*(1-split_ratio)`
+    holds within tolerance, not to machine precision; how CLOSE it holds is
+    itself the conformance check V8.2 exists for (see
+    `tests/test_experiment03.py`). Regardless of fit quality, `b` is a
+    config constant, NOT a free parameter: `recovery_fraction` and
+    `split_ratio` are built from the same two measurements
+    (`peak_gap`, `dBs_peak`) once `b` is fixed, so reading a
+    `recovery_fraction` result as independent confirmation of whatever
+    `split_ratio` already showed is circular regardless of how well the
+    model fits (`registry.check_comparison` raises on the pair).
+
+    `recovery_fraction = 1 - final_gap / peak_gap`: 1.0 is full recovery
+    (gap fully closed), 0.0 is fully sticky (gap unchanged since
     withdrawal), negative is overshoot (the gap widened after withdrawal).
     NaN when `peak_gap` is exactly 0 -- there is nothing to recover from and
     nothing meaningful to divide by (this codebase has already found real
@@ -1064,11 +1152,29 @@ def _hysteresis_from_arrays(
     under `targeting_mode="camp_pair"` below the bimodality gate; dividing
     by that zero would report a fake, noise-dominated ratio instead of "not
     applicable").
+
+    **`split_ratio` (V8.1/V8.2) is the PRIMARY reported quantity**, `s =
+    dBs_peak / peak_gap` where `dBs_peak` is the gap between the two arms'
+    MEASURED `Bs` (`DriftState.Bs`, persisted since RUN_FORMAT 7) at the
+    same peak tick `peak_gap` is read at — not a least-squares fit of a
+    two-state model against the post-withdrawal trajectory (notebook cell
+    46), which could not distinguish "the model is right" from "one free
+    parameter always fits a smooth curve well". NaN when `bs_arm_peak`/
+    `bs_none_peak` are not given (a caller reading a run written before
+    RUN_FORMAT 7, or without the affect block, has no measured `Bs` to use).
     """
     peak_gap = float(np.nanmean(animus_arm_peak) - np.nanmean(animus_none_peak))
     final_gap = float(np.nanmean(animus_arm_final) - np.nanmean(animus_none_final))
     recovery_fraction = float("nan") if peak_gap == 0.0 else float(1.0 - final_gap / peak_gap)
-    return {"peak_gap": peak_gap, "final_gap": final_gap, "recovery_fraction": recovery_fraction}
+    if bs_arm_peak is None or bs_none_peak is None:
+        split_ratio = float("nan")
+    else:
+        dbs_peak = float(np.nanmean(bs_arm_peak) - np.nanmean(bs_none_peak))
+        split_ratio = float("nan") if peak_gap == 0.0 else float(dbs_peak / peak_gap)
+    return {
+        "peak_gap": peak_gap, "final_gap": final_gap,
+        "recovery_fraction": recovery_fraction, "split_ratio": split_ratio,
+    }
 
 
 def run_hysteresis(
@@ -1086,7 +1192,9 @@ def run_hysteresis(
 
     `RunHandle`-reading wrapper around `_hysteresis_from_arrays`: reads each
     run's animus at the tick just before withdrawal (`peak_tick`, the
-    plateau the arm reached) and at the run's last tick (`final_tick`).
+    plateau the arm reached) and at the run's last tick (`final_tick`). V8.1
+    also reads each run's `animus_bs` at `peak_tick`, so `split_ratio` is
+    the MEASURED split (see `_hysteresis_from_arrays`), not a fit.
     """
     if not (intervention_tick < withdrawal_tick < n_ticks_total):
         raise ValueError("expected intervention_tick < withdrawal_tick < n_ticks_total")
@@ -1104,9 +1212,12 @@ def run_hysteresis(
     _, animus_none_peak = _stance_and_animus_at(handle_none, none_cfg, peak_tick)
     _, animus_arm_final = _stance_and_animus_at(handle_arm, arm_cfg, final_tick)
     _, animus_none_final = _stance_and_animus_at(handle_none, none_cfg, final_tick)
+    bs_arm_peak = _animus_bs_at(handle_arm, arm_cfg, peak_tick)
+    bs_none_peak = _animus_bs_at(handle_none, none_cfg, peak_tick)
 
     metrics = _hysteresis_from_arrays(
         animus_arm_peak, animus_none_peak, animus_arm_final, animus_none_final,
+        bs_arm_peak=bs_arm_peak, bs_none_peak=bs_none_peak,
     )
     return {
         "arm": arm, "seed": seed, "targeting_mode": targeting_mode,

@@ -86,6 +86,14 @@ class State:
     exposure_sample: dict[str, np.ndarray] | None = None
     # spec §3.5: X snapshots every `snapshot_every` ticks. None on other ticks.
     traits_snapshot: np.ndarray | None = None
+    # V8.1: `DriftState.Bs` on the same cadence as `traits_snapshot`, full
+    # (n, n_traits) width — None on other ticks, or always on a population
+    # without the affect block (nothing to persist). Before the first drift
+    # tick `Bs` is still None on the engine itself; falls back to
+    # `X_stored`, which is exactly what `Bs` initialises to (drift.py
+    # `DriftState.ensure_initialized`), so persisting it early is correct,
+    # not a placeholder.
+    bs_snapshot: np.ndarray | None = None
     # spec §3.1 step 6: THIS TICK's salient events, queued for the offline
     # channel-3 pass and never executed inside the tick. Replaced every tick, like
     # the other raw records — a consumer that wants the whole run accumulates.
@@ -168,6 +176,12 @@ def run_iter(cfg: Config, seed: int, *, narrate: bool = False) -> Iterator[State
                 if cfg.dynamics.snapshot_every > 0 and t % cfg.dynamics.snapshot_every == 0
                 else None
             ),
+            bs_snapshot=(
+                (engine.drift_state.Bs if engine.drift_state.Bs is not None else engine.pop.X_stored).copy()
+                if cfg.population.affect
+                and cfg.dynamics.snapshot_every > 0 and t % cfg.dynamics.snapshot_every == 0
+                else None
+            ),
             salient_events=engine.salient_events,
             rewire_events=engine.rewire_events,
             kernel_gains=(
@@ -240,7 +254,7 @@ def run(cfg: Config, seed: int, persist: Sequence[str] = ()) -> Path:
             if "traits" in persist and state.traits_snapshot is not None:
                 # created on first snapshot rather than up front: the trait
                 # count is only known once the population is sampled
-                writer.write_traits(state.t, state.traits_snapshot)
+                writer.write_traits(state.t, state.traits_snapshot, bs=state.bs_snapshot)
             if persist_rewire_log:
                 writer.write_rewire_log(state.rewire_events)
             if persist_kernel_state and state.kernel_gains is not None:

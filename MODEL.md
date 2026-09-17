@@ -1156,6 +1156,18 @@ entry at the intervention tick (plus, optionally, a second entry at a
 withdrawal tick that restates the `none` arm's values — the hysteresis
 phase of that experiment's design).
 
+That hysteresis phase reports two numbers, and they are not independent
+evidence of each other (change spec V8.2). `split_ratio` — `ΔBs / peak_gap`,
+the share of the animus gap open at withdrawal already sitting in the slow
+`Bs` block (`DriftState.Bs`, persisted per-user since `RUN_FORMAT` 7) — is
+the primary, MEASURED quantity. `recovery_fraction` — `1 - final_gap /
+peak_gap` — is a derived convenience field satisfying `recovery_fraction ==
+b * (1 - split_ratio)` for the 2-state OU model's own `b` (a function of
+`dynamics.affect_ou_k` and the recovery window length, `experiments/
+experiment03_bubble_intervention.py::recovery_b`); `registry.check_
+comparison("recovery_fraction", "split_ratio")` raises, so a comparison
+table cannot present the pair as two separate confirmations again.
+
 ---
 
 ## Where to go next

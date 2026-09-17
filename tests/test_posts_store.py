@@ -142,6 +142,72 @@ def test_stale_format_directory_is_rerun(tmp_path, monkeypatch):
     assert RunHandle(path).format == RUN_FORMAT
 
 
+def test_traits_persist_bs_only_when_affect_is_on(tmp_path, monkeypatch):
+    """Change spec V8.1: `animus_bs`/`identification_bs` ride along on the
+    traits frame -- same shape, no new file -- but only for a population
+    with the affect block; a run without it keeps the pre-V8.1 schema
+    exactly (no columns nobody can populate)."""
+    monkeypatch.setenv("DLAB_HOME", str(tmp_path))
+    affect_cfg = dataclasses.replace(
+        _cfg(n_users=80, n_ticks=3),
+        population=dataclasses.replace(Config().population, n_users=80, affect=True),
+    )
+    affect_cfg = dataclasses.replace(affect_cfg, dynamics=dataclasses.replace(affect_cfg.dynamics, drift="full"))
+    run(affect_cfg, seed=0, persist=("traits",))
+    traits = load_run(affect_cfg, seed=0).traits()
+    assert {"animus_bs", "identification_bs"} <= set(traits.columns)
+
+    no_affect_cfg = _cfg(n_users=80, n_ticks=3)
+    run(no_affect_cfg, seed=1, persist=("traits",))
+    traits_no_affect = load_run(no_affect_cfg, seed=1).traits()
+    assert "animus_bs" not in traits_no_affect.columns
+    assert "identification_bs" not in traits_no_affect.columns
+
+
+def test_traits_bs_falls_back_to_x_stored_when_drift_never_runs(tmp_path, monkeypatch):
+    """`dynamics.drift="none"` means `apply_drift` returns before it ever
+    calls `DriftState.ensure_initialized` -- `Bs` stays `None` on the engine
+    for the whole run. V8.1's persistence must fall back to `X_stored`
+    itself in that case (`runner.py::run_iter`'s `bs_snapshot`), which is
+    exactly what `Bs` conceptually equals when it never moves: the
+    persisted `animus_bs` must equal that tick's own `animus`, every tick,
+    not just as an artifact of reading before initialization."""
+    monkeypatch.setenv("DLAB_HOME", str(tmp_path))
+    cfg = dataclasses.replace(
+        _cfg(n_users=60, n_ticks=3),
+        population=dataclasses.replace(Config().population, n_users=60, affect=True),
+    )
+    assert cfg.dynamics.drift == "none", "test setup: _cfg's own default"
+    run(cfg, seed=0, persist=("traits",))
+    tr = load_run(cfg, seed=0).traits_used(cfg)
+
+    for t in tr["t"].unique().to_list():
+        at_t = tr.filter(tr["t"] == t).sort("user")
+        np.testing.assert_allclose(at_t["animus_bs"].to_numpy(), at_t["animus"].to_numpy())
+        np.testing.assert_allclose(
+            at_t["identification_bs"].to_numpy(), at_t["identification"].to_numpy()
+        )
+
+
+def test_traits_bs_diverges_from_animus_once_drift_runs(tmp_path, monkeypatch):
+    """The opposite of the `drift="none"` case: once drift actually moves
+    `X_stored` (noise and the fast channels included) while `Bs` only
+    creeps after it at `k_b`, the two must part ways -- otherwise `Bs`
+    would not be measuring a slow-moving target at all, and `split_ratio`
+    (V8.2) would be reading noise."""
+    monkeypatch.setenv("DLAB_HOME", str(tmp_path))
+    cfg = dataclasses.replace(
+        _cfg(n_users=60, n_ticks=3),
+        population=dataclasses.replace(Config().population, n_users=60, affect=True),
+    )
+    cfg = dataclasses.replace(cfg, dynamics=dataclasses.replace(cfg.dynamics, drift="full"))
+    run(cfg, seed=0, persist=("traits",))
+    tr = load_run(cfg, seed=0).traits_used(cfg)
+
+    at_last = tr.filter(tr["t"] == tr["t"].max()).sort("user")
+    assert not np.allclose(at_last["animus_bs"].to_numpy(), at_last["animus"].to_numpy())
+
+
 def test_run_iter_exposes_the_raw_record_without_a_writer(tmp_path, monkeypatch):
     """Interactive callers should be able to capture posts straight off the
     generator — persistence is one consumer of this, not the only route.
